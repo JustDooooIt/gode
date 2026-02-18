@@ -7,4 +7,3 @@ compatibility_minimum = "4.6.1"
 
 windows.debug.x86_64 = "res://addons/gode/bin/libgode.dll"
 windows.release.x86_64 = "res://addons/gode/bin/libgode.dll"
-

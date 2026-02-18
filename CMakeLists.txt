@@ -50,9 +50,15 @@ if(WIN32)
         PATHS
         "${NODE_ROOT}/out/Release"
         "${NODE_ROOT}/out/Debug"
-        "C:/Program Files/nodejs"
-        DOC "Path to node.lib"
+        NO_DEFAULT_PATH
     )
+    if(NOT NODE_LIBRARY)
+        find_library(NODE_LIBRARY NAMES node libnode
+            PATHS
+            "C:/Program Files/nodejs"
+            DOC "Path to node.lib"
+        )
+    endif()
 else()
     # On Linux/macOS
     find_library(NODE_LIBRARY NAMES node libnode
@@ -66,14 +72,16 @@ if(NOT NODE_LIBRARY)
     message(WARNING "libnode library not found. Linking might fail. Please set NODE_LIBRARY manually using -DNODE_LIBRARY=path/to/libnode.")
 endif()
 
+#
 # -----------------------------------------------------------------------------
 # Target: gode
 # -----------------------------------------------------------------------------
 
-add_library(gode SHARED
-    src/hello_world.cpp
-    src/register_types.cpp
+file(GLOB_RECURSE GODE_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
+
+add_library(gode SHARED ${GODE_SOURCES})
 
 target_include_directories(gode PRIVATE
     include 
@@ -93,6 +101,24 @@ target_link_libraries(gode
 
 if(NODE_LIBRARY)
     target_link_libraries(gode ${NODE_LIBRARY})
+    
+    # Try to find the corresponding DLL
+    get_filename_component(NODE_LIB_DIR "${NODE_LIBRARY}" DIRECTORY)
+    find_file(NODE_DLL NAMES libnode.dll node.dll
+        PATHS "${NODE_LIB_DIR}"
+        NO_DEFAULT_PATH
+    )
+    
+    if(NODE_DLL)
+        message(STATUS "Found Node.js DLL: ${NODE_DLL}")
+        add_custom_command(TARGET gode POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${NODE_DLL}"
+                "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
+        )
+    else()
+        message(WARNING "Could not find node.dll or libnode.dll in ${NODE_LIB_DIR}. You may need to copy it manually.")
+    endif()
 endif()
 
 add_custom_command(TARGET gode POST_BUILD
@@ -100,5 +126,5 @@ add_custom_command(TARGET gode POST_BUILD
         "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:gode>
-        "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
+        "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/libgode.dll"
 )
