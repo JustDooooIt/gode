@@ -1,6 +1,14 @@
 # Ignore IntelliJ IDEA project files
 .idea/
 .vscode/
+.cache/
 
 # Ignore Visual Studio project files
 cmake-build-debug-visual-studio/
+
+# Ignore build files
+build/
+bin/
+
+# Ignore Godot project files
+example/.godot/
