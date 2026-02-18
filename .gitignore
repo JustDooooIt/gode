@@ -8,7 +8,11 @@ cmake-build-debug-visual-studio/
 
 # Ignore build files
 build/
-bin/
+/bin/
 
 # Ignore Godot project files
 example/.godot/
+
+# Ignore built extension binaries but keep the config
+example/addons/gode/bin/*
+!example/addons/gode/bin/.gdextension
