@@ -1,0 +1,9 @@
+[submodule "godot-cpp"]
+	path = godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+[submodule "node-addon-api"]
+	path = node-addon-api
+	url = https://github.com/nodejs/node-addon-api.git
+[submodule "node"]
+	path = node
+	url = https://github.com/nodejs/node.git
