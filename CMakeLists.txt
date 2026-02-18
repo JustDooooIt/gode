@@ -72,13 +72,11 @@ endif()
 
 add_library(gode SHARED
     src/hello_world.cpp
-    src/hello_world.h
     src/register_types.cpp
-    src/register_types.h
 )
 
 target_include_directories(gode PRIVATE
-    src
+    include 
     ${NODE_ADDON_API_DIR}
     ${NODE_INCLUDE_DIRS}
 )
