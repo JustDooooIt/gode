@@ -1,8 +1,8 @@
 //
 // Created by 84473 on 2026/2/18.
 //
-#ifndef GODE_JAVASCRIPT_H
-#define GODE_JAVASCRIPT_H
+#ifndef GODOT_GODE_JAVASCRIPT_H
+#define GODOT_GODE_JAVASCRIPT_H
 
 #include <godot_cpp/classes/script_extension.hpp>
 

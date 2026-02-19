@@ -1,6 +1,5 @@
 #include "register/utility_functions/utility_functions.h"
 #include "napi.h"
-#include "register/utility_functions/utility_functions_vararg_method.h"
 #include "utils/func_utils.h"
 #include <godot_cpp/variant/utility_functions.hpp>
 

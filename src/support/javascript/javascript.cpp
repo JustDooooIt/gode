@@ -2,7 +2,7 @@
 // Created by 84473 on 2026/2/18.
 //
 
-#include "support/javascript.h"
+#include "support/javascript/javascript.h"
 
 using namespace godot;
 using namespace gode;
