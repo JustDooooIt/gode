@@ -3,9 +3,23 @@
 //
 
 #include "support/javascript/javascript.h"
+#include "support/javascript/javascript_instance.h"
+#include "utils/javascript_vm.h"
 
 using namespace godot;
 using namespace gode;
+
+void Javascript::_bind_methods() {
+}
+
+bool Javascript::compile() {
+    if (!is_dirty) {
+        return false;
+    }
+
+    is_dirty = false;
+    return true;
+}
 
 bool Javascript::_editor_can_reload_from_file() {
     return false;
@@ -15,11 +29,11 @@ void Javascript::_placeholder_erased(void *p_placeholder) {
 }
 
 bool Javascript::_can_instantiate() const {
-    return false;
+    return true;
 }
 
 Ref<Script> Javascript::_get_base_script() const {
-    return Ref<Script>();
+    return Ref<Javascript>();
 }
 
 StringName Javascript::_get_global_name() const {
@@ -35,15 +49,20 @@ StringName Javascript::_get_instance_base_type() const {
 }
 
 void *Javascript::_instance_create(Object *p_for_object) const {
-    return nullptr;
+	Ref<Javascript> self(const_cast<Javascript *>(this));
+	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, false));
+	return instance;
 }
 
 void *Javascript::_placeholder_instance_create(Object *p_for_object) const {
-    return nullptr;
+	Ref<Javascript> self(const_cast<Javascript *>(this));
+	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, true));
+	return instance;
 }
 
 bool Javascript::_instance_has(Object *p_object) const {
-    return false;
+	(void)p_object;
+	return true;
 }
 
 bool Javascript::_has_source_code() const {
@@ -55,6 +74,8 @@ String Javascript::_get_source_code() const {
 }
 
 void Javascript::_set_source_code(const String &p_code) {
+    is_dirty = true;
+    source_code = p_code;
 }
 
 Error Javascript::_reload(bool p_keep_state) {

@@ -6,6 +6,30 @@
 using namespace godot;
 using namespace gode;
 
+JavascriptLoader *JavascriptLoader::singleton = nullptr;
+
+JavascriptLoader *JavascriptLoader::get_singleton() {
+	if (singleton) {
+		return singleton;
+	}
+	singleton = memnew(JavascriptLoader);
+	if (likely(singleton)) {
+		ClassDB::_register_engine_singleton(JavascriptLoader::get_class_static(), singleton);
+	}
+	return singleton;
+}
+
+void JavascriptLoader::_bind_methods() {
+}
+
+JavascriptLoader::~JavascriptLoader() {
+	if (singleton == this) {
+		ClassDB::_unregister_engine_singleton(JavascriptLoader::get_class_static());
+		memdelete(singleton);
+		singleton = nullptr;
+	}
+}
+
 PackedStringArray JavascriptLoader::_get_recognized_extensions() const {
 	PackedStringArray arr;
 	arr.push_back(String("js"));

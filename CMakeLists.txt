@@ -83,6 +83,10 @@ file(GLOB_RECURSE GODE_SOURCES
 
 add_library(gode SHARED ${GODE_SOURCES})
 
+if(MSVC)
+    set_property(TARGET gode PROPERTY MSVC_RUNTIME_LIBRARY "${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
+
 target_include_directories(gode PRIVATE
     include 
     ${NODE_ADDON_API_DIR}
@@ -98,6 +102,16 @@ target_compile_definitions(gode PRIVATE
 target_link_libraries(gode
     godot::cpp
 )
+
+if(MINGW)
+    # Statically link MinGW runtimes to avoid DLL dependency issues (Error 126)
+    target_link_options(
+        gode PRIVATE
+            -static 
+            -static-libgcc 
+            -static-libstdc++
+    )
+endif()
 
 if(NODE_LIBRARY)
     target_link_libraries(gode ${NODE_LIBRARY})
@@ -126,5 +140,5 @@ add_custom_command(TARGET gode POST_BUILD
         "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:gode>
-        "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/libgode.dll"
+        "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/libgode.$<CONFIG>.dll"
 )

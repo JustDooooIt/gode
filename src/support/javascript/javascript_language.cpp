@@ -1,7 +1,33 @@
 ﻿#include "support/javascript/javascript_language.h"
+#include "godot_cpp/core/memory.hpp"
+#include "support/javascript/javascript.h"
 
 using namespace godot;
 using namespace gode;
+
+JavascriptLanguage *JavascriptLanguage::singleton = nullptr;
+
+JavascriptLanguage::~JavascriptLanguage() {
+	if (singleton == this) {
+		ClassDB::_unregister_engine_singleton(JavascriptLanguage::get_class_static());
+		memdelete(singleton);
+		singleton = nullptr;
+	}
+}
+
+JavascriptLanguage *JavascriptLanguage::get_singleton() {
+	if (singleton) {
+		return singleton;
+	}
+	singleton = memnew(JavascriptLanguage);
+	if (likely(singleton)) {
+		ClassDB::_register_engine_singleton(JavascriptLanguage::get_class_static(), singleton);
+	}
+	return singleton;
+}
+
+void JavascriptLanguage::_bind_methods() {
+}
 
 String JavascriptLanguage::_get_name() const {
 	return String("Javascript");
@@ -46,7 +72,7 @@ PackedStringArray JavascriptLanguage::_get_string_delimiters() const {
 }
 
 Ref<Script> JavascriptLanguage::_make_template(const String &p_template, const String &p_class_name, const String &p_base_class_name) const {
-	return Ref<Script>();
+	return Ref<Javascript>();
 }
 
 TypedArray<Dictionary> JavascriptLanguage::_get_built_in_templates(const StringName &p_object) const {
@@ -246,4 +272,3 @@ Dictionary JavascriptLanguage::_get_global_class_name(const String &p_path) cons
 	Dictionary d;
 	return d;
 }
-

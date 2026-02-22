@@ -1,9 +1,9 @@
 [configuration]
 
-entry_symbol = "hello_world_library_init"
+entry_symbol = "node_library_init"
 compatibility_minimum = "4.6.1"
 
 [libraries]
 
-windows.debug.x86_64 = "res://addons/gode/bin/libgode.dll"
-windows.release.x86_64 = "res://addons/gode/bin/libgode.dll"
+windows.debug.x86_64 = "res://addons/gode/bin/libgode.Debug.dll"
+windows.release.x86_64 = "res://addons/gode/bin/libgode.Release.dll"

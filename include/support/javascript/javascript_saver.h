@@ -10,12 +10,25 @@ namespace gode {
 class JavascriptSaver : public ResourceFormatSaver {
 	GDCLASS(JavascriptSaver, ResourceFormatSaver);
 
+private:
+	JavascriptSaver() = default;
+
 public:
-	Error _save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags);
-	Error _set_uid(const String &p_path, int64_t p_uid);
-	bool _recognize(const Ref<Resource> &p_resource) const;
-	PackedStringArray _get_recognized_extensions(const Ref<Resource> &p_resource) const;
-	bool _recognize_path(const Ref<Resource> &p_resource, const String &p_path) const;
+	~JavascriptSaver();
+	static JavascriptSaver *get_singleton();
+
+private:
+	static JavascriptSaver *singleton;
+
+protected:
+	static void _bind_methods();
+
+public:
+	Error _save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) override;
+	Error _set_uid(const String &p_path, int64_t p_uid) override;
+	bool _recognize(const Ref<Resource> &p_resource) const override;
+	PackedStringArray _get_recognized_extensions(const Ref<Resource> &p_resource) const override;
+	bool _recognize_path(const Ref<Resource> &p_resource, const String &p_path) const override;
 };
 } //namespace gode
 

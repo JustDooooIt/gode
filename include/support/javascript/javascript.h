@@ -13,6 +13,15 @@ namespace gode {
 class Javascript : public ScriptExtension {
 	GDCLASS(Javascript, ScriptExtension)
 
+	bool is_dirty = false;
+	String source_code;
+
+private:
+	bool compile();
+
+protected:
+	static void _bind_methods();
+
 public:
 	bool _editor_can_reload_from_file() override;
 	void _placeholder_erased(void *p_placeholder) override;

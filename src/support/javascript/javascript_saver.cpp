@@ -1,12 +1,36 @@
 #include "support/javascript/javascript_saver.h"
+#include "support/javascript/javascript.h"
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/resource_format_saver.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>
-#include "support/javascript/javascript.h"
 
 using namespace godot;
 using namespace gode;
+
+JavascriptSaver *JavascriptSaver::singleton = nullptr;
+
+JavascriptSaver *JavascriptSaver::get_singleton() {
+	if (singleton) {
+		return singleton;
+	}
+	singleton = memnew(JavascriptSaver);
+	if (likely(singleton)) {
+		ClassDB::_register_engine_singleton(JavascriptSaver::get_class_static(), singleton);
+	}
+	return singleton;
+}
+
+void JavascriptSaver::_bind_methods() {
+}
+
+JavascriptSaver::~JavascriptSaver() {
+	if (singleton == this) {
+		ClassDB::_unregister_engine_singleton(JavascriptSaver::get_class_static());
+		memdelete(singleton);
+		singleton = nullptr;
+	}
+}
 
 Error JavascriptSaver::_save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {
 	switch (p_flags) {
@@ -15,7 +39,7 @@ Error JavascriptSaver::_save(const Ref<Resource> &p_resource, const String &p_pa
 			String source_code = js->_get_source_code();
 			Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
 			file->store_string(source_code);
-            file->close();
+			file->close();
 		} break;
 	}
 	return Error::OK;
@@ -23,7 +47,7 @@ Error JavascriptSaver::_save(const Ref<Resource> &p_resource, const String &p_pa
 
 Error JavascriptSaver::_set_uid(const String &p_path, int64_t p_uid) {
 	ResourceUID::get_singleton()->set_id(p_uid, p_path);
-    return Error::OK;
+	return Error::OK;
 }
 
 bool JavascriptSaver::_recognize(const Ref<Resource> &p_resource) const {

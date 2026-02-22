@@ -13,20 +13,31 @@ class JavascriptLoader : public ResourceFormatLoader {
 	GDCLASS(JavascriptLoader, ResourceFormatLoader);
 
 private:
-    mutable HashMap<StringName, Ref<Javascript>> scripts;
+	JavascriptLoader() = default;
 
 public:
-	PackedStringArray _get_recognized_extensions() const;
-	bool _recognize_path(const String &p_path, const StringName &p_type) const;
-	bool _handles_type(const StringName &p_type) const;
-	String _get_resource_type(const String &p_path) const;
-	String _get_resource_script_class(const String &p_path) const;
-	int64_t _get_resource_uid(const String &p_path) const;
-	PackedStringArray _get_dependencies(const String &p_path, bool p_add_types) const;
-	Error _rename_dependencies(const String &p_path, const Dictionary &p_renames) const;
-	bool _exists(const String &p_path) const;
-	PackedStringArray _get_classes_used(const String &p_path) const;
-	Variant _load(const String &p_path, const String &p_original_path, bool p_use_sub_threads, int32_t p_cache_mode) const;
+	~JavascriptLoader();
+	static JavascriptLoader *get_singleton();
+
+private:
+	static JavascriptLoader *singleton;
+	mutable HashMap<StringName, Ref<Javascript>> scripts;
+
+protected:
+	static void _bind_methods();
+
+public:
+	PackedStringArray _get_recognized_extensions() const override;
+	bool _recognize_path(const String &p_path, const StringName &p_type) const override;
+	bool _handles_type(const StringName &p_type) const override;
+	String _get_resource_type(const String &p_path) const override;
+	String _get_resource_script_class(const String &p_path) const override;
+	int64_t _get_resource_uid(const String &p_path) const override;
+	PackedStringArray _get_dependencies(const String &p_path, bool p_add_types) const override;
+	Error _rename_dependencies(const String &p_path, const Dictionary &p_renames) const override;
+	bool _exists(const String &p_path) const override;
+	PackedStringArray _get_classes_used(const String &p_path) const override;
+	Variant _load(const String &p_path, const String &p_original_path, bool p_use_sub_threads, int32_t p_cache_mode) const override;
 };
 } //namespace gode
 
