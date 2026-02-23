@@ -1,4 +1,4 @@
-#include "utils/javascript_vm.h"
+#include "utils/js_interop_utils.h"
 #include "register/utility_functions/utility_functions.h"
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <string>
@@ -6,16 +6,6 @@
 using namespace godot;
 
 namespace gode {
-
-static napi_env js_env = nullptr;
-
-void JsEnvManager::init(Napi::Env env) {
-	js_env = env;
-}
-
-napi_env JsEnvManager::get_raw() {
-	return js_env;
-}
 
 TypedArray<Dictionary> extract_js_definitions(Napi::Env env, const String &source) {
 	TypedArray<Dictionary> result;
@@ -191,11 +181,3 @@ Napi::Object create_js_instance(Napi::Env env, const String &source, const Strin
 }
 
 } // namespace gode
-
-Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
-	gode::JsEnvManager::init(env);
-	// gode::GD::init(env, exports);
-	return exports;
-}
-
-// NODE_API_MODULE(gode, InitGodeAddon)

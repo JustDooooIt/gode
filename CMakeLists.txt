@@ -49,38 +49,43 @@ if(WIN32)
     # You might need to adjust this path or pass -DNODE_LIBRARY=path/to/node.lib
     # Prioritize libnode (DLL import lib) over node (EXE export lib)
     
-    # Check explicitly for libnode.lib in the release folder to force usage
-    if(EXISTS "${NODE_ROOT}/out/Release/libnode.lib")
-        set(NODE_LIBRARY "${NODE_ROOT}/out/Release/libnode.lib")
-        message(STATUS "Found libnode.lib at ${NODE_LIBRARY}")
-    elseif(EXISTS "${NODE_ROOT}/out/Debug/libnode.lib")
-        set(NODE_LIBRARY "${NODE_ROOT}/out/Debug/libnode.lib")
-        message(STATUS "Found libnode.lib at ${NODE_LIBRARY}")
+    set(NODE_ROOT_OUT "${NODE_ROOT}/out")
+    
+    # Define debug and release library paths (prefer libnode.lib for DLL import lib)
+    # Check if libnode.lib exists (usually for shared library build), otherwise fallback to node.lib
+    
+    if(EXISTS "${NODE_ROOT_OUT}/Debug/libnode.lib")
+        set(NODE_LIB_DEBUG "${NODE_ROOT_OUT}/Debug/libnode.lib")
+    else()
+        set(NODE_LIB_DEBUG "${NODE_ROOT_OUT}/Debug/node.lib")
+    endif()
+
+    if(EXISTS "${NODE_ROOT_OUT}/Release/libnode.lib")
+        set(NODE_LIB_RELEASE "${NODE_ROOT_OUT}/Release/libnode.lib")
+    else()
+        set(NODE_LIB_RELEASE "${NODE_ROOT_OUT}/Release/node.lib")
+    endif()
+    
+    if(EXISTS "${NODE_LIB_DEBUG}" AND EXISTS "${NODE_LIB_RELEASE}")
+        # If both exist, use generator expression to select based on configuration
+        set(NODE_LIBRARY "$<$<CONFIG:Debug>:${NODE_LIB_DEBUG}>$<$<CONFIG:Release>:${NODE_LIB_RELEASE}>$<$<CONFIG:RelWithDebInfo>:${NODE_LIB_RELEASE}>$<$<CONFIG:MinSizeRel>:${NODE_LIB_RELEASE}>")
+        message(STATUS "Found both Debug and Release node.lib, will select based on build config.")
+    elseif(EXISTS "${NODE_LIB_DEBUG}")
+        set(NODE_LIBRARY "${NODE_LIB_DEBUG}")
+        message(STATUS "Found only Debug node.lib at ${NODE_LIBRARY}")
+    elseif(EXISTS "${NODE_LIB_RELEASE}")
+        set(NODE_LIBRARY "${NODE_LIB_RELEASE}")
+        message(STATUS "Found only Release node.lib at ${NODE_LIBRARY}")
     endif()
 
     if(NOT NODE_LIBRARY)
         find_library(NODE_LIBRARY NAMES libnode node
             PATHS
-            "${NODE_ROOT}/out/Release"
-            "${NODE_ROOT}/out/Debug"
+            "${NODE_ROOT_OUT}/Release"
+            "${NODE_ROOT_OUT}/Debug"
             NO_DEFAULT_PATH
         )
     endif()
-
-    if(NOT NODE_LIBRARY)
-        find_library(NODE_LIBRARY NAMES libnode node
-            PATHS
-            "C:/Program Files/nodejs"
-            DOC "Path to node.lib"
-        )
-    endif()
-else()
-    # On Linux/macOS
-    find_library(NODE_LIBRARY NAMES node libnode
-        PATHS
-        "/usr/local/lib"
-        "${NODE_ROOT}/out/Release"
-    )
 endif()
 
 if(NOT NODE_LIBRARY)
@@ -112,7 +117,26 @@ target_include_directories(gode PRIVATE
 target_compile_definitions(gode PRIVATE
     NAPI_VERSION=8          # Set N-API version
     # NAPI_CPP_EXCEPTIONS   # Enable/Disable C++ exceptions for N-API
+    _HAS_EXCEPTIONS=0       # Disable C++ exceptions for Node.js compatibility
+    NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS # Explicitly disable N-API C++ exceptions
+    NOMINMAX                # Prevent windows.h from defining min/max macros
+    WIN32_LEAN_AND_MEAN     # Reduce windows.h include size
 )
+
+if(MSVC)
+    # Match Node.js default build config (Release mode typically uses /MT)
+    # But Godot-CPP typically defaults to /MD (MultiThreadedDLL). 
+    # Since we are linking against a prebuilt node.lib (likely /MT in Release), 
+    # we might need to force /MT if node_shared=false. 
+    # However, if linking against libnode.dll (node_shared=true), we should use /MD.
+    # Assuming standard libnode distribution (shared library):
+    
+    # Force C++20 standard to match Node.js 20+ defaults
+    target_compile_options(gode PRIVATE /std:c++20)
+    
+    # Disable C++ exceptions at compiler level
+    target_compile_options(gode PRIVATE /EHs-c-)
+endif()
 
 target_link_libraries(gode
     godot::cpp
@@ -134,22 +158,34 @@ if(NODE_LIBRARY)
     target_link_libraries(gode ${NODE_LIBRARY})
     
     # Try to find the corresponding DLL
+    # Note: This logic is partially redundant with the generator expression above but kept for compatibility
     get_filename_component(NODE_LIB_DIR "${NODE_LIBRARY}" DIRECTORY)
-    find_file(NODE_DLL NAMES libnode.dll node.dll
-        PATHS "${NODE_LIB_DIR}"
-        NO_DEFAULT_PATH
-    )
     
-    if(NODE_DLL)
-        message(STATUS "Found Node.js DLL: ${NODE_DLL}")
-        add_custom_command(TARGET gode POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${NODE_DLL}"
-                "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
+    # Only search if NODE_LIBRARY is a real path, not a generator expression
+    if(NOT "${NODE_LIBRARY}" MATCHES "\\$<")
+        find_file(NODE_DLL NAMES libnode.dll node.dll
+            PATHS "${NODE_LIB_DIR}"
+            NO_DEFAULT_PATH
         )
-    else()
-        message(WARNING "Could not find node.dll or libnode.dll in ${NODE_LIB_DIR}. You may need to copy it manually.")
     endif()
+    
+    # Fallback logic for generator expressions where find_file might not work directly
+    # If NODE_LIBRARY contains generator expressions, we can't easily extract the dir at config time
+    # So we try to guess the DLL path based on the LIB path structure
+    
+    # Define DLL paths
+    set(NODE_DLL_DEBUG "${NODE_ROOT_OUT}/Debug/libnode.dll")
+    set(NODE_DLL_RELEASE "${NODE_ROOT_OUT}/Release/libnode.dll")
+
+    # Select DLL based on configuration for debugging
+    set(NODE_DLL_TO_COPY "$<$<CONFIG:Debug>:${NODE_DLL_DEBUG}>$<$<CONFIG:Release>:${NODE_DLL_RELEASE}>$<$<CONFIG:RelWithDebInfo>:${NODE_DLL_RELEASE}>$<$<CONFIG:MinSizeRel>:${NODE_DLL_RELEASE}>")
+
+    add_custom_command(TARGET gode POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Copying libnode.dll from: ${NODE_DLL_TO_COPY}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${NODE_DLL_TO_COPY}"
+            "${CMAKE_SOURCE_DIR}/example/addons/gode/bin"
+    )
 endif()
 
 add_custom_command(TARGET gode POST_BUILD

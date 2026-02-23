@@ -1,4 +1,7 @@
 #include "register_types.h"
+#include "utils/node_runtime.h"
+
+#include "napi.h"
 #include "support/javascript/javascript.h"
 #include "support/javascript/javascript_language.h"
 #include "support/javascript/javascript_loader.h"
@@ -23,6 +26,12 @@ void initialize_node_module(ModuleInitializationLevel p_level) {
 	Engine::get_singleton()->register_script_language(gode::JavascriptLanguage::get_singleton());
 	ResourceSaver::get_singleton()->add_resource_format_saver(gode::JavascriptSaver::get_singleton());
 	ResourceLoader::get_singleton()->add_resource_format_loader(gode::JavascriptLoader::get_singleton());
+
+	static bool js_bootstrapped = false;
+	if (!js_bootstrapped) {
+		gode::NodeRuntime::run_script("require('gode')");
+		js_bootstrapped = true;
+	}
 }
 
 void uninitialize_node_module(ModuleInitializationLevel p_level) {
@@ -32,6 +41,8 @@ void uninitialize_node_module(ModuleInitializationLevel p_level) {
 	Engine::get_singleton()->unregister_script_language(gode::JavascriptLanguage::get_singleton());
 	ResourceSaver::get_singleton()->remove_resource_format_saver(gode::JavascriptSaver::get_singleton());
 	ResourceLoader::get_singleton()->remove_resource_format_loader(gode::JavascriptLoader::get_singleton());
+
+	gode::NodeRuntime::shutdown();
 }
 
 extern "C" {

@@ -9,11 +9,7 @@
 
 namespace gode {
 
-class JsEnvManager {
-public:
-	static void init(Napi::Env env);
-	static napi_env get_raw();
-};
+
 
 godot::TypedArray<godot::Dictionary> extract_js_definitions(Napi::Env env, const godot::String &source);
 

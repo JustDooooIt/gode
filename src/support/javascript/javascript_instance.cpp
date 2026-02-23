@@ -1,6 +1,6 @@
 #include "support/javascript/javascript_instance.h"
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "utils/javascript_vm.h"
+#include "utils/js_interop_utils.h"
 
 using namespace godot;
 

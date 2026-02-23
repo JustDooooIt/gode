@@ -1,7 +1,10 @@
 #include "support/javascript/javascript.h"
 #include "support/javascript/javascript_instance.h"
+#include "support/javascript/javascript_instance_info.h"
 #include "support/javascript/javascript_language.h"
-#include "utils/javascript_vm.h"
+#include "utils/js_interop_utils.h"
+#include <gdextension_interface.h>
+#include <godot_cpp/godot.hpp>
 
 using namespace godot;
 using namespace gode;
@@ -46,15 +49,17 @@ StringName Javascript::_get_instance_base_type() const {
 }
 
 void *Javascript::_instance_create(Object *p_for_object) const {
-	Ref<Javascript> self(const_cast<Javascript *>(this));
+	static auto fn = reinterpret_cast<GDExtensionInterfaceScriptInstanceCreate3>(gdextension_interface::get_proc_address("script_instance_create3"));
+	const Ref self(const_cast<Javascript *>(this));
 	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, false));
-	return instance;
+	return fn(&javascript_instance_info, instance);
 }
 
 void *Javascript::_placeholder_instance_create(Object *p_for_object) const {
-	Ref<Javascript> self(const_cast<Javascript *>(this));
+	static auto fn = reinterpret_cast<GDExtensionInterfaceScriptInstanceCreate3>(gdextension_interface::get_proc_address("script_instance_create3"));
+	const Ref self(const_cast<Javascript *>(this));
 	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, true));
-	return instance;
+	return fn(&javascript_instance_info, instance);
 }
 
 bool Javascript::_instance_has(Object *p_object) const {
