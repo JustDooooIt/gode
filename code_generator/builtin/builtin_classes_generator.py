@@ -1,6 +1,7 @@
 import json
 import os
 from core.base_generator import CodeGenerator
+from utility.string_utils import to_snake_case
 
 class BuiltinClassGenerator(CodeGenerator):
     def run(self):
@@ -53,9 +54,7 @@ class BuiltinClassGenerator(CodeGenerator):
             
             # Generate the files
             # Naming convention: snake_case_binding.gen.h and .cpp
-            import re
-            s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', class_name)
-            snake_name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+            snake_name = to_snake_case(class_name)
             
             # Add snake_name to context for use in templates
             context['snake_name'] = snake_name

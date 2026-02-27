@@ -8,6 +8,9 @@ namespace gode {
 
 // Auto-generated bindings for {{ class_name }}
 class {{ class_name }}Binding : public Napi::ObjectWrap<{{ class_name }}Binding> {
+	friend class JavascriptInstance;
+
+	godot::{{ class_name }} instance;
 public:
     static Napi::Object init(Napi::Env env, Napi::Object exports);
     {{ class_name }}Binding(const Napi::CallbackInfo& info);
