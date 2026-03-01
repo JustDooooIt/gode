@@ -1,5 +1,6 @@
 #include "{{ header_include }}"
 #include "utils/func_utils.h"
+#include <godot_cpp/variant/utility_functions.hpp>
 {% if vararg_header_include %}
 #include "{{ vararg_header_include }}"
 {% endif %}
@@ -16,26 +17,49 @@ namespace gode {
 Napi::FunctionReference {{ class_name }}Binding::constructor;
 
 Napi::Function {{ class_name }}Binding::get_class_constructor(Napi::Env env) {
-    if (!constructor.IsEmpty() && constructor.Env() == env) return constructor.Value();
+    if (!constructor.IsEmpty()) {
+        if (constructor.Env() == env) {
+            return constructor.Value();
+        } else {
+            godot::UtilityFunctions::print("Warning: {{ class_name }} constructor found but env mismatch. Re-defining.");
+        }
+    }
 
     Napi::Function func = DefineClass(env, "{{ js_class_name }}", {
         {% for method in methods %}
-        InstanceMethod("{{ method.name }}", &{{ class_name }}Binding::{{ method.name_cpp }}),
+        {% if method.is_static %}
+        StaticMethod("{{ method.name }}", &{{ class_name }}Binding::{{ method.name_cpp }}),
+        {% endif %}
         {% endfor %}
     });
 
     {% if inherits %}
     Napi::Function parent_ctor = {{ parent_class_name }}Binding::get_class_constructor(env);
-    func.As<Napi::Object>().Set("__proto__", parent_ctor);
-    func.As<Napi::Object>().Get("prototype").As<Napi::Object>().Set("__proto__", parent_ctor.Get("prototype"));
+    if (!parent_ctor.IsEmpty()) {
+        func.As<Napi::Object>().Set("__proto__", parent_ctor);
+        Napi::Value parent_proto = parent_ctor.Get("prototype");
+        if (parent_proto.IsObject()) {
+            func.As<Napi::Object>().Get("prototype").As<Napi::Object>().Set("__proto__", parent_proto);
+        }
+    } else {
+        godot::UtilityFunctions::print("Error: Parent class {{ parent_class_name }} constructor is empty for {{ class_name }}");
+    }
     {% endif %}
+
+    // Manually attach methods to prototype to avoid InstanceMethod's strict 'this' check
+    Napi::Object prototype = func.Get("prototype").As<Napi::Object>();
+    {% for method in methods %}
+    {% if not method.is_static %}
+    prototype.Set("{{ method.name }}", Napi::Function::New(env, &{{ class_name }}Binding::{{ method.name_cpp }}, "{{ method.name }}"));
+    {% endif %}
+    {% endfor %}
 
     constructor = Napi::Persistent(func);
     constructor.SuppressDestruct();
     return func;
 }
 
-Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
+Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     Napi::Function func = get_class_constructor(env);
     exports.Set("{{ js_class_name }}", func);
     return exports;
@@ -55,7 +79,12 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
 
 {% for method in methods %}
 Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackInfo& info) {
-    {% if method.is_static %}
+    {% if not method.is_static %}
+    Napi::Object js_this = info.This().As<Napi::Object>();
+    {{ class_name }}Binding* binding_instance = {{ class_name }}Binding::Unwrap(js_this);
+    godot::{{ godot_class_name }}* instance = binding_instance->instance;
+    {% endif %}
+        {% if method.is_static %}
         {% if method.is_vararg %}
             {% if method.return_type %}
     return call_builtin_static_vararg_method_ret(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, info);

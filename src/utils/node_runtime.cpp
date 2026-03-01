@@ -1,5 +1,5 @@
 #include "utils/node_runtime.h"
-#include "register/utility_functions/utility_functions.h"
+#include "utility_functions/utility_functions.h"
 #include "register_builtin.gen.h"
 #include "register_classes.gen.h"
 #include <cppgc/platform.h>
@@ -76,9 +76,9 @@ static Napi::Value fs_stat(const Napi::CallbackInfo &info) {
 
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 	gode::JsEnvManager::init(env);
-	gode::GD::init(env, exports);
 	gode::register_builtin(env);
-	gode::register_classes(env);
+	gode::register_classes(env, exports);
+	gode::GD::init(env, exports);
 
 	exports.Set("fs_readFile", Napi::Function::New(env, fs_readFile));
 	exports.Set("fs_stat", Napi::Function::New(env, fs_stat));
@@ -209,8 +209,7 @@ void NodeRuntime::init_once() {
 				"    return undefined;"
 				"  }"
 				"};"
-				"globalThis.require = require;"
-				"process._linkedBinding('gode');";
+				"globalThis.require = require;";
 
 		node::LoadEnvironment(env, boot_script.c_str());
 
@@ -312,6 +311,13 @@ void NodeRuntime::shutdown() {
 		// We need to be in the isolate scope to perform cleanup
 		v8::Isolate::Scope isolate_scope(isolate);
 		v8::HandleScope handle_scope(isolate);
+
+		// Run the event loop one last time to process any pending finalizers or callbacks
+		// This can help ensure that resources are properly cleaned up before FreeEnvironment
+		{
+			v8::Context::Scope context_scope(node_context.Get(isolate));
+			node::SpinEventLoop(env).ToChecked();
+		}
 
 		node::Stop(env);
 		node::FreeEnvironment(env);

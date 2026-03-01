@@ -10,16 +10,18 @@ namespace gode {
 class {{ class_name }}Binding : public Napi::ObjectWrap<{{ class_name }}Binding> {
 	friend class JavascriptInstance;
 
+public:
 	godot::{{ godot_class_name }} *instance;
     static Napi::FunctionReference constructor;
-public:
-    static Napi::Object init(Napi::Env env, Napi::Object exports);
+    using Napi::ObjectWrap<{{ class_name }}Binding>::Unwrap; // Ensure Unwrap is accessible if needed, though usually handled by base
+    
+    static Napi::Value init(Napi::Env env, Napi::Object exports);
     static Napi::Function get_class_constructor(Napi::Env env);
     {{ class_name }}Binding(const Napi::CallbackInfo& info);
     
     // Methods
     {% for method in methods %}
-    Napi::Value {{ method.name_cpp }}(const Napi::CallbackInfo& info);
+    static Napi::Value {{ method.name_cpp }}(const Napi::CallbackInfo& info);
     {% endfor %}
 };
 

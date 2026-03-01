@@ -6,12 +6,17 @@
 
 namespace gode {
 
+Napi::FunctionReference {{ class_name }}Binding::constructor;
+
 Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     Napi::Function func = DefineClass(env, "{{ js_class_name }}", {
         {% for method in methods %}
         InstanceMethod("{{ method.name }}", &{{ class_name }}Binding::{{ method.name_cpp }}),
         {% endfor %}
     });
+
+    constructor = Napi::Persistent(func);
+    constructor.SuppressDestruct();
 
     exports.Set("{{ js_class_name }}", func);
     return exports;

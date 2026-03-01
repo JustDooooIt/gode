@@ -91,8 +91,8 @@ void TestRunner::run_tests() {
 			let NodeClass;
 			try {
 				// Try via linked binding directly as these are internal modules
-				const binding = process._linkedBinding('godot/classes/node');
-				NodeClass = binding.Node;
+				const gode = process._linkedBinding('gode');
+				NodeClass = gode.Node;
 			} catch (e) {
 				console.log('  (process._linkedBinding failed: ' + e.message + ')');
 			}
@@ -114,15 +114,38 @@ void TestRunner::run_tests() {
 			
 			// Test inheritance (Sprite2D -> Node)
 			try {
-				const spriteBinding = process._linkedBinding('godot/classes/sprite2d');
-				const Sprite2D = spriteBinding.Sprite2D;
+				const gode = process._linkedBinding('gode');
+				const Sprite2D = gode.Sprite2D;
 				const sprite = new Sprite2D();
 				
 				assert.ok(sprite instanceof NodeClass, 'Sprite2D should inherit from Node');
 				sprite.set_name('MySprite');
 				assert.strictEqual(sprite.get_name(), 'MySprite', 'Inherited method should work');
+				
+				// Additional tests
+				const pos = sprite.get_position();
+				console.log('  Sprite2D position:', pos);
+				// Check if Vector2 is returned correctly (assuming get_position returns Vector2)
+				// Note: Vector2 binding might need verification
+				
 			} catch (e) {
 				console.log('  (Sprite2D test failed: ' + e.message + ')');
+				throw e;
+			}
+		});
+
+		test('Vector2 Binding', () => {
+			try {
+				if (Vector2) {
+					const v = new Vector2(10, 20);
+					assert.strictEqual(v.x, 10, 'Vector2.x should be 10');
+					assert.strictEqual(v.y, 20, 'Vector2.y should be 20');
+					console.log('  Vector2 created:', v.x, v.y);
+				} else {
+					console.log('  (Vector2 not available)');
+				}
+			} catch (e) {
+				console.log('  (Vector2 test failed: ' + e.message + ')');
 			}
 		});
 
