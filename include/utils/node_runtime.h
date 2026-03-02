@@ -20,6 +20,7 @@ public:
 	static void run_script(const std::string &code);
 	static Napi::Value compile_script(const std::string &code, const std::string &filename);
 	static Napi::Function get_default_class(Napi::Value module_exports);
+    static void spin_loop();
 	static void shutdown();
 };
 

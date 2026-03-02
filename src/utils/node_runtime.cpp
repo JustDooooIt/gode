@@ -147,7 +147,19 @@ void NodeRuntime::init_once() {
 				"const path = require('path');"
 				"const fs = require('fs');"
 				"const gode = process._linkedBinding('gode');"
-				""
+                // Register 'gode' in Module._cache so require('gode') works
+                // We create a fake module with id 'gode'
+                "try {"
+                "  const _gode_module = new Module('gode');"
+                "  _gode_module.id = 'gode';"
+                "  _gode_module.exports = gode;"
+                "  _gode_module.loaded = true;"
+                "  _gode_module.filename = 'gode';"
+                "  Module._cache['gode'] = _gode_module;"
+                "} catch (e) {"
+                "  console.error('[Gode] Injection error:', e);"
+                "}"
+                ""
 				"const originalReadFileSync = fs.readFileSync;"
 				"fs.readFileSync = function(p, options) {"
 				"  if (typeof p === 'string' && p.startsWith('res://')) {"
@@ -209,7 +221,25 @@ void NodeRuntime::init_once() {
 				"    return undefined;"
 				"  }"
 				"};"
-				"globalThis.require = require;";
+                // Wrap require to handle 'gode' specially if built-in mechanism fails
+                "const originalRequire = Module.prototype.require;"
+                "Module.prototype.require = function(id) {"
+                "  if (id === 'gode') {"
+                "    return gode;"
+                "  }"
+                "  return originalRequire.call(this, id);"
+                "};"
+                // Override global require as well, just in case
+                "const originalGlobalRequire = globalThis.require || Module.createRequire(process.cwd());"
+                "globalThis.require = function(id) {"
+                "  if (id === 'gode') {"
+                "    return gode;"
+                "  }"
+                "  return originalGlobalRequire.call(this, id);"
+                "};"
+                // Copy properties to keep compatibility
+                "if (originalGlobalRequire) Object.assign(globalThis.require, originalGlobalRequire);";
+                // "globalThis.require = require;";
 
 		node::LoadEnvironment(env, boot_script.c_str());
 
@@ -299,6 +329,32 @@ Napi::Function NodeRuntime::get_default_class(Napi::Value module_exports) {
 	}
 
 	return Napi::Function();
+}
+
+void NodeRuntime::spin_loop() {
+    if (!node_initialized || !env) {
+        return;
+    }
+
+    v8::Isolate::Scope isolate_scope(isolate);
+    v8::HandleScope handle_scope(isolate);
+    
+    // We need a context scope to run the loop? 
+    // uv_run doesn't necessarily need v8 context, but node::CallbackScope might.
+    // Let's ensure we are in the correct context.
+    v8::Local<v8::Context> context = node_context.Get(isolate);
+    v8::Context::Scope context_scope(context);
+
+    // Run the event loop in non-blocking mode
+    // UV_RUN_NOWAIT: Poll for i/o once and returns immediately.
+    // This will process timers, pending callbacks, idle handles, prepare handles, i/o, check handles.
+    // It returns non-zero if there are still active handles or requests.
+    uv_run(uv_default_loop(), UV_RUN_NOWAIT);
+    
+    // Drain microtasks (Promises)
+    // Node.js usually handles this automatically in the loop, but sometimes explicit drain is needed 
+    // if we are driving it manually from outside.
+    // isolate->PerformMicrotaskCheckpoint(); // Use this if promises are not resolving
 }
 
 void NodeRuntime::shutdown() {

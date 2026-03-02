@@ -89,12 +89,17 @@ void TestRunner::run_tests() {
 
 		test('Godot Node Class Binding', () => {
 			let NodeClass;
-			try {
+            try {
+                // console.log('[DEBUG] Trying require("gode")...');
+                // console.log('[DEBUG] require.cache keys before require:', Object.keys(require.cache));
+                const gode = require('gode');
+                // console.log('[DEBUG] require("gode") success:', gode);
+                
 				// Try via linked binding directly as these are internal modules
-				const gode = process._linkedBinding('gode');
 				NodeClass = gode.Node;
 			} catch (e) {
-				console.log('  (process._linkedBinding failed: ' + e.message + ')');
+				console.log('  (require failed: ' + e.message + ')');
+                console.log(e.stack);
 			}
 
 			if (!NodeClass) {
@@ -114,7 +119,7 @@ void TestRunner::run_tests() {
 			
 			// Test inheritance (Sprite2D -> Node)
 			try {
-				const gode = process._linkedBinding('gode');
+				const gode = require('gode');
 				const Sprite2D = gode.Sprite2D;
 				const sprite = new Sprite2D();
 				
