@@ -1,10 +1,12 @@
 #ifndef NODE_RUNTIME_H
 #define NODE_RUNTIME_H
 
+#include "node.h"
 
 #include <napi.h>
 
 #include <string>
+
 
 namespace gode {
 
@@ -16,6 +18,10 @@ public:
 
 class NodeRuntime {
 public:
+	static v8::Isolate *isolate;
+	static node::Environment *env;
+	static v8::Global<v8::Context> node_context;
+
 	static void init_once();
 	static void run_script(const std::string &code);
 	static Napi::Value compile_script(const std::string &code, const std::string &filename);

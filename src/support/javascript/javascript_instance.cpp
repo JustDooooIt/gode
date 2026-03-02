@@ -1,13 +1,16 @@
 #include "support/javascript/javascript_instance.h"
-#include "godot_cpp/variant/utility_functions.hpp"
+
+#include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/project_settings.hpp"
+#include "godot_cpp/variant/utility_functions.hpp"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
+#include "v8-isolate.h"
+#include "v8-locker.h"
 
 using namespace godot;
 
 namespace gode {
-
 bool JavascriptInstance::compile_module() {
 	if (!javascript.is_valid()) {
 		return false;
@@ -19,28 +22,20 @@ bool JavascriptInstance::compile_module() {
 		return false;
 	}
 
-    // Convert res:// path to absolute file system path
-    // Node.js module system requires absolute paths to handle dependencies and caching correctly
-    // especially when dealing with ESM/CJS interop which might try to convert paths to URLs.
-    // While users might prefer res:// in stack traces, Node.js internals (pathToFileURL) will crash
-    // if given a non-file path when ESM logic is triggered.
-    // The safest way is to use the real OS path.
-    String abs_path = ProjectSettings::get_singleton()->globalize_path(path);
+	// Ensure V8 isolate is locked
+	v8::Locker locker(NodeRuntime::isolate);
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	Napi::HandleScope scope(JsEnvManager::get_env());
 
-    // We MUST have a HandleScope here because compile_script returns a Napi::Value that wraps a v8::Local handle.
-    // That handle must be allocated in a scope that outlives the call.
-    // Since compile_script creates its own scopes and then escapes the handle, 
-    // the escaped handle lands in the CURRENT HandleScope.
-    // If there is no current HandleScope, the handle is invalid or leaks (depending on V8 version).
-    Napi::HandleScope scope(JsEnvManager::get_env());
+	String abs_path = ProjectSettings::get_singleton()->globalize_path(path);
 	Napi::Value exports = NodeRuntime::compile_script(source_code.utf8().get_data(), abs_path.utf8().get_data());
 	Napi::Function default_class = NodeRuntime::get_default_class(exports);
 	if (default_class.IsEmpty()) {
 		return false;
 	}
 
-    Napi::Value external_owner = Napi::External<godot::Object>::New(JsEnvManager::get_env(), owner);
-	Napi::Object instance = default_class.New({external_owner});
+	Napi::Value external_owner = Napi::External<godot::Object>::New(JsEnvManager::get_env(), owner);
+	Napi::Object instance = default_class.New({ external_owner });
 	js_instance = Napi::Persistent(instance);
 	return true;
 }
@@ -65,43 +60,56 @@ bool JavascriptInstance::is_placeholder() const {
 }
 
 bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
+	v8::Locker locker(NodeRuntime::isolate);
 	(void)p_name;
 	(void)p_value;
 	return false;
 }
 
 bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
+	v8::Locker locker(NodeRuntime::isolate);
 	(void)p_name;
 	(void)r_value;
 	return false;
 }
 
 bool JavascriptInstance::has_method(const StringName &p_method) const {
+	v8::Locker locker(NodeRuntime::isolate);
 	if (js_instance.IsEmpty()) {
 		return false;
 	}
 	Napi::HandleScope scope(JsEnvManager::get_env());
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	Napi::Object instance = js_instance.Value();
 	std::string method_name = String(p_method).utf8().get_data();
 	return instance.Has(method_name) && instance.Get(method_name).IsFunction();
 }
 
 int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
+	v8::Locker locker(NodeRuntime::isolate);
 	(void)p_method;
 	r_is_valid = false;
 	return 0;
 }
 
 Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_args, int32_t p_argcount, GDExtensionCallError &r_error) {
+	if (!javascript->is_tool() && Engine::get_singleton()->is_editor_hint()) {
+		r_error.error = GDExtensionCallErrorType::GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		return Variant();
+	}
+
 	if (js_instance.IsEmpty()) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
 		return Variant();
 	}
 
+	v8::Locker locker(NodeRuntime::isolate);
+
 	Napi::HandleScope scope(JsEnvManager::get_env());
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	Napi::Object instance = js_instance.Value();
 	std::string method_name = String(p_method).utf8().get_data();
-	
+
 	if (!instance.Has(method_name)) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
@@ -153,5 +161,4 @@ void JavascriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, u
 Ref<Javascript> JavascriptInstance::get_script() const {
 	return javascript;
 }
-
-} // namespace gode
+} //namespace gode

@@ -29,10 +29,11 @@ Napi::Env JsEnvManager::get_env() {
 static bool node_initialized = false;
 static std::unique_ptr<node::MultiIsolatePlatform> platform;
 static std::unique_ptr<node::ArrayBufferAllocator> allocator;
-static v8::Isolate *isolate = nullptr;
-static node::Environment *env = nullptr;
 static node::IsolateData *isolate_data = nullptr;
-static v8::Global<v8::Context> node_context;
+
+v8::Isolate *NodeRuntime::isolate = nullptr;
+node::Environment *NodeRuntime::env = nullptr;
+v8::Global<v8::Context> NodeRuntime::node_context;
 
 static Napi::Value fs_readFile(const Napi::CallbackInfo &info) {
 	Napi::Env env = info.Env();
@@ -227,16 +228,10 @@ void NodeRuntime::init_once() {
 				"    m.filename = filename;"
 				"    m.paths = Module._nodeModulePaths(path.dirname(filename));"
 				"    m._compile(code, filename);"
-				"    console.log('Gode compiled exports:', m.exports);"
 				"    return m.exports;"
 				"  } catch (e) {"
 				"    console.error('Gode compile error:', e);"
-				"    return e;" // Return error object on failure? No, caller expects undefined or exports.
-				// If we return undefined, C++ sees it as empty?
-				// compile_script checks result.IsEmpty().
-				// But fn->Call returns undefined (as Value) if the function returns undefined.
-				// Wait, if function returns undefined, Call returns a Local<Value> wrapping undefined.
-				// It is NOT Empty.
+				"    return e;"
 				"  }"
 				"};"
 				"const originalRequire = Module.prototype.require;"
@@ -326,30 +321,8 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 
 	v8::Local<v8::Value> final_exports = result.ToLocalChecked();
 
-	// Debug result type
-	// godot::UtilityFunctions::print("compile_script: final_exports IsUndefined: ", final_exports->IsUndefined());
-	// godot::UtilityFunctions::print("compile_script: final_exports IsNull: ", final_exports->IsNull());
-	// godot::UtilityFunctions::print("compile_script: final_exports IsObject: ", final_exports->IsObject());
-	// godot::UtilityFunctions::print("compile_script: final_exports IsFunction: ", final_exports->IsFunction());
-
 	if (final_exports->IsUndefined()) {
 		v8::Local<v8::Value> undefined_val = v8::Undefined(isolate);
-		// If we are here, it means JS returned undefined, BUT JS log said it returned a class!
-		// This is extremely weird.
-
-		// Maybe the HandleScope in JavascriptInstance::compile_module is not enough?
-		// No, that handles the return value lifetime.
-
-		// Maybe `fn->Call` logic is somehow flawed?
-		// We pass context->Global() as receiver. `globalThis.__gode_compile` expects global as `this`?
-		// Yes.
-
-		// Maybe `args` are wrong?
-		// code and filename strings. They seem fine.
-
-		// Is it possible that `result` handle is somehow invalidated immediately?
-		// We are inside `escapable_scope`.
-
 		return Napi::Value(JsEnvManager::get_env(), reinterpret_cast<napi_value>(*escapable_scope.Escape(undefined_val)));
 	}
 
@@ -410,6 +383,7 @@ void NodeRuntime::shutdown() {
 	}
 
 	if (env) {
+		v8::Locker locker(isolate);
 		v8::Isolate::Scope isolate_scope(isolate);
 		v8::HandleScope handle_scope(isolate);
 
