@@ -3,14 +3,19 @@
 
 #include "support/javascript/javascript.h"
 #include <napi.h>
+#include <godot_cpp/classes/ref.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
 
 namespace gode {
+
+class Javascript;
 
 class JavascriptInstance {
 	godot::Ref<Javascript> javascript;
 	godot::Object *owner = nullptr;
 	Napi::ObjectReference js_instance;
 	bool placeholder = false;
+	godot::HashMap<godot::StringName, godot::Variant> placeholder_properties;
 
 	friend class JavascriptInstanceInfo;
 
@@ -36,12 +41,12 @@ public:
 	bool property_get_revert(const godot::StringName &p_name, godot::Variant &r_ret) const;
 
 	void get_property_list(const GDExtensionPropertyInfo *&r_list, uint32_t &r_count) const;
+	void free_property_list(const GDExtensionPropertyInfo *p_list) const;
 	void get_method_list(const GDExtensionMethodInfo *&r_list, uint32_t &r_count) const;
+	void free_method_list(const GDExtensionMethodInfo *p_list) const;
 
 	godot::Ref<Javascript> get_script() const;
-
 };
 } // namespace gode
-
 
 #endif // GODOT_JAVASCRIPT_INSTANCE_H

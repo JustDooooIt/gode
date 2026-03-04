@@ -19,7 +19,7 @@ extern "C" const TSLanguage *tree_sitter_javascript();
 void Javascript::_bind_methods() {
 }
 
-bool Javascript::compile() {
+bool Javascript::compile() const {
 	if (!is_dirty) {
 		return true;
 	}
@@ -119,8 +119,29 @@ bool Javascript::compile() {
 					String method_name_str = String::utf8(source.substr(start, end - start).c_str());
 					StringName method_name = StringName(method_name_str);
 
+					// Check for static modifier
+					bool is_static = false;
+					TSNode static_node = ts_node_child_by_field_name(member, "static", strlen("static"));
+					if (!ts_node_is_null(static_node)) {
+						// Wait, Tree-sitter JS grammar usually puts 'static' keyword as a child of method_definition?
+						// Or it's a field "static" (boolean)? No, it's a child node "static".
+						// Let's check child nodes for "static" keyword.
+						uint32_t method_child_count = ts_node_child_count(member);
+						for (uint32_t k = 0; k < method_child_count; k++) {
+							TSNode method_child = ts_node_child(member, k);
+							const char *child_type = ts_node_type(method_child);
+							if (strcmp(child_type, "static") == 0) {
+								is_static = true;
+								break;
+							}
+						}
+					}
+
 					MethodInfo mi;
 					mi.name = method_name;
+                    if (is_static) {
+                        mi.flags |= METHOD_FLAG_STATIC;
+                    }
 					methods[method_name] = mi;
 					member_lines[method_name] = ts_node_start_point(member).row + 1;
 				}
@@ -144,14 +165,15 @@ Napi::Function Javascript::get_default_class() const {
 }
 
 bool Javascript::_editor_can_reload_from_file() {
-	return false;
+	return true;
 }
 
 void Javascript::_placeholder_erased(void *p_placeholder) {
+	placeholder_instances.erase(static_cast<JavascriptInstance *>(p_placeholder));
 }
 
 bool Javascript::_can_instantiate() const {
-	return true;
+	return compile();
 }
 
 Ref<Script> Javascript::_get_base_script() const {
@@ -159,32 +181,38 @@ Ref<Script> Javascript::_get_base_script() const {
 }
 
 StringName Javascript::_get_global_name() const {
-	return StringName();
+	return class_name;
 }
 
 bool Javascript::_inherits_script(const Ref<Script> &p_script) const {
+	Ref<Javascript> base_script = Ref(p_script);
+	if (p_script.is_valid() && base_script->class_name == base_class_name) {
+		return true;
+	}
 	return false;
 }
 
 StringName Javascript::_get_instance_base_type() const {
-	return StringName();
+	return base_class_name;
 }
 
 void *Javascript::_instance_create(Object *p_for_object) const {
 	const Ref self(const_cast<Javascript *>(this));
 	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, false));
+	instances.insert(instance);
+	instance_objects.insert(p_for_object);
 	return gdextension_interface::script_instance_create3(&javascript_instance_info, instance);
 }
 
 void *Javascript::_placeholder_instance_create(Object *p_for_object) const {
 	const Ref self(const_cast<Javascript *>(this));
 	JavascriptInstance *instance = memnew(JavascriptInstance(self, p_for_object, true));
+	placeholder_instances.insert(instance);
 	return gdextension_interface::script_instance_create3(&javascript_instance_info, instance);
 }
 
 bool Javascript::_instance_has(Object *p_object) const {
-	(void)p_object;
-	return true;
+	return instance_objects.has(p_object);
 }
 
 bool Javascript::_has_source_code() const {
@@ -197,7 +225,6 @@ String Javascript::_get_source_code() const {
 
 void Javascript::_set_source_code(const String &p_code) {
 	is_dirty = true;
-	compile();
 	source_code = p_code;
 }
 
@@ -219,10 +246,13 @@ String Javascript::_get_class_icon_path() const {
 }
 
 bool Javascript::_has_method(const StringName &p_method) const {
-	return false;
+	return methods.has(p_method);
 }
 
 bool Javascript::_has_static_method(const StringName &p_method) const {
+	if (methods.has(p_method)) {
+		return methods[p_method].flags & METHOD_FLAG_STATIC;
+	}
 	return false;
 }
 
@@ -231,8 +261,7 @@ Variant Javascript::_get_script_method_argument_count(const StringName &p_method
 }
 
 Dictionary Javascript::_get_method_info(const StringName &p_method) const {
-	Dictionary info;
-	return info;
+	return methods.get(p_method);
 }
 
 bool Javascript::_is_tool() const {
@@ -240,7 +269,7 @@ bool Javascript::_is_tool() const {
 }
 
 bool Javascript::_is_valid() const {
-	return false;
+	return is_valid;
 }
 
 bool Javascript::_is_abstract() const {

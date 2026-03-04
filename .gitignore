@@ -16,6 +16,7 @@ bin
 example/.godot/
 example/addons/gode/bin/*
 !example/addons/gode/bin/.gdextension
+example/node_modules
 
 # Ignore generated files
 include/generated

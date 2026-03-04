@@ -48,6 +48,15 @@ bool JavascriptInstance::is_placeholder() const {
 }
 
 bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
+	if (placeholder) {
+		if (javascript->_has_property_default_value(p_name)) {
+			placeholder_properties[p_name] = p_value;
+			return true;
+		}
+		placeholder_properties[p_name] = p_value;
+		return true;
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -55,6 +64,18 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
+	if (placeholder) {
+		if (placeholder_properties.has(p_name)) {
+			r_value = placeholder_properties[p_name];
+			return true;
+		}
+		if (javascript->_has_property_default_value(p_name)) {
+			r_value = javascript->_get_property_default_value(p_name);
+			return true;
+		}
+		return false;
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -69,6 +90,9 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 }
 
 bool JavascriptInstance::has_method(const StringName &p_method) const {
+	if (placeholder) {
+		return javascript->_has_method(p_method);
+	}
 	if (js_instance.IsEmpty()) {
 		return false;
 	}
@@ -88,6 +112,11 @@ int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method
 }
 
 Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_args, int32_t p_argcount, GDExtensionCallError &r_error) {
+	if (placeholder) {
+		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		return Variant();
+	}
+
 	if (!javascript->is_tool() && Engine::get_singleton()->is_editor_hint()) {
 		r_error.error = GDExtensionCallErrorType::GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
@@ -128,6 +157,11 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 }
 
 String JavascriptInstance::to_string(bool &r_is_valid) const {
+	if (placeholder) {
+		r_is_valid = true;
+		return "JavascriptInstance(Placeholder)";
+	}
+	// TODO: Call toString() on js_instance if available?
 	r_is_valid = false;
 	return String();
 }
@@ -144,13 +178,27 @@ bool JavascriptInstance::property_get_revert(const StringName &p_name, Variant &
 }
 
 void JavascriptInstance::get_property_list(const GDExtensionPropertyInfo *&r_list, uint32_t &r_count) const {
+	// TODO: Implement property list retrieval from script metadata
 	(void)r_list;
 	r_count = 0;
 }
 
+void JavascriptInstance::free_property_list(const GDExtensionPropertyInfo *p_list) const {
+	if (p_list) {
+		// memdelete_arr(p_list);
+	}
+}
+
 void JavascriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, uint32_t &r_count) const {
+	// TODO: Implement method list retrieval from script metadata
 	(void)r_list;
 	r_count = 0;
+}
+
+void JavascriptInstance::free_method_list(const GDExtensionMethodInfo *p_list) const {
+	if (p_list) {
+		// memdelete_arr(p_list);
+	}
 }
 
 Ref<Javascript> JavascriptInstance::get_script() const {

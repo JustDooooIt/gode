@@ -49,9 +49,11 @@ static const GDExtensionPropertyInfo *javascript_instance_get_property_list(GDEx
 }
 
 static void javascript_instance_free_property_list(GDExtensionScriptInstanceDataPtr p_instance, const GDExtensionPropertyInfo *p_list, uint32_t p_count) {
-	(void)p_instance;
-	(void)p_list;
-	(void)p_count;
+	JavascriptInstance *instance = cast_instance(p_instance);
+	if (!instance) {
+		return;
+	}
+	instance->free_property_list(p_list);
 }
 
 static GDExtensionBool javascript_instance_get_class_category(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionPropertyInfo *p_class_category) {
@@ -104,12 +106,6 @@ static GDExtensionObjectPtr javascript_instance_get_owner(GDExtensionScriptInsta
 	return owner ? owner->_owner : nullptr;
 }
 
-static void javascript_instance_get_property_state_add(GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value, void *p_userdata) {
-	(void)p_name;
-	(void)p_value;
-	(void)p_userdata;
-}
-
 static void javascript_instance_get_property_state(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionScriptInstancePropertyStateAdd p_add_func, void *p_userdata) {
 	(void)p_instance;
 	(void)p_add_func;
@@ -134,9 +130,11 @@ static const GDExtensionMethodInfo *javascript_instance_get_method_list(GDExtens
 }
 
 static void javascript_instance_free_method_list(GDExtensionScriptInstanceDataPtr p_instance, const GDExtensionMethodInfo *p_list, uint32_t p_count) {
-	(void)p_instance;
-	(void)p_list;
-	(void)p_count;
+	JavascriptInstance *instance = cast_instance(p_instance);
+	if (!instance) {
+		return;
+	}
+	instance->free_method_list(p_list);
 }
 
 static GDExtensionBool javascript_instance_has_method(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name) {
