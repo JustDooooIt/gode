@@ -104,6 +104,24 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
         instance = nullptr;
         {% endif %}
     }
+    
+    if (instance) {
+        internal_object_id = instance->get_instance_id();
+    }
+}
+
+{{ class_name }}Binding::~{{ class_name }}Binding() {
+    {% if is_node %}
+    if (internal_object_id != 0) {
+        godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
+        if (obj) {
+            godot::Node* node = godot::Object::cast_to<godot::Node>(obj);
+            if (node && !node->is_inside_tree()) {
+                node->queue_free();
+            }
+        }
+    }
+    {% endif %}
 }
 
 Napi::Value {{ class_name }}Binding::_to_string(const Napi::CallbackInfo& info) {
@@ -113,6 +131,13 @@ Napi::Value {{ class_name }}Binding::_to_string(const Napi::CallbackInfo& info) 
     if (!instance) {
         return Napi::String::New(info.Env(), "null");
     }
+    if (binding_instance->internal_object_id != 0) {
+        godot::Object* obj = godot::ObjectDB::get_instance(binding_instance->internal_object_id);
+        if (!obj) {
+            binding_instance->instance = nullptr;
+            return Napi::String::New(info.Env(), "null (freed)");
+        }
+    }
     return Napi::String::New(info.Env(), instance->to_string().utf8().get_data());
 }
 
@@ -121,7 +146,29 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
     {% if not method.is_static %}
     Napi::Object js_this = info.This().As<Napi::Object>();
     {{ class_name }}Binding* binding_instance = {{ class_name }}Binding::Unwrap(js_this);
+    
+    if (binding_instance->internal_object_id != 0) {
+        godot::Object* obj = godot::ObjectDB::get_instance(binding_instance->internal_object_id);
+        if (!obj) {
+            binding_instance->instance = nullptr;
+            Napi::Error::New(info.Env(), "Object has been deleted").ThrowAsJavaScriptException();
+            return info.Env().Null();
+        }
+        // Update instance pointer in case it changed (unlikely for same ID but good practice)
+        // Actually for godot-cpp wrappers, the wrapper might be deleted if we don't hold a reference?
+        // But we hold 'instance' which is a pointer to the wrapper.
+        // Wait, if the underlying object is deleted, the wrapper 'instance' pointer points to valid C++ memory (the wrapper),
+        // but the wrapper's internal GDExtensionObjectPtr is invalid?
+        // godot-cpp wrappers check validity internally? No, they are thin wrappers.
+        // Let's cast obj back to our type.
+        binding_instance->instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(obj);
+    }
+    
     godot::{{ godot_class_name }}* instance = binding_instance->instance;
+    if (!instance) {
+         Napi::Error::New(info.Env(), "Object is null").ThrowAsJavaScriptException();
+         return info.Env().Null();
+    }
     {% endif %}
         {% if method.is_static %}
         {% if method.is_vararg %}

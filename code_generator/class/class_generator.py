@@ -216,11 +216,27 @@ class ClassGenerator(CodeGenerator):
                         method['has_return_value'] = False
                     vararg_methods.append(method)
             
+            # Determine if class inherits from Node
+            is_node = False
+            current_class = class_name
+            while current_class:
+                if current_class == 'Node':
+                    is_node = True
+                    break
+                # Find parent class
+                parent = None
+                for c in api_data['classes']:
+                    if c['name'] == current_class:
+                        parent = c.get('inherits')
+                        break
+                current_class = parent
+
             context = {
                 'js_class_name': js_class_name,
                 'godot_class_name': godot_class_name,
                 'godot_include_name': godot_include_name,
                 'class_name': class_name,
+                'is_node': is_node,
                 'snake_name': snake_name,
                 'godot_header_dir': 'core' if class_name == 'Object' else 'classes',
                 'generated_subdir': 'classes',

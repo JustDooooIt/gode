@@ -24,6 +24,7 @@ private:
 
 public:
 	JavascriptInstance(const godot::Ref<Javascript> &p_javascript, godot::Object *p_owner, bool p_placeholder);
+	~JavascriptInstance();
 
 	godot::Object *get_owner() const;
 	bool is_placeholder() const;

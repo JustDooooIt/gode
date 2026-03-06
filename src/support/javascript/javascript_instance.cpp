@@ -39,6 +39,12 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 	}
 }
 
+JavascriptInstance::~JavascriptInstance() {
+	if (!js_instance.IsEmpty()) {
+		js_instance.Reset();
+	}
+}
+
 Object *JavascriptInstance::get_owner() const {
 	return owner;
 }
