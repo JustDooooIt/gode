@@ -11,23 +11,6 @@
 
 namespace gode {
 
-template <typename T>
-inline T convert_arg(const godot::Variant &v) {
-	if constexpr (std::is_enum_v<T>) {
-		return reinterpret_cast<T>(static_cast<int64_t>(v));
-	} else if constexpr (std::is_pointer_v<T> && std::is_base_of_v<godot::Object, std::remove_pointer_t<T>>) {
-		return reinterpret_cast<T>(static_cast<godot::Object *>(v));
-	} else if constexpr (std::is_same_v<T, char> || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t> || std::is_same_v<T, wchar_t>) {
-		godot::String s = v;
-		if (s.length() == 0) {
-			return static_cast<T>(0);
-		}
-		return static_cast<T>(s[0]);
-	} else {
-		return static_cast<T>(v);
-	}
-}
-
 inline std::vector<Napi::Value> to_args_array(const Napi::CallbackInfo &info) {
 	std::size_t argc = info.Length();
 	std::vector<Napi::Value> args;
