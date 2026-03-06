@@ -173,51 +173,51 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
         {% if method.is_static %}
         {% if method.is_vararg %}
             {% if method.return_type %}
-    return call_builtin_static_vararg_method_ret(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, info);
+    return call_builtin_method(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, info);
             {% else %}
-    return call_builtin_static_vararg_method_no_ret(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, info);
+    return call_builtin_method(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, info);
             {% endif %}
         {% else %}
             {% if method.return_type %}
-    return call_builtin_static_method_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, info);
             {% else %}
-    return call_builtin_static_method_no_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, info);
             {% endif %}
         {% endif %}
     {% else %}
         {% if method.is_vararg %}
             {% if method.return_type %}
-    return call_builtin_vararg_method_ret(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, instance, info);
+    return call_builtin_method(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, instance, info);
             {% else %}
-    return call_builtin_vararg_method_no_ret(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, instance, info);
+    return call_builtin_method(&gode::classes::{{ snake_name }}::{{ method.name_cpp }}_internal, instance, info);
             {% endif %}
         {% else %}
             {% if method.is_const %}
                 {% if method.return_type %}
                     {% if method.cast_signature %}
-    return call_builtin_const_method_ret({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
                     {% else %}
-    return call_builtin_const_method_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
                     {% endif %}
                 {% else %}
                     {% if method.cast_signature %}
-    return call_builtin_const_method_no_ret({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
                     {% else %}
-    return call_builtin_const_method_no_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
                     {% endif %}
                 {% endif %}
             {% else %}
                 {% if method.return_type %}
                     {% if method.cast_signature %}
-    return call_builtin_method_ret({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
                     {% else %}
-    return call_builtin_method_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
                     {% endif %}
                 {% else %}
                     {% if method.cast_signature %}
-    return call_builtin_method_no_ret({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info);
                     {% else %}
-    return call_builtin_method_no_ret(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
+    return call_builtin_method(&godot::{{ godot_class_name }}::{{ method.name_cpp }}, instance, info);
                     {% endif %}
                 {% endif %}
             {% endif %}

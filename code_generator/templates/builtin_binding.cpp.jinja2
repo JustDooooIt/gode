@@ -55,22 +55,22 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
     {% if method.is_static %}
         {% if method.is_vararg %}
             {% if method.return_type %}
-    return call_builtin_static_vararg_method_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
             {% else %}
-    return call_builtin_static_vararg_method_no_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
             {% endif %}
         {% else %}
             {% if method.return_type %}
                 {% if method.cast_signature %}
-    return call_builtin_static_method_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), info);
                 {% else %}
-    return call_builtin_static_method_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
                 {% endif %}
             {% else %}
                 {% if method.cast_signature %}
-    return call_builtin_static_method_no_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), info);
                 {% else %}
-    return call_builtin_static_method_no_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, info);
                 {% endif %}
             {% endif %}
         {% endif %}
@@ -78,44 +78,44 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
         {% if method.is_const %}
             {% if method.is_vararg %}
                 {% if method.return_type %}
-    return call_builtin_vararg_method_ret(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
+    return call_builtin_method(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
                 {% else %}
-    return call_builtin_vararg_method_no_ret(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
+    return call_builtin_method(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
                 {% endif %}
             {% else %}
                 {% if method.return_type %}
                     {% if method.cast_signature %}
-    return call_builtin_const_method_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
                     {% else %}
-    return call_builtin_const_method_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
                     {% endif %}
                 {% else %}
                     {% if method.cast_signature %}
-    return call_builtin_const_method_no_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
                     {% else %}
-    return call_builtin_const_method_no_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
                     {% endif %}
                 {% endif %}
             {% endif %}
         {% else %}
             {% if method.is_vararg %}
                 {% if method.return_type %}
-    return call_builtin_vararg_method_ret(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
+    return call_builtin_method(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
                 {% else %}
-    return call_builtin_vararg_method_no_ret(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
+    return call_builtin_method(&gode::builtin::{{ snake_name }}::{{ method.name_cpp }}_internal, &instance, info);
                 {% endif %}
             {% else %}
                 {% if method.return_type %}
                     {% if method.cast_signature %}
-    return call_builtin_method_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
                     {% else %}
-    return call_builtin_method_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
                     {% endif %}
                 {% else %}
                     {% if method.cast_signature %}
-    return call_builtin_method_no_ret({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
+    return call_builtin_method({{ method.cast_signature }}(&godot::{{ class_name }}::{{ method.name_cpp }}), &instance, info);
                     {% else %}
-    return call_builtin_method_no_ret(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
+    return call_builtin_method(&godot::{{ class_name }}::{{ method.name_cpp }}, &instance, info);
                     {% endif %}
                 {% endif %}
             {% endif %}
@@ -129,7 +129,7 @@ Napi::Value {{ class_name }}Binding::{{ member.getter }}(const Napi::CallbackInf
     {% if member.is_field %}
     return gode::godot_to_napi(info.Env(), instance.{{ member.mapped_name }});
     {% else %}
-    return gode::call_builtin_const_method_ret(&godot::{{ class_name }}::{{ member.getter }}, &instance, info);
+    return gode::call_builtin_method(&godot::{{ class_name }}::{{ member.getter }}, &instance, info);
     {% endif %}
 }
 
@@ -137,7 +137,7 @@ void {{ class_name }}Binding::{{ member.setter }}(const Napi::CallbackInfo& info
     {% if member.is_field %}
     instance.{{ member.mapped_name }} = gode::napi_to_godot<{{ member.type_cpp }}>(value);
     {% else %}
-    gode::call_builtin_method_no_ret(&godot::{{ class_name }}::{{ member.setter }}, &instance, info, value);
+    gode::call_builtin_method(&godot::{{ class_name }}::{{ member.setter }}, &instance, info, value);
     {% endif %}
 }
 {% endfor %}

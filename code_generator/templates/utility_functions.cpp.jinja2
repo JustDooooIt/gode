@@ -35,17 +35,9 @@ GD::GD(const Napi::CallbackInfo &info) :
 {% for func in utility_functions %}
 Napi::Value GD::{{ func.name }}(const Napi::CallbackInfo &info) {
     {% if func.is_vararg %}
-        {% if func.has_return_value %}
-	return call_builtin_static_vararg_method_ret(&gode::utility::{{ func.name }}_internal, info);
-        {% else %}
-	return call_builtin_static_vararg_method_no_ret(&gode::utility::{{ func.name }}_internal, info);
-        {% endif %}
+    return call_builtin_method(&gode::utility::{{ func.name }}_internal, info);
     {% else %}
-        {% if func.has_return_value %}
-	return call_builtin_static_method_ret(&godot::UtilityFunctions::{{ func.cpp_name }}, info);
-        {% else %}
-	return call_builtin_static_method_no_ret(&godot::UtilityFunctions::{{ func.cpp_name }}, info);
-        {% endif %}
+    return call_builtin_method(&godot::UtilityFunctions::{{ func.cpp_name }}, info);
     {% endif %}
 }
 {% endfor %}
