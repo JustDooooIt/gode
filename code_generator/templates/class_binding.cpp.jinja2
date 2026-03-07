@@ -62,7 +62,18 @@ Napi::Function {{ class_name }}Binding::get_class_constructor(Napi::Env env) {
 
     // Manually attach methods to prototype to avoid InstanceMethod's strict 'this' check
     Napi::Object prototype = func.Get("prototype").As<Napi::Object>();
-    
+    // Add signals
+    {% for signal in signals %}
+    {
+        Napi::PropertyDescriptor descriptor = Napi::PropertyDescriptor::Accessor(
+            "{{ signal.name }}",
+            &{{ class_name }}Binding::signal_{{ signal.name }},
+            napi_default
+        );
+        prototype.DefineProperty(descriptor);
+    }
+    {% endfor %}
+
     // Add properties
     {% for prop in properties %}
     {% if prop.getter and prop.setter %}
@@ -156,6 +167,19 @@ Napi::Value {{ class_name }}Binding::_to_string(const Napi::CallbackInfo& info) 
     }
     return Napi::String::New(info.Env(), instance->to_string().utf8().get_data());
 }
+
+{% for signal in signals %}
+Napi::Value {{ class_name }}Binding::signal_{{ signal.name }}(const Napi::CallbackInfo& info) {
+    Napi::Object js_this = info.This().As<Napi::Object>();
+    {{ class_name }}Binding* binding_instance = {{ class_name }}Binding::Unwrap(js_this);
+    godot::{{ godot_class_name }}* instance = binding_instance->instance;
+    if (!instance) {
+        return info.Env().Null();
+    }
+    godot::Signal signal(instance, "{{ signal.name }}");
+    return godot_to_napi(info.Env(),signal);
+}
+{% endfor %}
 
 {% for method in methods %}
 Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackInfo& info) {

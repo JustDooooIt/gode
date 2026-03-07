@@ -7,7 +7,6 @@
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 
-#include "support/javascript/javascript_callable.h"
 #include "builtin/aabb_binding.gen.h"
 #include "builtin/array_binding.gen.h"
 #include "builtin/basis_binding.gen.h"
@@ -42,6 +41,7 @@
 #include "builtin/vector3i_binding.gen.h"
 #include "builtin/vector4_binding.gen.h"
 #include "builtin/vector4i_binding.gen.h"
+#include "support/javascript/javascript_callable.h"
 
 // Helper macros for creating N-API objects from Godot variants
 #define BIND_BUILTIN_TO_NAPI(VariantType, BindingClass)               \
@@ -129,34 +129,6 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 			BIND_BUILTIN_TO_NAPI(COLOR, ColorBinding)
 			BIND_BUILTIN_TO_NAPI(NODE_PATH, NodePathBinding)
 			BIND_BUILTIN_TO_NAPI(RID, RIDBinding)
-
-		case godot::Variant::Type::CALLABLE: {
-			godot::Callable callable = variant;
-			if (callable.is_custom()) {
-				gode::JavascriptCallable *js_callable = dynamic_cast<gode::JavascriptCallable *>(callable.get_custom());
-				if (js_callable) {
-					// Don't unwrap if we are inside a container structure, 
-                    // because we want to preserve the Callable identity in Godot
-                    // But wait, the original logic was returning the function itself.
-                    // If we return the function, JS sees a function.
-                    // But in get_signal_connection_list, we get a Dictionary.
-                    // The 'callable' field is a Variant::CALLABLE.
-                    // If we return the JS function here, then `conn_info.get("callable")` will return the JS function.
-					return js_callable->get_function();
-				}
-			}
-			Napi::Object obj = CallableBinding::constructor.Value().New({});
-			CallableBinding *binding = CallableBinding::Unwrap(obj);
-			binding->instance = variant;
-            
-            // Register custom callable properties
-            if (callable.is_custom()) {
-                 obj.Set("callable", Napi::External<void>::New(env, callable.get_custom()));
-            }
-
-			return obj;
-		}
-
 			BIND_BUILTIN_TO_NAPI(SIGNAL, SignalBinding)
 			BIND_BUILTIN_TO_NAPI(DICTIONARY, DictionaryBinding)
 			BIND_BUILTIN_TO_NAPI(ARRAY, ArrayBinding)
@@ -170,6 +142,33 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 			BIND_BUILTIN_TO_NAPI(PACKED_VECTOR3_ARRAY, PackedVector3ArrayBinding)
 			BIND_BUILTIN_TO_NAPI(PACKED_VECTOR4_ARRAY, PackedVector4ArrayBinding)
 			BIND_BUILTIN_TO_NAPI(PACKED_COLOR_ARRAY, PackedColorArrayBinding)
+
+		case godot::Variant::Type::CALLABLE: {
+			godot::Callable callable = variant;
+			if (callable.is_custom()) {
+				gode::JavascriptCallable *js_callable = dynamic_cast<gode::JavascriptCallable *>(callable.get_custom());
+				if (js_callable) {
+					// Don't unwrap if we are inside a container structure,
+					// because we want to preserve the Callable identity in Godot
+					// But wait, the original logic was returning the function itself.
+					// If we return the function, JS sees a function.
+					// But in get_signal_connection_list, we get a Dictionary.
+					// The 'callable' field is a Variant::CALLABLE.
+					// If we return the JS function here, then `conn_info.get("callable")` will return the JS function.
+					return js_callable->get_function();
+				}
+			}
+			Napi::Object obj = CallableBinding::constructor.Value().New({});
+			CallableBinding *binding = CallableBinding::Unwrap(obj);
+			binding->instance = variant;
+
+			// Register custom callable properties
+			if (callable.is_custom()) {
+				obj.Set("callable", Napi::External<void>::New(env, callable.get_custom()));
+			}
+
+			return obj;
+		}
 
 		case godot::Variant::Type::OBJECT: {
 			godot::Object *obj = variant.operator godot::Object *();
@@ -220,7 +219,6 @@ godot::Variant napi_to_godot(Napi::Value value) {
 	} else if (value.IsString()) {
 		return String::utf8(value.ToString().Utf8Value().c_str());
 	} else if (value.IsFunction()) {
-		godot::UtilityFunctions::print("DEBUG: napi_to_godot detected Function, creating JavascriptCallable"); // DEBUG
 		JavascriptCallable *callable = memnew(JavascriptCallable(value.As<Napi::Function>()));
 		return godot::Callable(callable);
 	} else if (value.IsObject()) {

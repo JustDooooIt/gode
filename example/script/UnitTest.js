@@ -74,6 +74,12 @@ class UnitTest extends godot.Node {
 		node.name = "NewName";
 		this.assert(called, "JS Arrow function connected to signal was called");
 		
+		// Test Signal Object
+		GD.print("  -> Testing signal object property...");
+		let signal = node.renamed;
+		this.assert(signal instanceof Signal, "Signal property returns Signal object");
+		this.assert(signal.get_name() === "renamed", "Signal name is correct");
+		
 		// Cleanup
 		this.remove_child(node);
 		node.queue_free();

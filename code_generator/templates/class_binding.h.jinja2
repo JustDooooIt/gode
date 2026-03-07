@@ -27,6 +27,13 @@ public:
     // ToString
     static Napi::Value _to_string(const Napi::CallbackInfo& info);
 
+
+
+    // Signals
+    {% for signal in signals %}
+    static Napi::Value signal_{{ signal.name }}(const Napi::CallbackInfo& info);
+    {% endfor %}
+
     // Methods
     {% for method in methods %}
     static Napi::Value {{ method.name_cpp }}(const Napi::CallbackInfo& info);
