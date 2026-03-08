@@ -3,6 +3,9 @@
 {% if vararg_header_include %}
 #include "{{ vararg_header_include }}"
 {% endif %}
+{% for dep in dependencies %}
+#include "{{ dep }}"
+{% endfor %}
 
 namespace gode {
 
@@ -17,6 +20,11 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
         InstanceMethod(Napi::Symbol::For(env, "nodejs.util.inspect.custom"), &{{ class_name }}Binding::_to_string),
         {% for member in members %}
         InstanceAccessor("{{ member.name }}", &{{ class_name }}Binding::{{ member.getter }}, &{{ class_name }}Binding::{{ member.setter }}),
+        {% endfor %}
+        {% for op_group in operators %}
+        {% if not op_group.name.startswith('operator_unary') and op_group.name != 'not' %}
+        InstanceMethod("{{ op_group.name }}", &{{ class_name }}Binding::operator_{{ op_group.name }}),
+        {% endif %}
         {% endfor %}
     });
 
@@ -140,6 +148,79 @@ void {{ class_name }}Binding::{{ member.setter }}(const Napi::CallbackInfo& info
     gode::call_builtin_method(&godot::{{ class_name }}::{{ member.setter }}, &instance, info, value);
     {% endif %}
 }
+{% endfor %}
+
+{% for op_group in operators %}
+{% if not op_group.name.startswith('operator_unary') and op_group.name != 'not' %}
+Napi::Value {{ class_name }}Binding::operator_{{ op_group.name }}(const Napi::CallbackInfo& info) {
+    Napi::Object js_this = info.This().As<Napi::Object>();
+    {{ class_name }}Binding* binding = {{ class_name }}Binding::Unwrap(js_this);
+    godot::{{ class_name }}& instance = binding->instance;
+
+    if (info.Length() < 1) {
+        // Check for unary overload
+        {% for overload in op_group.overloads %}
+        {% if overload.is_unary %}
+        // Unary overload found
+        {% if overload.return_type == class_name %}
+        godot::{{ class_name }} res = instance.operator {{ overload.cpp_op }}();
+        {% else %}
+        auto res = instance.operator {{ overload.cpp_op }}();
+        {% endif %}
+        return gode::godot_to_napi(info.Env(), res);
+        {% endif %}
+        {% endfor %}
+        
+        Napi::Error::New(info.Env(), "Operator {{ op_group.name }} requires at least 1 argument").ThrowAsJavaScriptException();
+        return info.Env().Null();
+    }
+    
+    // Dispatch based on argument type
+    // We try to match the most specific type first
+    // Order of overloads matters? JSON usually gives standard types first.
+    
+    {% for overload in op_group.overloads %}
+    {% if not overload.is_unary %}
+    
+    // Type check for {{ overload.arguments[0].type_cpp }}
+    {
+        bool match = false;
+        Napi::Value arg = info[0];
+        
+        {% if overload.arguments[0].type == 'float' or overload.arguments[0].type == 'int' %}
+        if (arg.IsNumber()) match = true;
+        {% elif overload.arguments[0].type == 'bool' %}
+        if (arg.IsBoolean()) match = true;
+        {% elif overload.arguments[0].type == 'String' or overload.arguments[0].type == 'StringName' %}
+        if (arg.IsString()) match = true;
+        {% elif overload.arguments[0].type == 'Variant' %}
+        match = true;
+        {% else %}
+        // For Object types, check constructor
+        if (arg.IsObject()) {
+            Napi::Object obj = arg.As<Napi::Object>();
+            if (obj.InstanceOf({{ overload.arguments[0].type }}Binding::constructor.Value())) {
+                match = true;
+            }
+        }
+        {% endif %}
+        
+        if (match) {
+             {% for arg in overload.arguments %}
+             {{ arg.type_cpp }} {{ arg.name }} = gode::napi_to_godot<{{ arg.type_cpp }}>(info[0]);
+             {% endfor %}
+             
+             auto res = instance {{ overload.cpp_op }} {{ overload.arguments[0].name }};
+             return gode::godot_to_napi(info.Env(), res);
+        }
+    }
+    {% endif %}
+    {% endfor %}
+    
+    Napi::Error::New(info.Env(), "No matching overload found for operator {{ op_group.name }}").ThrowAsJavaScriptException();
+    return info.Env().Null();
+}
+{% endif %}
 {% endfor %}
 
 } // namespace gode

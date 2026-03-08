@@ -292,6 +292,126 @@ class BuiltinClassGenerator(CodeGenerator):
                         'arguments': args
                     })
 
+            # Process operators
+            operators = []
+            operator_groups = {}
+            dependencies = set()
+            
+            # Map operator symbols to readable names for JS methods
+            op_symbol_to_name = {
+                '==': 'equal',
+                '!=': 'not_equal',
+                '<': 'less',
+                '<=': 'less_equal',
+                '>': 'greater',
+                '>=': 'greater_equal',
+                '+': 'add',
+                '-': 'subtract',
+                '*': 'multiply',
+                '/': 'divide',
+                '%': 'module',
+                '**': 'power',
+                '~': 'bit_not',
+                '&': 'bit_and',
+                '|': 'bit_or',
+                '^': 'bit_xor',
+                '<<': 'bit_shift_left',
+                '>>': 'bit_shift_right',
+                'in': 'in'
+            }
+
+            if 'operators' in builtin_class:
+                for op in builtin_class['operators']:
+                    op_symbol = op['name']
+                    
+                    # Determine arguments
+                    right_type = op.get('right_type')
+                    is_unary = not bool(right_type)
+                    
+                    # Handle unary operators specifically
+                    if is_unary:
+                        if op_symbol == '-':
+                            op_name = 'negate'
+                        elif op_symbol == '+':
+                            op_name = 'positive'
+                        elif op_symbol == 'not':
+                            op_name = 'not'
+                        elif op_symbol in op_symbol_to_name:
+                            op_name = op_symbol_to_name[op_symbol]
+                        else:
+                            # print(f"Warning: Unknown unary operator {op_symbol}")
+                            op_name = 'operator_' + sanitize_method_name(op_symbol)
+                    else:
+                        if op_symbol in op_symbol_to_name:
+                            op_name = op_symbol_to_name[op_symbol]
+                        else:
+                            # print(f"Warning: Unknown binary operator {op_symbol}")
+                            op_name = 'operator_' + sanitize_method_name(op_symbol)
+                    
+                    # Skip 'in' operator for now if needed, or map it
+                    if op_symbol == 'in':
+                        continue
+
+                    args = []
+                    if right_type:
+                        # Skip if right_type is different from left type (class_name)
+                        # UNLESS it is a primitive type (float, int, bool, String) or Variant
+                        primitive_types = ['float', 'int', 'bool', 'String', 'StringName', 'Variant', 'Object']
+                        if right_type != class_name and right_type not in primitive_types:
+                             continue
+
+                        args.append({
+                            'name': 'right',
+                            'type': right_type,
+                            'type_cpp': self.get_cpp_type(right_type, '', refcounted_classes, True)
+                        })
+                        
+                        # Add dependency for right type
+                        # We need a mapping from type name to header file
+                        # This is usually 'builtin/{snake_case}_binding.gen.h'
+                        if right_type not in ['float', 'int', 'bool', 'String', 'StringName', 'Variant', 'Object']:
+                             dependencies.add(f"builtin/{to_snake_case(right_type)}_binding.gen.h")
+                        elif right_type == 'Object':
+                             dependencies.add(f"classes/object_binding.gen.h")
+                        
+                    
+                    return_type = op['return_type']
+                    
+                    # C++ operator is just the symbol
+                    cpp_op = op_symbol
+                    if op_symbol == 'not': cpp_op = '!';
+                    if op_symbol == 'and': cpp_op = '&&';
+                    if op_symbol == 'or': cpp_op = '||';
+                    if op_symbol == 'xor': cpp_op = '^'; # ??
+                    
+                    op_data = {
+                        'name': op_name, # JS method name (e.g. 'add')
+                        'cpp_op': cpp_op, # C++ symbol (e.g. '+')
+                        'return_type': return_type,
+                        'return_type_cpp': self.get_cpp_type(return_type, '', refcounted_classes, False),
+                        'arguments': args,
+                        'is_unary': is_unary
+                    }
+                    
+                    if op_name not in operator_groups:
+                        operator_groups[op_name] = []
+                    operator_groups[op_name].append(op_data)
+
+            # Flatten operators for context, but keep groups accessible if needed
+            # Actually, we should pass groups to template
+            operators = [] 
+            # We construct a list of unique operator names for the header
+            # But for implementation, we need the group logic.
+            
+            # Let's restructure 'operators' to be a list of groups
+            # Each item has 'name' and 'overloads' list
+            grouped_operators = []
+            for name, overloads in operator_groups.items():
+                grouped_operators.append({
+                    'name': name,
+                    'overloads': overloads
+                })
+
             context = {
                 'js_class_name': js_class_name,
                 'class_name': class_name,
@@ -299,12 +419,13 @@ class BuiltinClassGenerator(CodeGenerator):
                 'vararg_methods': vararg_methods,
                 'members': members,
                 'constants': builtin_class.get('constants', []),
-                'operators': builtin_class.get('operators', []),
+                'operators': grouped_operators, # Changed structure!
                 'constructors': constructors,
                 'has_destructor': builtin_class.get('has_destructor', False),
                 'indexing_return_type': builtin_class.get('indexing_return_type'),
                 'is_keyed': builtin_class.get('is_keyed', False),
                 'vararg_methods': vararg_methods,
+                'dependencies': sorted(list(dependencies)),
             }
             
             # Generate the files

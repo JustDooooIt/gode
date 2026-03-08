@@ -57,8 +57,7 @@ std::remove_const_t<std::remove_reference_t<T>> napi_to_godot(Napi::Value value)
 		return godot::Object::cast_to<std::remove_pointer_t<ClearType>>(variant.operator godot::Object *());
 	} else {
 		// Handle builtin types by calling the non-template napi_to_godot
-		godot::Variant variant = napi_to_godot(value);
-		return variant;
+		return napi_to_godot(value);
 	}
 }
 } //namespace gode

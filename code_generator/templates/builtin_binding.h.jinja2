@@ -29,6 +29,13 @@ public:
     Napi::Value {{ member.getter }}(const Napi::CallbackInfo& info);
     void {{ member.setter }}(const Napi::CallbackInfo& info, const Napi::Value& value);
     {% endfor %}
+
+    // Operators
+    {% for op_group in operators %}
+    {% if not op_group.name.startswith('operator_unary') and op_group.name != 'not' %}
+    Napi::Value operator_{{ op_group.name }}(const Napi::CallbackInfo& info);
+    {% endif %}
+    {% endfor %}
 };
 
 } // namespace gode
