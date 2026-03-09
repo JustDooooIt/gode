@@ -7,6 +7,7 @@
 
 # Ignore Visual Studio project files
 cmake-build-debug-visual-studio/
+cmake-build-release-visual-studio/
 
 # Ignore build files
 build

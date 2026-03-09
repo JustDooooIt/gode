@@ -14,6 +14,7 @@ class UnitTest extends godot.Node {
 			this.test_vector2();
 			this.test_node_creation();
 			this.test_signals_with_callable();
+			await this.test_to_signal();
 			this.test_callable_constructor();
 			
 			GD.print("\n---------------------------------------");
@@ -73,7 +74,7 @@ class UnitTest extends godot.Node {
 		// We can't easily check if it's freed immediately as queue_free is deferred.
 	}
 
-	test_signals_with_callable() {
+	async test_signals_with_callable() {
 		GD.print("\n[Testing Signals with JS Callable]");
 		let node = new godot.Node();
 		let called = false;
@@ -95,6 +96,27 @@ class UnitTest extends godot.Node {
 		let signal = node.renamed;
 		this.assert(signal instanceof Signal, "Signal property returns Signal object");
 		this.assert(signal.get_name() === "renamed", "Signal name is correct");
+		
+		// Cleanup
+		this.remove_child(node);
+		node.queue_free();
+	}
+	
+	async test_to_signal() {
+		GD.print("\n[Testing toSignal]");
+		let node = new godot.Node();
+		this.add_child(node);
+		
+		// We need to schedule the emit/change AFTER we await
+		// But await blocks. So we use setTimeout to trigger it later.
+		setTimeout(() => {
+			GD.print("  -> Triggering rename async...");
+			node.name = "NewNameAsync";
+		}, 100);
+		
+		await node.toSignal("renamed");
+		GD.print("  -> toSignal resolved!");
+		this.assert(node.name === "NewNameAsync", "toSignal awaited correctly");
 		
 		// Cleanup
 		this.remove_child(node);

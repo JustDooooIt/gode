@@ -326,7 +326,50 @@ void NodeRuntime::init_once() {
 				"  }"
 				"  return originalGlobalRequire.call(this, id);"
 				"};"
-				"if (originalGlobalRequire) Object.assign(globalThis.require, originalGlobalRequire);";
+				"if (originalGlobalRequire) Object.assign(globalThis.require, originalGlobalRequire);"
+                ""
+                "if (gode.GDObject && gode.GDObject.prototype) {"
+                "  gode.GDObject.prototype.toSignal = function(signal, { timeoutMs, abortSignal } = {}) {"
+                "    const obj = this;"
+                "    return new Promise((resolve, reject) => {"
+                "      let done = false;"
+                "      let timer = null;"
+                "      const cleanup = () => {"
+                "        if (timer) clearTimeout(timer);"
+                "        if (abortSignal) abortSignal.removeEventListener('abort', onAbort);"
+                "        try { obj.disconnect(signal, callback); } catch (_) {}"
+                "      };"
+                "      const callback = (...args) => {"
+                "        if (done) return;"
+                "        done = true;"
+                "        cleanup();"
+                "        resolve(args.length <= 1 ? args[0] : args);"
+                "      };"
+                "      const onAbort = () => {"
+                "        if (done) return;"
+                "        done = true;"
+                "        cleanup();"
+                "        reject(new Error('toSignal: aborted'));"
+                "      };"
+                "      try {"
+                "        obj.connect(signal, callback);"
+                "      } catch (e) {"
+                "        cleanup();"
+                "        return reject(e);"
+                "      }"
+                "      if (abortSignal) abortSignal.addEventListener('abort', onAbort, { once: true });"
+                "      if (typeof timeoutMs === 'number' && timeoutMs > 0) {"
+                "        timer = setTimeout(() => {"
+                "          if (done) return;"
+                "          done = true;"
+                "          cleanup();"
+                "          reject(new Error(`toSignal: timeout waiting for '${signal}'`));"
+                "        }, timeoutMs);"
+                "      }"
+                "    });"
+                "  };"
+                "  gode.GDObject.prototype.to_signal = gode.GDObject.prototype.toSignal;"
+                "}";
 
 		node::LoadEnvironment(env, boot_script.c_str());
 
@@ -442,6 +485,7 @@ void NodeRuntime::spin_loop() {
 		return;
 	}
 
+	v8::Locker locker(isolate);
 	v8::Isolate::Scope isolate_scope(isolate);
 	v8::HandleScope handle_scope(isolate);
 

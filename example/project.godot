@@ -13,6 +13,14 @@ config_version=5
 run/main_scene="uid://dw6dfmym4yj11"
 config/features=PackedStringArray("4.6")
 
+[autoload]
+
+EventLoop="*uid://b3hk4nwp0vemj"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gode/plugin.cfg")
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

@@ -27,7 +27,20 @@ Napi::Function JavascriptCallable::get_function() const {
 }
 
 uint32_t JavascriptCallable::hash() const {
-	return (uint64_t)this;
+    v8::Locker locker(NodeRuntime::isolate);
+    v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+    Napi::HandleScope scope(JsEnvManager::get_env());
+
+    if (func_ref.IsEmpty()) return 0;
+    
+    // Napi::Value has operator napi_value()
+    napi_value nv = func_ref.Value();
+    // In Node.js environment, napi_value is effectively v8::Local<v8::Value>
+    v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&nv);
+    
+    if (v8_val.IsEmpty() || !v8_val->IsObject()) return 0;
+    
+    return v8_val.As<v8::Object>()->GetIdentityHash();
 }
 
 godot::String JavascriptCallable::get_as_text() const {
@@ -72,14 +85,40 @@ void JavascriptCallable::call(const godot::Variant **p_arguments, int p_argcount
 static bool javascript_callable_equal_func(const godot::CallableCustom *p_a, const godot::CallableCustom *p_b) {
 	const JavascriptCallable *a = static_cast<const JavascriptCallable *>(p_a);
 	const JavascriptCallable *b = static_cast<const JavascriptCallable *>(p_b);
-    v8::Locker locker(NodeRuntime::isolate);
-	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-	Napi::HandleScope scope(JsEnvManager::get_env());
-	return p_a == p_b;
+    
+    // Compare the underlying JS functions
+    if (a->get_function().IsEmpty() || b->get_function().IsEmpty()) {
+        return a->get_function().IsEmpty() && b->get_function().IsEmpty();
+    }
+    
+    // Use StrictEquals to check object identity
+    return a->get_function().StrictEquals(b->get_function());
 }
 
 static bool javascript_callable_less_than_func(const godot::CallableCustom *p_a, const godot::CallableCustom *p_b) {
-	return p_a < p_b;
+    // For sorting, we can use hash or just address comparison of the JS object?
+    // But hash collisions are possible.
+    // Address comparison of wrapper is not enough.
+    // Address comparison of underlying JS object is hard without handle scope.
+    
+    // Fallback to wrapper address for now, or hash comparison?
+    // CallableCustom default behavior is address comparison if less_func returns false?
+    // Actually, less_func is used for Map keys etc.
+    
+    // Let's use hash comparison first, then address as tie-breaker?
+    // Or just use wrapper address if we don't care about stable sorting across different wrappers for same JS func.
+    // BUT we DO care: same JS func should be "equal", so "not less" and "not greater".
+    
+    // If they are equal (same JS func), then neither is less than the other.
+    if (javascript_callable_equal_func(p_a, p_b)) return false;
+    
+    // If not equal, use hash to order
+    if (p_a->hash() != p_b->hash()) {
+        return p_a->hash() < p_b->hash();
+    }
+    
+    // If hashes collide but not equal, use address
+    return p_a < p_b;
 }
 
 godot::CallableCustom::CompareEqualFunc JavascriptCallable::get_compare_equal_func() const {
