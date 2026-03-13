@@ -3,6 +3,7 @@
 
 #include "support/javascript/javascript.h"
 #include <napi.h>
+#include <vector>
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 
@@ -16,6 +17,10 @@ class JavascriptInstance {
 	Napi::ObjectReference js_instance;
 	bool placeholder = false;
 	godot::HashMap<godot::StringName, godot::Variant> placeholder_properties;
+
+	// Caches for get_property_list — keeps StringName/String alive while the GDExtension array is in use
+	mutable std::vector<godot::PropertyInfo> prop_list_cache;
+	mutable std::vector<GDExtensionPropertyInfo> prop_list_gde;
 
 	friend class JavascriptInstanceInfo;
 

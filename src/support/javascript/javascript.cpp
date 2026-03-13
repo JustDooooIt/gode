@@ -3,6 +3,7 @@
 #include "support/javascript/javascript_instance_info.h"
 #include "support/javascript/javascript_language.h"
 #include "utils/node_runtime.h"
+#include "utils/value_convert.h"
 #include <tree_sitter/api.h>
 #include <v8-isolate.h>
 #include <v8-locker.h>
@@ -60,8 +61,80 @@ bool Javascript::compile() const {
 	methods.clear();
 	signals.clear();
 	properties.clear();
+	property_defaults.clear();
 	constants.clear();
 	member_lines.clear();
+
+	// Read static exports — equivalent to @export in GDScript
+	// JS usage: static exports = { speed: { type: "float", default: 100.0 } }
+	if (cls.Has("exports")) {
+		Napi::Value exp_val = cls.Get("exports");
+		if (exp_val.IsObject()) {
+			Napi::Object exp_obj = exp_val.As<Napi::Object>();
+			Napi::Array keys = exp_obj.GetPropertyNames();
+			for (uint32_t i = 0; i < keys.Length(); i++) {
+				std::string key = keys.Get(i).As<Napi::String>().Utf8Value();
+				Napi::Value entry = exp_obj.Get(key);
+				if (!entry.IsObject()) {
+					continue;
+				}
+				Napi::Object entry_obj = entry.As<Napi::Object>();
+
+				PropertyInfo pi;
+				pi.name = StringName(key.c_str());
+				pi.usage = PROPERTY_USAGE_DEFAULT;
+				pi.hint = PROPERTY_HINT_NONE;
+
+				// type
+				if (entry_obj.Has("type") && entry_obj.Get("type").IsString()) {
+					std::string type_str = entry_obj.Get("type").As<Napi::String>().Utf8Value();
+					if (type_str == "bool") {
+						pi.type = Variant::BOOL;
+					} else if (type_str == "int") {
+						pi.type = Variant::INT;
+					} else if (type_str == "float" || type_str == "number") {
+						pi.type = Variant::FLOAT;
+					} else if (type_str == "String" || type_str == "string") {
+						pi.type = Variant::STRING;
+					} else if (type_str == "Vector2") {
+						pi.type = Variant::VECTOR2;
+					} else if (type_str == "Vector2i") {
+						pi.type = Variant::VECTOR2I;
+					} else if (type_str == "Vector3") {
+						pi.type = Variant::VECTOR3;
+					} else if (type_str == "Vector3i") {
+						pi.type = Variant::VECTOR3I;
+					} else if (type_str == "Color") {
+						pi.type = Variant::COLOR;
+					} else if (type_str == "NodePath") {
+						pi.type = Variant::NODE_PATH;
+					} else if (type_str == "Object" || type_str == "Node") {
+						pi.type = Variant::OBJECT;
+					} else {
+						pi.type = Variant::NIL;
+					}
+				}
+
+				// hint (integer constant, e.g. PROPERTY_HINT_RANGE = 1)
+				if (entry_obj.Has("hint") && entry_obj.Get("hint").IsNumber()) {
+					pi.hint = (PropertyHint)entry_obj.Get("hint").As<Napi::Number>().Int32Value();
+				}
+
+				// hint_string (e.g. "0,200,1" for range)
+				if (entry_obj.Has("hint_string") && entry_obj.Get("hint_string").IsString()) {
+					std::string hs = entry_obj.Get("hint_string").As<Napi::String>().Utf8Value();
+					pi.hint_string = String(hs.c_str());
+				}
+
+				properties[pi.name] = pi;
+
+				// default value
+				if (entry_obj.Has("default")) {
+					property_defaults[pi.name] = napi_to_godot(entry_obj.Get("default"));
+				}
+			}
+		}
+	}
 
 	// Basic query to find class declaration and methods
 	// Note: This is a simplified implementation. A robust one would use TSQuery.
@@ -414,10 +487,13 @@ TypedArray<Dictionary> Javascript::_get_script_signal_list() const {
 }
 
 bool Javascript::_has_property_default_value(const StringName &p_property) const {
-	return false;
+	return property_defaults.has(p_property);
 }
 
 Variant Javascript::_get_property_default_value(const StringName &p_property) const {
+	if (property_defaults.has(p_property)) {
+		return property_defaults[p_property];
+	}
 	return Variant();
 }
 
@@ -431,6 +507,18 @@ TypedArray<Dictionary> Javascript::_get_script_method_list() const {
 
 TypedArray<Dictionary> Javascript::_get_script_property_list() const {
 	TypedArray<Dictionary> list;
+	compile();
+	for (const KeyValue<StringName, PropertyInfo> &kv : properties) {
+		const PropertyInfo &pi = kv.value;
+		Dictionary d;
+		d["name"] = String(pi.name);
+		d["class_name"] = String(pi.class_name);
+		d["type"] = (int)pi.type;
+		d["hint"] = (int)pi.hint;
+		d["hint_string"] = pi.hint_string;
+		d["usage"] = (int)pi.usage;
+		list.push_back(d);
+	}
 	return list;
 }
 

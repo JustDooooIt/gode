@@ -3,10 +3,5 @@
 [ext_resource type="Script" path="res://script/UnitTest.js" id="1_test"]
 
 [node name="TestRunner" type="Node" unique_id=810063997]
-process_mode = 0.0
-process_priority = 0.0
-process_physics_priority = 0.0
-process_thread_group = 0.0
-physics_interpolation_mode = 0.0
-auto_translate_mode = 0.0
 script = ExtResource("1_test")
+export_no_default = 0.0

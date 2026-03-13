@@ -26,6 +26,7 @@ class Javascript : public godot::ScriptExtension {
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> methods;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> signals;
 	mutable godot::HashMap<godot::StringName, godot::PropertyInfo> properties;
+	mutable godot::HashMap<godot::StringName, godot::Variant> property_defaults;
 	mutable godot::HashMap<godot::StringName, godot::Variant> constants;
 	mutable godot::HashMap<godot::StringName, int> member_lines;
 
@@ -38,6 +39,8 @@ class Javascript : public godot::ScriptExtension {
 public:
 	bool compile() const;
 	Napi::Function get_default_class() const;
+	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
+	const godot::HashMap<godot::StringName, godot::Variant> &get_property_defaults() const { return property_defaults; }
 
 protected:
 	static void _bind_methods();
