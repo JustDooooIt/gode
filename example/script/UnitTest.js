@@ -1,5 +1,47 @@
 const godot = require("godot");
 
+// ─── Inheritance test helpers ───────────────────────────────────────────────
+
+class TestBase extends godot.Node {
+  static exports = {
+	base_hp: { type: "int", default: 100 },
+	base_name: { type: "String", default: "base" },
+  };
+
+  base_hp = 100;
+  base_name = "base";
+
+  base_method() {
+	return "from_base";
+  }
+
+  describe() {
+	return `TestBase(${this.base_name})`;
+  }
+}
+
+class TestChild extends TestBase {
+  static exports = {
+	...TestBase.exports,
+	child_speed: { type: "float", default: 1.5 },
+	child_enum: { type: "int", hint: 2, hint_string: "Idle,Walk,Run", default: 0 },
+  };
+
+  child_speed = 1.5;
+  child_enum = 0;
+
+  child_method() {
+	return "from_child";
+  }
+
+  // override
+  describe() {
+	return `TestChild(${this.base_name}, speed=${this.child_speed})`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 class UnitTest extends godot.Node {
   // Test exported properties on UnitTest itself
   static exports = {
@@ -8,6 +50,8 @@ class UnitTest extends godot.Node {
 	export_string: { type: "String", default: "hello" },
 	export_bool: { type: "bool", default: true },
 	export_no_default: { type: "int" },
+	export_enum: { type: "int", hint: 2, hint_string: "Walk,Run,Jump", default: 0 },
+	export_flags: { type: "int", hint: 6, hint_string: "Read,Write,Execute", default: 3 },
   };
 
   export_float = 3.14;
@@ -15,6 +59,8 @@ class UnitTest extends godot.Node {
   export_string = "hello";
   export_bool = true;
   export_no_default = 0;
+  export_enum = 0;   // Walk
+  export_flags = 3;  // Read | Write
 
   _ready() {
 	GD.print("=======================================");
@@ -32,6 +78,8 @@ class UnitTest extends godot.Node {
 	  await this.test_to_signal();
 	  this.test_callable_constructor();
 	  this.test_exports();
+	  this.test_enum_exports();
+	  this.test_inheritance();
 
 	  GD.print("\n---------------------------------------");
 	  GD.print("✅ ALL TESTS PASSED");
@@ -256,6 +304,87 @@ class UnitTest extends godot.Node {
 	this.export_int = 42;
 	this.export_string = "hello";
 	this.export_bool = true;
+  }
+
+  test_enum_exports() {
+	GD.print("\n[Testing enum/flags exports]");
+	const PROPERTY_HINT_ENUM = 2;
+	const PROPERTY_HINT_FLAGS = 6;
+
+	const exp = UnitTest.exports;
+
+	// enum metadata
+	this.assert("export_enum" in exp, "export_enum is declared in exports");
+	this.assert(exp.export_enum.type === "int", "export_enum type is 'int'");
+	this.assert(exp.export_enum.hint === PROPERTY_HINT_ENUM, "export_enum hint is PROPERTY_HINT_ENUM (2)");
+	this.assert(exp.export_enum.hint_string === "Walk,Run,Jump", "export_enum hint_string is correct");
+	this.assert(exp.export_enum.default === 0, "export_enum default is 0 (Walk)");
+
+	// flags metadata
+	this.assert("export_flags" in exp, "export_flags is declared in exports");
+	this.assert(exp.export_flags.type === "int", "export_flags type is 'int'");
+	this.assert(exp.export_flags.hint === PROPERTY_HINT_FLAGS, "export_flags hint is PROPERTY_HINT_FLAGS (6)");
+	this.assert(exp.export_flags.hint_string === "Read,Write,Execute", "export_flags hint_string is correct");
+	this.assert(exp.export_flags.default === 3, "export_flags default is 3 (Read|Write)");
+
+	// instance field initial values
+	this.assert(this.export_enum === 0, "instance export_enum starts at 0 (Walk)");
+	this.assert(this.export_flags === 3, "instance export_flags starts at 3 (Read|Write)");
+
+	// mutation
+	this.export_enum = 2; // Jump
+	this.assert(this.export_enum === 2, "export_enum can be set to 2 (Jump)");
+
+	this.export_flags = 5; // Read | Execute
+	this.assert(this.export_flags === 5, "export_flags can be set to 5 (Read|Execute)");
+
+	// restore
+	this.export_enum = 0;
+	this.export_flags = 3;
+  }
+
+  test_inheritance() {
+	GD.print("\n[Testing JS class inheritance]");
+
+	const child = new TestChild();
+
+	// 1. instanceof checks
+	this.assert(child instanceof TestChild, "child instanceof TestChild");
+	this.assert(child instanceof TestBase, "child instanceof TestBase");
+
+	// 2. inherited instance fields retain default values
+	this.assert(child.base_hp === 100, "inherited field base_hp defaults to 100");
+	this.assert(child.base_name === "base", "inherited field base_name defaults to 'base'");
+
+	// 3. own instance fields
+	this.assert(Math.abs(child.child_speed - 1.5) < 0.0001, "own field child_speed defaults to 1.5");
+	this.assert(child.child_enum === 0, "own field child_enum defaults to 0 (Idle)");
+
+	// 4. inherited method accessible on child
+	this.assert(child.base_method() === "from_base", "inherited base_method() works on child");
+
+	// 5. own method
+	this.assert(child.child_method() === "from_child", "child own method child_method() works");
+
+	// 6. overridden method uses child implementation
+	this.assert(child.describe() === "TestChild(base, speed=1.5)", "overridden describe() uses child impl");
+
+	// 7. parent static exports are spread into child
+	const exp = TestChild.exports;
+	this.assert("base_hp" in exp, "TestChild.exports includes inherited base_hp");
+	this.assert("base_name" in exp, "TestChild.exports includes inherited base_name");
+	this.assert("child_speed" in exp, "TestChild.exports includes own child_speed");
+	this.assert("child_enum" in exp, "TestChild.exports includes own child_enum");
+	this.assert(exp.child_enum.hint === 2, "child_enum hint is PROPERTY_HINT_ENUM (2)");
+	this.assert(exp.child_enum.hint_string === "Idle,Walk,Run", "child_enum hint_string is correct");
+
+	// 8. mutations on inherited fields
+	child.base_hp = 50;
+	this.assert(child.base_hp === 50, "inherited field base_hp can be mutated");
+	child.child_enum = 2; // Run
+	this.assert(child.child_enum === 2, "own enum field can be set to 2 (Run)");
+
+	child.queue_free();
   }
 }
 
