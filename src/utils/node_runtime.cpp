@@ -14,6 +14,7 @@
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/json.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -111,26 +112,19 @@ void NodeRuntime::init_once() {
 			node::ProcessInitializationFlags::kNoDefaultSignalHandling |
 			node::ProcessInitializationFlags::kNoStdioInitialization;
 
-#ifdef _MSC_VER
 	auto init_result = node::InitializeOncePerProcess(args, static_cast<node::ProcessInitializationFlags::Flags>(flags));
 
 	if (!init_result->errors().empty()) {
 		for (const auto &err : init_result->errors()) {
-			// printf("Node init error: %s\n", err.c_str());
+			godot::UtilityFunctions::printerr(godot::String("Node init error: ") + err.c_str());
 		}
 	}
-#else
-// Warn about ABI incompatibility when using MinGW/GCC on Windows
-#pragma message("WARNING: Skipping node::InitializeOncePerProcess due to ABI incompatibility (Non-MSVC compiler). Node.js embedding may fail.")
-#endif
 
 	allocator = node::ArrayBufferAllocator::Create();
 
 	platform = node::MultiIsolatePlatform::Create(4);
 
 	v8::V8::InitializePlatform(platform.get());
-	// 启用实验性 VM 模块支持
-	// v8::V8::SetFlagsFromString("--experimental-vm-modules");
 	v8::V8::Initialize();
 
 	cppgc::InitializeProcess(platform->GetPageAllocator());
