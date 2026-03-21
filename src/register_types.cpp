@@ -18,8 +18,6 @@
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
 
-static gode::GodeEventLoop *event_loop_singleton = nullptr;
-
 void initialize_node_module(godot::ModuleInitializationLevel p_level) {
 	if (p_level != godot::MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
@@ -56,13 +54,6 @@ void uninitialize_node_module(godot::ModuleInitializationLevel p_level) {
 	godot::ResourceSaver::get_singleton()->remove_resource_format_saver(gode::TypescriptSaver::get_singleton());
 	godot::ResourceLoader::get_singleton()->remove_resource_format_loader(gode::JavascriptLoader::get_singleton());
 	godot::ResourceLoader::get_singleton()->remove_resource_format_loader(gode::TypescriptLoader::get_singleton());
-
-	// 注销并删除事件循环单例
-	if (event_loop_singleton) {
-		godot::Engine::get_singleton()->unregister_singleton("GodeEventLoop");
-		memdelete(event_loop_singleton);
-		event_loop_singleton = nullptr;
-	}
 
 	gode::NodeRuntime::shutdown();
 }

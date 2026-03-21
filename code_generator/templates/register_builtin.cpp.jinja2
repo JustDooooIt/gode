@@ -7,11 +7,10 @@
 
 namespace gode {
 
-void register_builtin(Napi::Env env) {
-    Napi::Object target = env.Global();
+void register_builtin(Napi::Env env, Napi::Object exports) {
     // Register Builtins
     {% for item in builtins %}
-    {{ item.class_name }}Binding::init(env, target);
+    {{ item.class_name }}Binding::init(env, exports);
     {% endfor %}
 }
 

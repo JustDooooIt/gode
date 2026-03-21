@@ -80,7 +80,7 @@ static Napi::Value fs_stat(const Napi::CallbackInfo &info) {
 
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 	gode::JsEnvManager::init(env);
-	gode::register_builtin(env);
+	gode::register_builtin(env, exports);
 	gode::register_classes(env, exports);
 	gode::GD::init(env, exports);
 
