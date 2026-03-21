@@ -2268,7 +2268,7 @@ declare module "godot" {
         set advance_expression_base_node(value: string);
         get anim_player(): string;
         set anim_player(value: string);
-        // @signal animation_player_changed()
+        animation_player_changed: Signal
         set_tree_root(animation_node: AnimationRootNode): void;
         get_tree_root(): AnimationRootNode;
         set_advance_expression_base_node(path: string): void;
@@ -2307,13 +2307,13 @@ declare module "godot" {
         set callback_mode_method(value: number);
         get callback_mode_discrete(): number;
         set callback_mode_discrete(value: number);
-        // @signal animation_list_changed()
-        // @signal animation_libraries_updated()
-        // @signal animation_finished(anim_name: string)
-        // @signal animation_started(anim_name: string)
-        // @signal caches_cleared()
-        // @signal mixer_applied()
-        // @signal mixer_updated()
+        animation_list_changed: Signal
+        animation_libraries_updated: Signal
+        animation_finished: Signal
+        animation_started: Signal
+        caches_cleared: Signal
+        mixer_applied: Signal
+        mixer_updated: Signal
         _post_process_key_value(animation: Animation, track: number, value: VariantArgument, object_id: number, object_sub_idx: number): Variant;
         add_animation_library(name: string, library: AnimationLibrary): Error;
         remove_animation_library(name: string): void;
@@ -2401,13 +2401,13 @@ declare module "godot" {
     }
 
     class Tweener extends RefCounted {
-        // @signal finished()
+        finished: Signal
     }
 
     class Tween extends RefCounted {
-        // @signal step_finished(idx: number)
-        // @signal loop_finished(loop_count: number)
-        // @signal finished()
+        step_finished: Signal
+        loop_finished: Signal
+        finished: Signal
         tween_property(object: GodotObject, property: string, final_val: VariantArgument, duration: number): PropertyTweener;
         tween_interval(time: number): IntervalTweener;
         tween_callback(callback: Callable): CallbackTweener;
@@ -2484,7 +2484,7 @@ declare module "godot" {
         set title_text_direction(value: number);
         get language(): string;
         set language(value: string);
-        // @signal folding_changed(is_folded: boolean)
+        folding_changed: Signal
         fold(): void;
         expand(): void;
         set_folded(folded: boolean): void;
@@ -2516,7 +2516,7 @@ declare module "godot" {
     class FoldableGroup extends Resource {
         get allow_folding_all(): boolean;
         set allow_folding_all(value: boolean);
-        // @signal expanded(container: FoldableContainer)
+        expanded: Signal
         get_expanded_container(): FoldableContainer;
         get_containers(): GDArray;
         set_allow_folding_all(enabled: boolean): void;
@@ -2574,25 +2574,25 @@ declare module "godot" {
         set show_minimap_button(value: boolean);
         get show_arrange_button(): boolean;
         set show_arrange_button(value: boolean);
-        // @signal connection_request(from_node: string, from_port: number, to_node: string, to_port: number)
-        // @signal disconnection_request(from_node: string, from_port: number, to_node: string, to_port: number)
-        // @signal connection_to_empty(from_node: string, from_port: number, release_position: Vector2)
-        // @signal connection_from_empty(to_node: string, to_port: number, release_position: Vector2)
-        // @signal connection_drag_started(from_node: string, from_port: number, is_output: boolean)
-        // @signal connection_drag_ended()
-        // @signal copy_nodes_request()
-        // @signal cut_nodes_request()
-        // @signal paste_nodes_request()
-        // @signal duplicate_nodes_request()
-        // @signal delete_nodes_request(nodes: GDArray)
-        // @signal node_selected(node: Node)
-        // @signal node_deselected(node: Node)
-        // @signal frame_rect_changed(frame: GraphFrame, new_rect: Rect2)
-        // @signal popup_request(at_position: Vector2)
-        // @signal begin_node_move()
-        // @signal end_node_move()
-        // @signal graph_elements_linked_to_frame_request(elements: GDArray, frame: string)
-        // @signal scroll_offset_changed(offset: Vector2)
+        connection_request: Signal
+        disconnection_request: Signal
+        connection_to_empty: Signal
+        connection_from_empty: Signal
+        connection_drag_started: Signal
+        connection_drag_ended: Signal
+        copy_nodes_request: Signal
+        cut_nodes_request: Signal
+        paste_nodes_request: Signal
+        duplicate_nodes_request: Signal
+        delete_nodes_request: Signal
+        node_selected: Signal
+        node_deselected: Signal
+        frame_rect_changed: Signal
+        popup_request: Signal
+        begin_node_move: Signal
+        end_node_move: Signal
+        graph_elements_linked_to_frame_request: Signal
+        scroll_offset_changed: Signal
         _is_in_input_hotzone(in_node: GodotObject, in_port: number, mouse_position: Vector2): boolean;
         _is_in_output_hotzone(in_node: GodotObject, in_port: number, mouse_position: Vector2): boolean;
         _get_connection_line(from_position: Vector2, to_position: Vector2): PackedVector2Array;
@@ -2697,7 +2697,7 @@ declare module "godot" {
         set tint_color_enabled(value: boolean);
         get tint_color(): Color;
         set tint_color(value: Color);
-        // @signal autoshrink_changed()
+        autoshrink_changed: Signal
         set_title(title: string): void;
         get_title(): string;
         get_titlebar_hbox(): HBoxContainer;
@@ -2726,14 +2726,14 @@ declare module "godot" {
         set selected(value: boolean);
         get scaling_menus(): boolean;
         set scaling_menus(value: boolean);
-        // @signal node_selected()
-        // @signal node_deselected()
-        // @signal raise_request()
-        // @signal delete_request()
-        // @signal resize_request(new_size: Vector2)
-        // @signal resize_end(new_size: Vector2)
-        // @signal dragged(from_gd: Vector2, to: Vector2)
-        // @signal position_offset_changed()
+        node_selected: Signal
+        node_deselected: Signal
+        raise_request: Signal
+        delete_request: Signal
+        resize_request: Signal
+        resize_end: Signal
+        dragged: Signal
+        position_offset_changed: Signal
         set_resizable(resizable: boolean): void;
         is_resizable(): boolean;
         set_draggable(draggable: boolean): void;
@@ -2777,9 +2777,9 @@ declare module "godot" {
         set drag_area_highlight_in_editor(value: boolean);
         get split_offset(): number;
         set split_offset(value: number);
-        // @signal dragged(offset: number)
-        // @signal drag_started()
-        // @signal drag_ended()
+        dragged: Signal
+        drag_started: Signal
+        drag_ended: Signal
         set_split_offsets(offsets: PackedInt32Array): void;
         get_split_offsets(): PackedInt32Array;
         clamp_split_offset(priority_index: number): void;
@@ -2896,9 +2896,9 @@ declare module "godot" {
         set edit_alpha(value: boolean);
         get edit_intensity(): boolean;
         set edit_intensity(value: boolean);
-        // @signal color_changed(color: Color)
-        // @signal popup_closed()
-        // @signal picker_created()
+        color_changed: Signal
+        popup_closed: Signal
+        picker_created: Signal
         set_pick_color(color: Color): void;
         get_pick_color(): Color;
         get_picker(): ColorPicker;
@@ -2934,9 +2934,9 @@ declare module "godot" {
         set hex_visible(value: boolean);
         get presets_visible(): boolean;
         set presets_visible(value: boolean);
-        // @signal color_changed(color: Color)
-        // @signal preset_added(color: Color)
-        // @signal preset_removed(color: Color)
+        color_changed: Signal
+        preset_added: Signal
+        preset_removed: Signal
         set_pick_color(color: Color): void;
         get_pick_color(): Color;
         set_deferred_mode(mode: boolean): void;
@@ -3029,7 +3029,7 @@ declare module "godot" {
         set switch_on_hover(value: boolean);
         get item_count(): number;
         set item_count(value: number);
-        // @signal about_to_popup()
+        about_to_popup: Signal
         get_popup(): PopupMenu;
         show_popup(): void;
         set_switch_on_hover(enable: boolean): void;
@@ -3174,7 +3174,7 @@ declare module "godot" {
         set stream_position(value: number);
         get bus(): string;
         set bus(value: string);
-        // @signal finished()
+        finished: Signal
         set_stream(stream: VideoStream): void;
         get_stream(): VideoStream;
         play(): void;
@@ -3280,10 +3280,10 @@ declare module "godot" {
         set icon_expand_mode(value: number);
         get right_icon_scale(): number;
         set right_icon_scale(value: number);
-        // @signal text_changed(new_text: string)
-        // @signal text_change_rejected(rejected_substring: string)
-        // @signal text_submitted(new_text: string)
-        // @signal editing_toggled(toggled_on: boolean)
+        text_changed: Signal
+        text_change_rejected: Signal
+        text_submitted: Signal
+        editing_toggled: Signal
         has_ime_text(): boolean;
         cancel_ime(): void;
         apply_ime(): void;
@@ -3576,8 +3576,8 @@ declare module "godot" {
         set scroll_hint_mode(value: number);
         get tile_scroll_hint(): boolean;
         set tile_scroll_hint(value: boolean);
-        // @signal scroll_started()
-        // @signal scroll_ended()
+        scroll_started: Signal
+        scroll_ended: Signal
         set_h_scroll(value: number): void;
         get_h_scroll(): number;
         set_v_scroll(value: number): void;
@@ -3751,14 +3751,14 @@ declare module "godot" {
         set deselect_enabled(value: boolean);
         get tab_count(): number;
         set tab_count(value: number);
-        // @signal tab_selected(tab: number)
-        // @signal tab_changed(tab: number)
-        // @signal tab_clicked(tab: number)
-        // @signal tab_rmb_clicked(tab: number)
-        // @signal tab_close_pressed(tab: number)
-        // @signal tab_button_pressed(tab: number)
-        // @signal tab_hovered(tab: number)
-        // @signal active_tab_rearranged(idx_to: number)
+        tab_selected: Signal
+        tab_changed: Signal
+        tab_clicked: Signal
+        tab_rmb_clicked: Signal
+        tab_close_pressed: Signal
+        tab_button_pressed: Signal
+        tab_hovered: Signal
+        active_tab_rearranged: Signal
         set_tab_count(count: number): void;
         get_tab_count(): number;
         set_current_tab(tab_idx: number): void;
@@ -3860,13 +3860,13 @@ declare module "godot" {
         set tab_focus_mode(value: number);
         get deselect_enabled(): boolean;
         set deselect_enabled(value: boolean);
-        // @signal active_tab_rearranged(idx_to: number)
-        // @signal tab_changed(tab: number)
-        // @signal tab_clicked(tab: number)
-        // @signal tab_hovered(tab: number)
-        // @signal tab_selected(tab: number)
-        // @signal tab_button_pressed(tab: number)
-        // @signal pre_popup_pressed()
+        active_tab_rearranged: Signal
+        tab_changed: Signal
+        tab_clicked: Signal
+        tab_hovered: Signal
+        tab_selected: Signal
+        tab_button_pressed: Signal
+        pre_popup_pressed: Signal
         get_tab_count(): number;
         set_current_tab(tab_idx: number): void;
         get_current_tab(): number;
@@ -3993,7 +3993,7 @@ declare module "godot" {
         set axis_stretch_horizontal(value: number);
         get axis_stretch_vertical(): number;
         set axis_stretch_vertical(value: number);
-        // @signal texture_changed()
+        texture_changed: Signal
         set_texture(texture: Texture2D): void;
         get_texture(): Texture2D;
         set_patch_margin(margin: Side, value: number): void;
@@ -4067,8 +4067,8 @@ declare module "godot" {
     class Container extends Control {
         static readonly NOTIFICATION_PRE_SORT_CHILDREN: number;
         static readonly NOTIFICATION_SORT_CHILDREN: number;
-        // @signal pre_sort_children()
-        // @signal sort_children()
+        pre_sort_children: Signal
+        sort_children: Signal
         _get_allowed_size_flags_horizontal(): PackedInt32Array;
         _get_allowed_size_flags_vertical(): PackedInt32Array;
         queue_sort(): void;
@@ -4134,7 +4134,7 @@ declare module "godot" {
     }
 
     class Popup extends Window {
-        // @signal popup_hide()
+        popup_hide: Signal
     }
 
     class VSlider extends Slider {
@@ -4154,8 +4154,8 @@ declare module "godot" {
         set ticks_on_borders(value: boolean);
         get ticks_position(): number;
         set ticks_position(value: number);
-        // @signal drag_started()
-        // @signal drag_ended(value_changed: boolean)
+        drag_started: Signal
+        drag_ended: Signal
         set_ticks(count: number): void;
         get_ticks(): number;
         get_ticks_on_borders(): boolean;
@@ -4212,7 +4212,7 @@ declare module "godot" {
     class ScrollBar extends Range {
         get custom_step(): number;
         set custom_step(value: number);
-        // @signal scrolling()
+        scrolling: Signal
         set_custom_step(step: number): void;
         get_custom_step(): number;
     }
@@ -4238,8 +4238,8 @@ declare module "godot" {
         set allow_greater(value: boolean);
         get allow_lesser(): boolean;
         set allow_lesser(value: boolean);
-        // @signal value_changed(value: number)
-        // @signal changed()
+        value_changed: Signal
+        changed: Signal
         _value_changed(new_value: number): void;
         get_value(): number;
         get_min(): number;
@@ -4487,7 +4487,7 @@ declare module "godot" {
     class ButtonGroup extends Resource {
         get allow_unpress(): boolean;
         set allow_unpress(value: boolean);
-        // @signal pressed(button: BaseButton)
+        pressed: Signal
         get_pressed_button(): BaseButton;
         get_buttons(): GDArray;
         set_allow_unpress(enabled: boolean): void;
@@ -4515,10 +4515,10 @@ declare module "godot" {
         set shortcut_feedback(value: boolean);
         get shortcut_in_tooltip(): boolean;
         set shortcut_in_tooltip(value: boolean);
-        // @signal pressed()
-        // @signal button_up()
-        // @signal button_down()
-        // @signal toggled(toggled_on: boolean)
+        pressed: Signal
+        button_up: Signal
+        button_down: Signal
+        toggled: Signal
         _pressed(): void;
         _toggled(toggled_on: boolean): void;
         set_pressed(pressed: boolean): void;
@@ -4568,7 +4568,7 @@ declare module "godot" {
         set menu(value: string);
         get visible(): boolean;
         set visible(value: boolean);
-        // @signal pressed(mouse_button: number, mouse_position: Vector2i)
+        pressed: Signal
         set_tooltip(tooltip: string): void;
         get_tooltip(): string;
         set_icon(texture: Texture2D): void;
@@ -4701,7 +4701,7 @@ declare module "godot" {
         set follow_viewport_enabled(value: boolean);
         get follow_viewport_scale(): number;
         set follow_viewport_scale(value: number);
-        // @signal visibility_changed()
+        visibility_changed: Signal
         set_layer(layer: number): void;
         get_layer(): number;
         set_visible(visible: boolean): void;
@@ -4740,7 +4740,7 @@ declare module "godot" {
         get ignore_time_scale(): boolean;
         set ignore_time_scale(value: boolean);
         get time_left(): number;
-        // @signal timeout()
+        timeout: Signal
         set_wait_time(time_sec: number): void;
         get_wait_time(): number;
         set_one_shot(enable: boolean): void;
@@ -5170,7 +5170,7 @@ declare module "godot" {
         set terrain(value: number);
         get probability(): number;
         set probability(value: number);
-        // @signal changed()
+        changed: Signal
         set_flip_h(flip_h: boolean): void;
         get_flip_h(): boolean;
         set_flip_v(flip_v: boolean): void;
@@ -5255,8 +5255,8 @@ declare module "godot" {
         set action(value: string);
         get visibility_mode(): number;
         set visibility_mode(value: number);
-        // @signal pressed()
-        // @signal released()
+        pressed: Signal
+        released: Signal
         set_texture_normal(texture: Texture2D): void;
         get_texture_normal(): Texture2D;
         set_texture_pressed(texture: Texture2D): void;
@@ -5674,7 +5674,7 @@ declare module "godot" {
     }
 
     class Skeleton2D extends Node2D {
-        // @signal bone_setup_changed()
+        bone_setup_changed: Signal
         get_bone_count(): number;
         get_bone(idx: number): Bone2D;
         get_skeleton(): RID;
@@ -5783,8 +5783,8 @@ declare module "godot" {
         set rect(value: Rect2);
         get show_rect(): boolean;
         set show_rect(value: boolean);
-        // @signal screen_entered()
-        // @signal screen_exited()
+        screen_entered: Signal
+        screen_exited: Signal
         set_rect(rect: Rect2): void;
         get_rect(): Rect2;
         set_show_rect(show_rect: boolean): void;
@@ -5978,14 +5978,14 @@ declare module "godot" {
         set audio_bus_override(value: boolean);
         get audio_bus_name(): string;
         set audio_bus_name(value: string);
-        // @signal body_shape_entered(body_rid: RID, body: Node2D, body_shape_index: number, local_shape_index: number)
-        // @signal body_shape_exited(body_rid: RID, body: Node2D, body_shape_index: number, local_shape_index: number)
-        // @signal body_entered(body: Node2D)
-        // @signal body_exited(body: Node2D)
-        // @signal area_shape_entered(area_rid: RID, area: Area2D, area_shape_index: number, local_shape_index: number)
-        // @signal area_shape_exited(area_rid: RID, area: Area2D, area_shape_index: number, local_shape_index: number)
-        // @signal area_entered(area: Area2D)
-        // @signal area_exited(area: Area2D)
+        body_shape_entered: Signal
+        body_shape_exited: Signal
+        body_entered: Signal
+        body_exited: Signal
+        area_shape_entered: Signal
+        area_shape_exited: Signal
+        area_entered: Signal
+        area_exited: Signal
         set_gravity_space_override_mode(space_override_mode: Area2D.SpaceOverride): void;
         get_gravity_space_override_mode(): Area2D.SpaceOverride;
         set_gravity_is_point(enable: boolean): void;
@@ -6174,11 +6174,11 @@ declare module "godot" {
         set collision_priority(value: number);
         get input_pickable(): boolean;
         set input_pickable(value: boolean);
-        // @signal input_event(viewport: Node, event: InputEvent, shape_idx: number)
-        // @signal mouse_entered()
-        // @signal mouse_exited()
-        // @signal mouse_shape_entered(shape_idx: number)
-        // @signal mouse_shape_exited(shape_idx: number)
+        input_event: Signal
+        mouse_entered: Signal
+        mouse_exited: Signal
+        mouse_shape_entered: Signal
+        mouse_shape_exited: Signal
         _input_event(viewport: Viewport, event: InputEvent, shape_idx: number): void;
         _mouse_enter(): void;
         _mouse_exit(): void;
@@ -6232,7 +6232,7 @@ declare module "godot" {
         set multimesh(value: MultiMesh);
         get texture(): Texture2D;
         set texture(value: Texture2D);
-        // @signal texture_changed()
+        texture_changed: Signal
         set_multimesh(multimesh: MultiMesh): void;
         get_multimesh(): MultiMesh;
         set_texture(texture: Texture2D): void;
@@ -6244,7 +6244,7 @@ declare module "godot" {
         set mesh(value: Mesh);
         get texture(): Texture2D;
         set texture(value: Texture2D);
-        // @signal texture_changed()
+        texture_changed: Signal
         set_mesh(mesh: Mesh): void;
         get_mesh(): Mesh;
         set_texture(texture: Texture2D): void;
@@ -6283,8 +6283,8 @@ declare module "godot" {
         set region_rect(value: Rect2);
         get region_filter_clip_enabled(): boolean;
         set region_filter_clip_enabled(value: boolean);
-        // @signal frame_changed()
-        // @signal texture_changed()
+        frame_changed: Signal
+        texture_changed: Signal
         set_texture(texture: Texture2D): void;
         get_texture(): Texture2D;
         set_centered(centered: boolean): void;
@@ -6366,7 +6366,7 @@ declare module "godot" {
         set trail_section_subdivisions(value: number);
         get process_material(): ParticleProcessMaterial | ShaderMaterial;
         set process_material(value: ParticleProcessMaterial | ShaderMaterial);
-        // @signal finished()
+        finished: Signal
         set_emitting(emitting: boolean): void;
         set_amount(amount: number): void;
         set_lifetime(secs: number): void;
@@ -6579,7 +6579,7 @@ declare module "godot" {
         set anim_offset_max(value: number);
         get anim_offset_curve(): Curve;
         set anim_offset_curve(value: Curve);
-        // @signal finished()
+        finished: Signal
         set_emitting(emitting: boolean): void;
         set_amount(amount: number): void;
         set_lifetime(secs: number): void;
@@ -8177,7 +8177,7 @@ declare module "godot" {
     class VisualShaderNodeInput extends VisualShaderNode {
         get input_name(): string;
         set input_name(value: string);
-        // @signal input_type_changed()
+        input_type_changed: Signal
         set_input_name(name: string): void;
         get_input_name(): string;
         get_input_real_name(): string;
@@ -8472,12 +8472,12 @@ declare module "godot" {
         set debug_path_custom_color(value: Color);
         get debug_path_custom_point_size(): number;
         set debug_path_custom_point_size(value: number);
-        // @signal path_changed()
-        // @signal target_reached()
-        // @signal waypoint_reached(details: GDDictionary)
-        // @signal link_reached(details: GDDictionary)
-        // @signal navigation_finished()
-        // @signal velocity_computed(safe_velocity: Vector3)
+        path_changed: Signal
+        target_reached: Signal
+        waypoint_reached: Signal
+        link_reached: Signal
+        navigation_finished: Signal
+        velocity_computed: Signal
         get_rid(): RID;
         set_avoidance_enabled(enabled: boolean): void;
         get_avoidance_enabled(): boolean;
@@ -8714,8 +8714,8 @@ declare module "godot" {
         set enter_cost(value: number);
         get travel_cost(): number;
         set travel_cost(value: number);
-        // @signal navigation_mesh_changed()
-        // @signal bake_finished()
+        navigation_mesh_changed: Signal
+        bake_finished: Signal
         get_rid(): RID;
         set_navigation_mesh(navigation_mesh: NavigationMesh): void;
         get_navigation_mesh(): NavigationMesh;
@@ -9032,8 +9032,8 @@ declare module "godot" {
         get aabb(): AABB;
         set aabb(value: AABB);
         get_aabb(): AABB;
-        // @signal screen_entered()
-        // @signal screen_exited()
+        screen_entered: Signal
+        screen_exited: Signal
         set_aabb(rect: AABB): void;
         is_on_screen(): boolean;
     }
@@ -9092,8 +9092,8 @@ declare module "godot" {
         set curve(value: Curve3D);
         get debug_custom_color(): Color;
         set debug_custom_color(value: Color);
-        // @signal curve_changed()
-        // @signal debug_color_changed()
+        curve_changed: Signal
+        debug_color_changed: Signal
         set_curve(curve: Curve3D): void;
         get_curve(): Curve3D;
         set_debug_custom_color(debug_custom_color: Color): void;
@@ -9398,14 +9398,14 @@ declare module "godot" {
         set reverb_bus_amount(value: number);
         get reverb_bus_uniformity(): number;
         set reverb_bus_uniformity(value: number);
-        // @signal body_shape_entered(body_rid: RID, body: Node3D, body_shape_index: number, local_shape_index: number)
-        // @signal body_shape_exited(body_rid: RID, body: Node3D, body_shape_index: number, local_shape_index: number)
-        // @signal body_entered(body: Node3D)
-        // @signal body_exited(body: Node3D)
-        // @signal area_shape_entered(area_rid: RID, area: Area3D, area_shape_index: number, local_shape_index: number)
-        // @signal area_shape_exited(area_rid: RID, area: Area3D, area_shape_index: number, local_shape_index: number)
-        // @signal area_entered(area: Area3D)
-        // @signal area_exited(area: Area3D)
+        body_shape_entered: Signal
+        body_shape_exited: Signal
+        body_entered: Signal
+        body_exited: Signal
+        area_shape_entered: Signal
+        area_shape_exited: Signal
+        area_entered: Signal
+        area_exited: Signal
         set_gravity_space_override_mode(space_override_mode: Area3D.SpaceOverride): void;
         get_gravity_space_override_mode(): Area3D.SpaceOverride;
         set_gravity_is_point(enable: boolean): void;
@@ -10019,9 +10019,9 @@ declare module "godot" {
         set input_ray_pickable(value: boolean);
         get input_capture_on_drag(): boolean;
         set input_capture_on_drag(value: boolean);
-        // @signal input_event(camera: Node, event: InputEvent, event_position: Vector3, normal: Vector3, shape_idx: number)
-        // @signal mouse_entered()
-        // @signal mouse_exited()
+        input_event: Signal
+        mouse_entered: Signal
+        mouse_exited: Signal
         _input_event(camera: Camera3D, event: InputEvent, event_position: Vector3, normal: Vector3, shape_idx: number): void;
         _mouse_enter(): void;
         _mouse_exit(): void;
@@ -10139,11 +10139,11 @@ declare module "godot" {
     }
 
     class XRController3D extends XRNode3D {
-        // @signal button_pressed(name: string)
-        // @signal button_released(name: string)
-        // @signal input_float_changed(name: string, value: number)
-        // @signal input_vector2_changed(name: string, value: Vector2)
-        // @signal profile_changed(role: string)
+        button_pressed: Signal
+        button_released: Signal
+        input_float_changed: Signal
+        input_vector2_changed: Signal
+        profile_changed: Signal
         is_button_pressed(name: string): boolean;
         get_input(name: string): Variant;
         get_float(name: string): number;
@@ -10158,7 +10158,7 @@ declare module "godot" {
         set pose(value: string);
         get show_when_tracked(): boolean;
         set show_when_tracked(value: boolean);
-        // @signal tracking_changed(tracking: boolean)
+        tracking_changed: Signal
         set_tracker(tracker_name: string): void;
         get_tracker(): string;
         set_pose_name(pose: string): void;
@@ -10673,7 +10673,7 @@ declare module "godot" {
         set group_size(value: number);
         get bone_size(): number;
         set bone_size(value: number);
-        // @signal profile_updated()
+        profile_updated: Signal
         set_root_bone(bone_name: string): void;
         get_root_bone(): string;
         set_scale_base_bone(bone_name: string): void;
@@ -10757,7 +10757,7 @@ declare module "godot" {
         set active(value: boolean);
         get influence(): number;
         set influence(value: number);
-        // @signal modification_processed()
+        modification_processed: Signal
         _process_modification_with_delta(delta: number): void;
         _process_modification(): void;
         _skeleton_changed(old_skeleton: Skeleton3D, new_skeleton: Skeleton3D): void;
@@ -11030,7 +11030,7 @@ declare module "godot" {
         set anim_offset_max(value: number);
         get anim_offset_curve(): Curve;
         set anim_offset_curve(value: Curve);
-        // @signal finished()
+        finished: Signal
         set_emitting(emitting: boolean): void;
         set_amount(amount: number): void;
         set_lifetime(secs: number): void;
@@ -11380,7 +11380,7 @@ declare module "godot" {
         set draw_pass_4(value: Mesh);
         get draw_skin(): Skin;
         set draw_skin(value: Skin);
-        // @signal finished()
+        finished: Signal
         set_emitting(emitting: boolean): void;
         set_amount(amount: number): void;
         set_lifetime(secs: number): void;
@@ -12272,8 +12272,8 @@ declare module "godot" {
         set region_enabled(value: boolean);
         get region_rect(): Rect2;
         set region_rect(value: Rect2);
-        // @signal frame_changed()
-        // @signal texture_changed()
+        frame_changed: Signal
+        texture_changed: Signal
         set_texture(texture: Texture2D): void;
         get_texture(): Texture2D;
         set_region_enabled(enabled: boolean): void;
@@ -13474,7 +13474,7 @@ declare module "godot" {
         set advance_condition(value: string);
         get advance_expression(): string;
         set advance_expression(value: string);
-        // @signal advance_condition_changed()
+        advance_condition_changed: Signal
         set_switch_mode(mode: AnimationNodeStateMachineTransition.SwitchMode): void;
         get_switch_mode(): AnimationNodeStateMachineTransition.SwitchMode;
         set_advance_mode(mode: AnimationNodeStateMachineTransition.AdvanceMode): void;
@@ -14595,7 +14595,7 @@ declare module "godot" {
     class SceneTreeTimer extends RefCounted {
         get time_left(): number;
         set time_left(value: number);
-        // @signal timeout()
+        timeout: Signal
         set_time_left(time: number): void;
         get_time_left(): number;
     }
@@ -14801,12 +14801,12 @@ declare module "godot" {
         set debug_path_custom_point_size(value: number);
         get debug_path_custom_line_width(): number;
         set debug_path_custom_line_width(value: number);
-        // @signal path_changed()
-        // @signal target_reached()
-        // @signal waypoint_reached(details: GDDictionary)
-        // @signal link_reached(details: GDDictionary)
-        // @signal navigation_finished()
-        // @signal velocity_computed(safe_velocity: Vector2)
+        path_changed: Signal
+        target_reached: Signal
+        waypoint_reached: Signal
+        link_reached: Signal
+        navigation_finished: Signal
+        velocity_computed: Signal
         get_rid(): RID;
         set_avoidance_enabled(enabled: boolean): void;
         get_avoidance_enabled(): boolean;
@@ -14902,8 +14902,8 @@ declare module "godot" {
         set enter_cost(value: number);
         get travel_cost(): number;
         set travel_cost(value: number);
-        // @signal navigation_polygon_changed()
-        // @signal bake_finished()
+        navigation_polygon_changed: Signal
+        bake_finished: Signal
         get_rid(): RID;
         set_navigation_polygon(navigation_polygon: NavigationPolygon): void;
         get_navigation_polygon(): NavigationPolygon;
@@ -15186,7 +15186,7 @@ declare module "godot" {
         set area_mask(value: number);
         get playback_type(): number;
         set playback_type(value: number);
-        // @signal finished()
+        finished: Signal
         set_stream(stream: AudioStream): void;
         get_stream(): AudioStream;
         set_volume_db(volume_db: number): void;
@@ -15305,7 +15305,7 @@ declare module "godot" {
         set bus(value: string);
         get playback_type(): number;
         set playback_type(value: number);
-        // @signal finished()
+        finished: Signal
         set_stream(stream: AudioStream): void;
         get_stream(): AudioStream;
         set_volume_db(volume_db: number): void;
@@ -15346,8 +15346,8 @@ declare module "godot" {
     class BoneMap extends Resource {
         get profile(): SkeletonProfile;
         set profile(value: SkeletonProfile);
-        // @signal bone_map_updated()
-        // @signal profile_updated()
+        bone_map_updated: Signal
+        profile_updated: Signal
         get_profile(): SkeletonProfile;
         set_profile(profile: SkeletonProfile): void;
         get_skeleton_bone_name(profile_bone_name: string): string;
@@ -15802,10 +15802,10 @@ declare module "godot" {
     }
 
     class AnimationLibrary extends Resource {
-        // @signal animation_added(name: string)
-        // @signal animation_removed(name: string)
-        // @signal animation_renamed(name: string, to_name: string)
-        // @signal animation_changed(name: string)
+        animation_added: Signal
+        animation_removed: Signal
+        animation_renamed: Signal
+        animation_changed: Signal
         add_animation(name: string, animation: Animation): Error;
         remove_animation(name: string): void;
         rename_animation(name: string, newname: string): void;
@@ -17420,7 +17420,7 @@ declare module "godot" {
         set attenuation_filter_db(value: number);
         get doppler_tracking(): number;
         set doppler_tracking(value: number);
-        // @signal finished()
+        finished: Signal
         set_stream(stream: AudioStream): void;
         get_stream(): AudioStream;
         set_volume_db(volume_db: number): void;
@@ -17837,7 +17837,7 @@ declare module "godot" {
         set sub_emitter_amount_at_start(value: number);
         get sub_emitter_keep_velocity(): boolean;
         set sub_emitter_keep_velocity(value: boolean);
-        // @signal emission_shape_changed()
+        emission_shape_changed: Signal
         set_direction(degrees: Vector3): void;
         get_direction(): Vector3;
         set_inherit_velocity_ratio(ratio: number): void;
@@ -18140,7 +18140,7 @@ declare module "godot" {
     }
 
     class OpenXRBindingModifierEditor extends PanelContainer {
-        // @signal binding_modifier_removed(binding_modifier_editor: GodotObject)
+        binding_modifier_removed: Signal
         get_binding_modifier(): OpenXRBindingModifier;
         setup(action_map: OpenXRActionMap, binding_modifier: OpenXRBindingModifier): void;
     }
@@ -18246,16 +18246,16 @@ declare module "godot" {
     }
 
     class FileSystemDock extends EditorDock {
-        // @signal inherit(file: string)
-        // @signal instantiate(files: PackedStringArray)
-        // @signal resource_removed(resource: Resource)
-        // @signal file_removed(file: string)
-        // @signal folder_removed(folder: string)
-        // @signal files_moved(old_file: string, new_file: string)
-        // @signal folder_moved(old_folder: string, new_folder: string)
-        // @signal folder_color_changed()
-        // @signal selection_changed()
-        // @signal display_mode_changed()
+        inherit: Signal
+        instantiate: Signal
+        resource_removed: Signal
+        file_removed: Signal
+        folder_removed: Signal
+        files_moved: Signal
+        folder_moved: Signal
+        folder_color_changed: Signal
+        selection_changed: Signal
+        display_mode_changed: Signal
         navigate_to_path(path: string): void;
         add_resource_tooltip_plugin(plugin: EditorResourceTooltipPlugin): void;
         remove_resource_tooltip_plugin(plugin: EditorResourceTooltipPlugin): void;
@@ -18296,8 +18296,8 @@ declare module "godot" {
         set editable(value: boolean);
         get toggle_mode(): boolean;
         set toggle_mode(value: boolean);
-        // @signal resource_selected(resource: Resource, inspect: boolean)
-        // @signal resource_changed(resource: Resource)
+        resource_selected: Signal
+        resource_changed: Signal
         _set_create_options(menu_node: GodotObject): void;
         _handle_menu_selected(id: number): boolean;
         set_base_type(base_type: string): void;
@@ -18327,11 +18327,11 @@ declare module "godot" {
         set hide_slider(value: boolean);
         get editing_integer(): boolean;
         set editing_integer(value: boolean);
-        // @signal grabbed()
-        // @signal ungrabbed()
-        // @signal updown_pressed()
-        // @signal value_focus_entered()
-        // @signal value_focus_exited()
+        grabbed: Signal
+        ungrabbed: Signal
+        updown_pressed: Signal
+        value_focus_entered: Signal
+        value_focus_exited: Signal
         set_label(label: string): void;
         get_label(): string;
         set_suffix(suffix: string): void;
@@ -18398,15 +18398,15 @@ declare module "godot" {
     }
 
     class EditorInspector extends ScrollContainer {
-        // @signal property_selected(property: string)
-        // @signal property_keyed(property: string, value: VariantArgument, advance: boolean)
-        // @signal property_deleted(property: string)
-        // @signal resource_selected(resource: Resource, path: string)
-        // @signal object_id_selected(id: number)
-        // @signal property_edited(property: string)
-        // @signal property_toggled(property: string, checked: boolean)
-        // @signal edited_object_changed()
-        // @signal restart_requested()
+        property_selected: Signal
+        property_keyed: Signal
+        property_deleted: Signal
+        resource_selected: Signal
+        object_id_selected: Signal
+        property_edited: Signal
+        property_toggled: Signal
+        edited_object_changed: Signal
+        restart_requested: Signal
         edit(object: GodotObject): void;
         get_selected_path(): string;
         get_edited_object(): GodotObject;
@@ -18604,23 +18604,23 @@ declare module "godot" {
     }
 
     class ScriptEditorBase extends VBoxContainer {
-        // @signal name_changed()
-        // @signal edited_script_changed()
-        // @signal request_help(topic: string)
-        // @signal request_open_script_at_line(script: GodotObject, line: number)
-        // @signal request_save_history()
-        // @signal request_save_previous_state(state: GDDictionary)
-        // @signal go_to_help(what: string)
-        // @signal search_in_files_requested(text: string)
-        // @signal replace_in_files_requested(text: string)
-        // @signal go_to_method(script: GodotObject, method: string)
+        name_changed: Signal
+        edited_script_changed: Signal
+        request_help: Signal
+        request_open_script_at_line: Signal
+        request_save_history: Signal
+        request_save_previous_state: Signal
+        go_to_help: Signal
+        search_in_files_requested: Signal
+        replace_in_files_requested: Signal
+        go_to_method: Signal
         get_base_editor(): Control;
         add_syntax_highlighter(highlighter: EditorSyntaxHighlighter): void;
     }
 
     class ScriptEditor extends PanelContainer {
-        // @signal editor_script_changed(script: Script)
-        // @signal script_close(script: Script)
+        editor_script_changed: Signal
+        script_close: Signal
         get_current_editor(): ScriptEditorBase;
         get_open_script_editors(): GDArray;
         get_breakpoints(): PackedStringArray;
@@ -18702,12 +18702,12 @@ declare module "godot" {
     }
 
     class EditorFileSystem extends Node {
-        // @signal filesystem_changed()
-        // @signal script_classes_updated()
-        // @signal sources_changed(exist: boolean)
-        // @signal resources_reimporting(resources: PackedStringArray)
-        // @signal resources_reimported(resources: PackedStringArray)
-        // @signal resources_reload(resources: PackedStringArray)
+        filesystem_changed: Signal
+        script_classes_updated: Signal
+        sources_changed: Signal
+        resources_reimporting: Signal
+        resources_reimported: Signal
+        resources_reload: Signal
         get_filesystem(): EditorFileSystemDirectory;
         is_scanning(): boolean;
         get_scanning_progress(): number;
@@ -18735,7 +18735,7 @@ declare module "godot" {
     }
 
     class EditorResourcePreview extends Node {
-        // @signal preview_invalidated(path: string)
+        preview_invalidated: Signal
         queue_resource_preview(path: string, receiver: GodotObject, receiver_func: string, userdata: VariantArgument): void;
         queue_edited_resource_preview(resource: Resource, receiver: GodotObject, receiver_func: string, userdata: VariantArgument): void;
         add_preview_generator(generator: EditorResourcePreviewGenerator): void;
@@ -18756,7 +18756,7 @@ declare module "godot" {
 
     class EditorSettings extends Resource {
         static readonly NOTIFICATION_EDITOR_SETTINGS_CHANGED: number;
-        // @signal settings_changed()
+        settings_changed: Signal
         has_setting(name: string): boolean;
         set_setting(name: string, value: VariantArgument): void;
         get_setting(name: string): Variant;
@@ -18782,7 +18782,7 @@ declare module "godot" {
     }
 
     class EditorSelection extends Object {
-        // @signal selection_changed()
+        selection_changed: Signal
         clear(): void;
         add_node(node: Node): void;
         remove_node(node: Node): void;
@@ -18816,7 +18816,7 @@ declare module "godot" {
         set default_slot(value: number);
         get available_layouts(): number;
         set available_layouts(value: number);
-        // @signal closed()
+        closed: Signal
         _update_layout(layout: number): void;
         _save_layout_to_config(config: ConfigFile, section: string): void;
         _load_layout_from_config(config: ConfigFile, section: string): void;
@@ -18878,12 +18878,12 @@ declare module "godot" {
     }
 
     class EditorPlugin extends Node {
-        // @signal scene_changed(scene_root: Node)
-        // @signal scene_closed(filepath: string)
-        // @signal main_screen_changed(screen_name: string)
-        // @signal resource_saved(resource: Resource)
-        // @signal scene_saved(filepath: string)
-        // @signal project_settings_changed()
+        scene_changed: Signal
+        scene_closed: Signal
+        main_screen_changed: Signal
+        resource_saved: Signal
+        scene_saved: Signal
+        project_settings_changed: Signal
         _forward_canvas_gui_input(event: InputEvent): boolean;
         _forward_canvas_draw_over_viewport(viewport_control: Control): void;
         _forward_canvas_force_draw_over_viewport(viewport_control: Control): void;
@@ -19008,19 +19008,19 @@ declare module "godot" {
         get reference_space_type(): string;
         get enabled_features(): string;
         get visibility_state(): string;
-        // @signal session_supported(session_mode: string, supported: boolean)
-        // @signal session_started()
-        // @signal session_ended()
-        // @signal session_failed(message: string)
-        // @signal selectstart(input_source_id: number)
-        // @signal select(input_source_id: number)
-        // @signal selectend(input_source_id: number)
-        // @signal squeezestart(input_source_id: number)
-        // @signal squeeze(input_source_id: number)
-        // @signal squeezeend(input_source_id: number)
-        // @signal visibility_state_changed()
-        // @signal reference_space_reset()
-        // @signal display_refresh_rate_changed()
+        session_supported: Signal
+        session_started: Signal
+        session_ended: Signal
+        session_failed: Signal
+        selectstart: Signal
+        select: Signal
+        selectend: Signal
+        squeezestart: Signal
+        squeeze: Signal
+        squeezeend: Signal
+        visibility_state_changed: Signal
+        reference_space_reset: Signal
+        display_refresh_rate_changed: Signal
         is_session_supported(session_mode: string): void;
         set_session_mode(session_mode: string): void;
         get_session_mode(): string;
@@ -19362,7 +19362,7 @@ declare module "godot" {
         set plane_alignment(value: number);
         get plane_label(): string;
         set plane_label(value: string);
-        // @signal mesh_changed()
+        mesh_changed: Signal
         set_bounds_size(bounds_size: Vector2): void;
         get_bounds_size(): Vector2;
         set_plane_alignment(plane_alignment: OpenXRSpatialComponentPlaneAlignmentList.PlaneAlignment): void;
@@ -19379,7 +19379,7 @@ declare module "godot" {
     class OpenXRAnchorTracker extends OpenXRSpatialEntityTracker {
         get uuid(): string;
         set uuid(value: string);
-        // @signal uuid_changed()
+        uuid_changed: Signal
         has_uuid(): boolean;
         set_uuid(uuid: string): void;
         get_uuid(): string;
@@ -19390,7 +19390,7 @@ declare module "godot" {
         set entity(value: RID);
         get spatial_tracking_state(): number;
         set spatial_tracking_state(value: number);
-        // @signal spatial_tracking_state_changed(spatial_tracking_state: number)
+        spatial_tracking_state_changed: Signal
         set_entity(entity: RID): void;
         get_entity(): RID;
         set_spatial_tracking_state(spatial_tracking_state: OpenXRSpatialEntityTracker.EntityTrackingState): void;
@@ -19405,7 +19405,7 @@ declare module "godot" {
     }
 
     class OpenXRSpatialEntityExtension extends OpenXRExtensionWrapper {
-        // @signal spatial_discovery_recommended(spatial_context: RID)
+        spatial_discovery_recommended: Signal
         supports_capability(capability: OpenXRSpatialEntityExtension.Capability): boolean;
         supports_component_type(capability: OpenXRSpatialEntityExtension.Capability, component_type: OpenXRSpatialEntityExtension.ComponentType): boolean;
         create_spatial_context(capability_configurations: GDArray, next: OpenXRStructureBase, user_callback: Callable): OpenXRFutureResult;
@@ -19461,8 +19461,8 @@ declare module "godot" {
         set tracker(value: number);
         get make_local_to_pose(): string;
         set make_local_to_pose(value: string);
-        // @signal render_model_added(render_model: OpenXRRenderModel)
-        // @signal render_model_removed(render_model: OpenXRRenderModel)
+        render_model_added: Signal
+        render_model_removed: Signal
         get_tracker(): OpenXRRenderModelManager.RenderModelTracker;
         set_tracker(tracker: OpenXRRenderModelManager.RenderModelTracker): void;
         get_make_local_to_pose(): string;
@@ -19480,7 +19480,7 @@ declare module "godot" {
     class OpenXRRenderModel extends Node3D {
         get render_model(): RID;
         set render_model(value: RID);
-        // @signal render_model_top_level_path_changed()
+        render_model_top_level_path_changed: Signal
         get_top_level_path(): string;
         get_render_model(): RID;
         set_render_model(render_model: RID): void;
@@ -19903,17 +19903,17 @@ declare module "godot" {
         set vrs_min_radius(value: number);
         get vrs_strength(): number;
         set vrs_strength(value: number);
-        // @signal session_begun()
-        // @signal session_stopping()
-        // @signal session_synchronized()
-        // @signal session_focussed()
-        // @signal session_visible()
-        // @signal session_loss_pending()
-        // @signal instance_exiting()
-        // @signal pose_recentered()
-        // @signal refresh_rate_changed(refresh_rate: number)
-        // @signal cpu_level_changed(sub_domain: number, from_level: number, to_level: number)
-        // @signal gpu_level_changed(sub_domain: number, from_level: number, to_level: number)
+        session_begun: Signal
+        session_stopping: Signal
+        session_synchronized: Signal
+        session_focussed: Signal
+        session_visible: Signal
+        session_loss_pending: Signal
+        instance_exiting: Signal
+        pose_recentered: Signal
+        refresh_rate_changed: Signal
+        cpu_level_changed: Signal
+        gpu_level_changed: Signal
         get_session_state(): OpenXRInterface.SessionState;
         get_display_refresh_rate(): number;
         set_display_refresh_rate(refresh_rate: number): void;
@@ -20140,9 +20140,9 @@ declare module "godot" {
         set visibility_update_mode(value: number);
         get public_visibility(): boolean;
         set public_visibility(value: boolean);
-        // @signal synchronized()
-        // @signal delta_synchronized()
-        // @signal visibility_changed(for_peer: number)
+        synchronized: Signal
+        delta_synchronized: Signal
+        visibility_changed: Signal
         set_root_path(path: string): void;
         get_root_path(): string;
         set_replication_interval(milliseconds: number): void;
@@ -20176,8 +20176,8 @@ declare module "godot" {
         set spawn_limit(value: number);
         get spawn_function(): Callable;
         set spawn_function(value: Callable);
-        // @signal despawned(node: Node)
-        // @signal spawned(node: Node)
+        despawned: Signal
+        spawned: Signal
         add_spawnable_scene(path: string): void;
         get_spawnable_scene_count(): number;
         get_spawnable_scene(index: number): string;
@@ -20723,8 +20723,8 @@ declare module "godot" {
         set oversampling(value: boolean);
         get oversampling_override(): number;
         set oversampling_override(value: number);
-        // @signal size_changed()
-        // @signal gui_focus_changed(node: Control)
+        size_changed: Signal
+        gui_focus_changed: Signal
         set_world_2d(world_2d: World2D): void;
         get_world_2d(): World2D;
         find_world_2d(): World2D;
@@ -21062,7 +21062,7 @@ declare module "godot" {
         set fallback_icon(value: Texture2D);
         get fallback_stylebox(): StyleBox;
         set fallback_stylebox(value: StyleBox);
-        // @signal fallback_changed()
+        fallback_changed: Signal
         get_default_theme(): Theme;
         get_project_theme(): Theme;
         set_fallback_base_scale(base_scale: number): void;
@@ -21098,12 +21098,12 @@ declare module "godot" {
         set camera_locked_to_origin(value: boolean);
         get primary_interface(): GodotObject;
         set primary_interface(value: GodotObject);
-        // @signal reference_frame_changed()
-        // @signal interface_added(interface_name: string)
-        // @signal interface_removed(interface_name: string)
-        // @signal tracker_added(tracker_name: string, type: number)
-        // @signal tracker_updated(tracker_name: string, type: number)
-        // @signal tracker_removed(tracker_name: string, type: number)
+        reference_frame_changed: Signal
+        interface_added: Signal
+        interface_removed: Signal
+        tracker_added: Signal
+        tracker_updated: Signal
+        tracker_removed: Signal
         get_world_scale(): number;
         set_world_scale(scale: number): void;
         get_world_origin(): Transform3D;
@@ -21572,13 +21572,13 @@ declare module "godot" {
         set profile(value: string);
         get hand(): number;
         set hand(value: number);
-        // @signal pose_changed(pose: XRPose)
-        // @signal pose_lost_tracking(pose: XRPose)
-        // @signal button_pressed(name: string)
-        // @signal button_released(name: string)
-        // @signal input_float_changed(name: string, value: number)
-        // @signal input_vector2_changed(name: string, vector: Vector2)
-        // @signal profile_changed(role: string)
+        pose_changed: Signal
+        pose_lost_tracking: Signal
+        button_pressed: Signal
+        button_released: Signal
+        input_float_changed: Signal
+        input_vector2_changed: Signal
+        profile_changed: Signal
         get_tracker_profile(): string;
         set_tracker_profile(profile: string): void;
         get_tracker_hand(): XRPositionalTracker.TrackerHand;
@@ -21639,7 +21639,7 @@ declare module "godot" {
         set environment_blend_mode(value: number);
         get ar_is_anchor_detection_enabled(): boolean;
         set ar_is_anchor_detection_enabled(value: boolean);
-        // @signal play_area_changed(mode: number)
+        play_area_changed: Signal
         get_name(): string;
         get_capabilities(): number;
         is_primary(): boolean;
@@ -22653,8 +22653,8 @@ declare module "godot" {
         get feed_transform(): Transform2D;
         set feed_transform(value: Transform2D);
         get formats(): GDArray;
-        // @signal frame_changed()
-        // @signal format_changed()
+        frame_changed: Signal
+        format_changed: Signal
         _activate_feed(): boolean;
         _deactivate_feed(): void;
         get_id(): number;
@@ -23802,7 +23802,7 @@ declare module "godot" {
     }
 
     class AudioStream extends Resource {
-        // @signal parameter_list_changed()
+        parameter_list_changed: Signal
         _instantiate_playback(): AudioStreamPlayback;
         _get_stream_name(): string;
         _get_length(): number;
@@ -23835,9 +23835,9 @@ declare module "godot" {
     class CameraServer extends Object {
         get monitoring_feeds(): boolean;
         set monitoring_feeds(value: boolean);
-        // @signal camera_feed_added(id: number)
-        // @signal camera_feed_removed(id: number)
-        // @signal camera_feeds_updated()
+        camera_feed_added: Signal
+        camera_feed_removed: Signal
+        camera_feeds_updated: Signal
         set_monitoring_feeds(is_monitoring_feeds: boolean): void;
         is_monitoring_feeds(): boolean;
         get_feed(index: number): CameraFeed;
@@ -24118,8 +24118,8 @@ declare module "godot" {
     }
 
     class TextServerManager extends Object {
-        // @signal interface_added(interface_name: string)
-        // @signal interface_removed(interface_name: string)
+        interface_added: Signal
+        interface_removed: Signal
         add_interface(interface: TextServer): void;
         get_interface_count(): number;
         remove_interface(interface: TextServer): void;
@@ -24148,8 +24148,8 @@ declare module "godot" {
         set transfer_mode(value: number);
         get transfer_channel(): number;
         set transfer_channel(value: number);
-        // @signal peer_connected(id: number)
-        // @signal peer_disconnected(id: number)
+        peer_connected: Signal
+        peer_disconnected: Signal
         set_transfer_channel(channel: number): void;
         get_transfer_channel(): number;
         set_transfer_mode(mode: MultiplayerPeer.TransferMode): void;
@@ -24194,9 +24194,9 @@ declare module "godot" {
     }
 
     class OpenXRRenderModelExtension extends OpenXRExtensionWrapper {
-        // @signal render_model_added(render_model: RID)
-        // @signal render_model_removed(render_model: RID)
-        // @signal render_model_top_level_path_changed(render_model: RID)
+        render_model_added: Signal
+        render_model_removed: Signal
+        render_model_top_level_path_changed: Signal
         is_active(): boolean;
         render_model_create(render_model_id: number): RID;
         render_model_destroy(render_model: RID): void;
@@ -24232,7 +24232,7 @@ declare module "godot" {
     }
 
     class OpenXRFutureResult extends RefCounted {
-        // @signal completed(result: OpenXRFutureResult)
+        completed: Signal
         get_status(): OpenXRFutureResult.ResultStatus;
         get_future(): number;
         cancel_future(): void;
@@ -24510,21 +24510,21 @@ declare module "godot" {
         set theme(value: Theme);
         get theme_type_variation(): string;
         set theme_type_variation(value: string);
-        // @signal window_input(event: InputEvent)
-        // @signal nonclient_window_input(event: InputEvent)
-        // @signal files_dropped(files: PackedStringArray)
-        // @signal mouse_entered()
-        // @signal mouse_exited()
-        // @signal focus_entered()
-        // @signal focus_exited()
-        // @signal close_requested()
-        // @signal go_back_requested()
-        // @signal visibility_changed()
-        // @signal about_to_popup()
-        // @signal theme_changed()
-        // @signal dpi_changed()
-        // @signal titlebar_changed()
-        // @signal title_changed()
+        window_input: Signal
+        nonclient_window_input: Signal
+        files_dropped: Signal
+        mouse_entered: Signal
+        mouse_exited: Signal
+        focus_entered: Signal
+        focus_exited: Signal
+        close_requested: Signal
+        go_back_requested: Signal
+        visibility_changed: Signal
+        about_to_popup: Signal
+        theme_changed: Signal
+        dpi_changed: Signal
+        titlebar_changed: Signal
+        title_changed: Signal
         _get_contents_minimum_size(): Vector2;
         set_title(title: string): void;
         get_title(): string;
@@ -24802,9 +24802,9 @@ declare module "godot" {
     }
 
     class WebRTCPeerConnection extends RefCounted {
-        // @signal session_description_created(type: string, sdp: string)
-        // @signal ice_candidate_created(media: string, index: number, name: string)
-        // @signal data_channel_received(channel: WebRTCDataChannel)
+        session_description_created: Signal
+        ice_candidate_created: Signal
+        data_channel_received: Signal
         static set_default_extension(extension_class: string): void;
         initialize(configuration: GDDictionary): Error;
         create_data_channel(label: string, options: GDDictionary): WebRTCDataChannel;
@@ -25148,21 +25148,21 @@ declare module "godot" {
         set scroll_hint_mode(value: number);
         get tile_scroll_hint(): boolean;
         set tile_scroll_hint(value: boolean);
-        // @signal item_selected()
-        // @signal cell_selected()
-        // @signal multi_selected(item: TreeItem, column: number, selected: boolean)
-        // @signal item_mouse_selected(mouse_position: Vector2, mouse_button_index: number)
-        // @signal empty_clicked(click_position: Vector2, mouse_button_index: number)
-        // @signal item_edited()
-        // @signal custom_item_clicked(mouse_button_index: number)
-        // @signal item_icon_double_clicked()
-        // @signal item_collapsed(item: TreeItem)
-        // @signal check_propagated_to_item(item: TreeItem, column: number)
-        // @signal button_clicked(item: TreeItem, column: number, id: number, mouse_button_index: number)
-        // @signal custom_popup_edited(arrow_clicked: boolean)
-        // @signal item_activated()
-        // @signal column_title_clicked(column: number, mouse_button_index: number)
-        // @signal nothing_selected()
+        item_selected: Signal
+        cell_selected: Signal
+        multi_selected: Signal
+        item_mouse_selected: Signal
+        empty_clicked: Signal
+        item_edited: Signal
+        custom_item_clicked: Signal
+        item_icon_double_clicked: Signal
+        item_collapsed: Signal
+        check_propagated_to_item: Signal
+        button_clicked: Signal
+        custom_popup_edited: Signal
+        item_activated: Signal
+        column_title_clicked: Signal
+        nothing_selected: Signal
         clear(): void;
         create_item(parent: TreeItem, index: number): TreeItem;
         get_root(): TreeItem;
@@ -25556,7 +25556,7 @@ declare module "godot" {
         set navigation_enabled(value: boolean);
         get navigation_visibility_mode(): number;
         set navigation_visibility_mode(value: number);
-        // @signal changed()
+        changed: Signal
         _use_tile_data_runtime_update(coords: Vector2i): boolean;
         _tile_data_runtime_update(coords: Vector2i, tile_data: TileData): void;
         _update_cells(coords: GDArray, forced_cleanup: boolean): void;
@@ -25635,7 +25635,7 @@ declare module "godot" {
         set collision_visibility_mode(value: number);
         get navigation_visibility_mode(): number;
         set navigation_visibility_mode(value: number);
-        // @signal changed()
+        changed: Signal
         _use_tile_data_runtime_update(layer: number, coords: Vector2i): boolean;
         _tile_data_runtime_update(layer: number, coords: Vector2i, tile_data: TileData): void;
         set_navigation_map(layer: number, map: RID): void;
@@ -26367,13 +26367,13 @@ declare module "godot" {
         set structured_text_bidi_override(value: number);
         get structured_text_bidi_override_options(): GDArray;
         set structured_text_bidi_override_options(value: GDArray);
-        // @signal text_set()
-        // @signal text_changed()
-        // @signal lines_edited_from(from_line: number, to_line: number)
-        // @signal caret_changed()
-        // @signal gutter_clicked(line: number, gutter: number)
-        // @signal gutter_added()
-        // @signal gutter_removed()
+        text_set: Signal
+        text_changed: Signal
+        lines_edited_from: Signal
+        caret_changed: Signal
+        gutter_clicked: Signal
+        gutter_added: Signal
+        gutter_removed: Signal
         _handle_unicode_input(unicode_char: number, caret_index: number): void;
         _backspace(caret_index: number): void;
         _cut(caret_index: number): void;
@@ -26785,12 +26785,12 @@ declare module "godot" {
         set modifier_callback_mode_process(value: number);
         get animate_physical_bones(): boolean;
         set animate_physical_bones(value: boolean);
-        // @signal rest_updated()
-        // @signal pose_updated()
-        // @signal skeleton_updated()
-        // @signal bone_enabled_changed(bone_idx: number)
-        // @signal bone_list_changed()
-        // @signal show_rest_only_changed()
+        rest_updated: Signal
+        pose_updated: Signal
+        skeleton_updated: Signal
+        bone_enabled_changed: Signal
+        bone_list_changed: Signal
+        show_rest_only_changed: Signal
         add_bone(name: string): number;
         find_bone(name: string): number;
         get_bone_name(bone_idx: number): string;
@@ -26878,7 +26878,7 @@ declare module "godot" {
     }
 
     class ScriptCreateDialog extends ConfirmationDialog {
-        // @signal script_created(script: Script)
+        script_created: Signal
         config(inherits: string, path: string, built_in_enabled: boolean, load_enabled: boolean): void;
     }
 
@@ -26904,15 +26904,15 @@ declare module "godot" {
         set multiplayer_poll(value: boolean);
         get physics_interpolation(): boolean;
         set physics_interpolation(value: boolean);
-        // @signal tree_changed()
-        // @signal scene_changed()
-        // @signal tree_process_mode_changed()
-        // @signal node_added(node: Node)
-        // @signal node_removed(node: Node)
-        // @signal node_renamed(node: Node)
-        // @signal node_configuration_warning_changed(node: Node)
-        // @signal process_frame()
-        // @signal physics_frame()
+        tree_changed: Signal
+        scene_changed: Signal
+        tree_process_mode_changed: Signal
+        node_added: Signal
+        node_removed: Signal
+        node_renamed: Signal
+        node_configuration_warning_changed: Signal
+        process_frame: Signal
+        physics_frame: Signal
         get_root(): Window;
         has_group(name: string): boolean;
         is_accessibility_enabled(): boolean;
@@ -27010,9 +27010,9 @@ declare module "godot" {
         set max_sync_packet_size(value: number);
         get max_delta_packet_size(): number;
         set max_delta_packet_size(value: number);
-        // @signal peer_authenticating(id: number)
-        // @signal peer_authentication_failed(id: number)
-        // @signal peer_packet(id: number, packet: PackedByteArray)
+        peer_authenticating: Signal
+        peer_authentication_failed: Signal
+        peer_packet: Signal
         set_root_path(path: string): void;
         get_root_path(): string;
         clear(): void;
@@ -27084,11 +27084,11 @@ declare module "godot" {
         set constant_force(value: Vector3);
         get constant_torque(): Vector3;
         set constant_torque(value: Vector3);
-        // @signal body_shape_entered(body_rid: RID, body: Node, body_shape_index: number, local_shape_index: number)
-        // @signal body_shape_exited(body_rid: RID, body: Node, body_shape_index: number, local_shape_index: number)
-        // @signal body_entered(body: Node)
-        // @signal body_exited(body: Node)
-        // @signal sleeping_state_changed()
+        body_shape_entered: Signal
+        body_shape_exited: Signal
+        body_entered: Signal
+        body_exited: Signal
+        sleeping_state_changed: Signal
         _integrate_forces(state: PhysicsDirectBodyState3D): void;
         set_mass(mass: number): void;
         get_mass(): number;
@@ -27212,11 +27212,11 @@ declare module "godot" {
         set constant_force(value: Vector2);
         get constant_torque(): number;
         set constant_torque(value: number);
-        // @signal body_shape_entered(body_rid: RID, body: Node, body_shape_index: number, local_shape_index: number)
-        // @signal body_shape_exited(body_rid: RID, body: Node, body_shape_index: number, local_shape_index: number)
-        // @signal body_entered(body: Node)
-        // @signal body_exited(body: Node)
-        // @signal sleeping_state_changed()
+        body_shape_entered: Signal
+        body_shape_exited: Signal
+        body_entered: Signal
+        body_exited: Signal
+        sleeping_state_changed: Signal
         _integrate_forces(state: PhysicsDirectBodyState2D): void;
         set_mass(mass: number): void;
         get_mass(): number;
@@ -27358,10 +27358,10 @@ declare module "godot" {
         set structured_text_bidi_override(value: number);
         get structured_text_bidi_override_options(): GDArray;
         set structured_text_bidi_override_options(value: GDArray);
-        // @signal meta_clicked(meta: VariantArgument)
-        // @signal meta_hover_started(meta: VariantArgument)
-        // @signal meta_hover_ended(meta: VariantArgument)
-        // @signal finished()
+        meta_clicked: Signal
+        meta_hover_started: Signal
+        meta_hover_ended: Signal
+        finished: Signal
         get_parsed_text(): string;
         add_text(text: string): void;
         set_text(text: string): void;
@@ -27604,8 +27604,8 @@ declare module "godot" {
         static readonly PARTICLES_EMIT_FLAG_CUSTOM: number;
         get render_loop_enabled(): boolean;
         set render_loop_enabled(value: boolean);
-        // @signal frame_pre_draw()
-        // @signal frame_post_draw()
+        frame_pre_draw: Signal
+        frame_post_draw: Signal
         texture_2d_create(image: Image): RID;
         texture_2d_layered_create(layers: GDArray, layered_type: RenderingServer.TextureLayeredType): RID;
         texture_3d_create(format: Image.Format, width: number, height: number, depth: number, mipmaps: boolean, data: GDArray): RID;
@@ -29551,7 +29551,7 @@ declare module "godot" {
     }
 
     class ProjectSettings extends Object {
-        // @signal settings_changed()
+        settings_changed: Signal
         has_setting(name: string): boolean;
         set_setting(name: string, value: VariantArgument): void;
         get_setting(name: string, default_value: VariantArgument): Variant;
@@ -29624,10 +29624,10 @@ declare module "godot" {
         set shrink_width(value: boolean);
         get item_count(): number;
         set item_count(value: number);
-        // @signal id_pressed(id: number)
-        // @signal id_focused(id: number)
-        // @signal index_pressed(index: number)
-        // @signal menu_changed()
+        id_pressed: Signal
+        id_focused: Signal
+        index_pressed: Signal
+        menu_changed: Signal
         activate_item_by_event(event: InputEvent, for_global_only: boolean): boolean;
         set_prefer_native_menu(enabled: boolean): void;
         is_prefer_native_menu(): boolean;
@@ -30766,8 +30766,8 @@ declare module "godot" {
         set allow_reselect(value: boolean);
         get item_count(): number;
         set item_count(value: number);
-        // @signal item_selected(index: number)
-        // @signal item_focused(index: number)
+        item_selected: Signal
+        item_focused: Signal
         add_item(label: string, id: number): void;
         add_icon_item(texture: Texture2D, label: string, id: number): void;
         set_item_text(idx: number, text: string): void;
@@ -31030,7 +31030,7 @@ declare module "godot" {
         set visible(value: boolean);
         get visibility_parent(): string;
         set visibility_parent(value: string);
-        // @signal visibility_changed()
+        visibility_changed: Signal
         set_transform(local: Transform3D): void;
         get_transform(): Transform3D;
         set_position(position: Vector3): void;
@@ -31185,17 +31185,17 @@ declare module "godot" {
         set auto_translate_mode(value: number);
         get editor_description(): string;
         set editor_description(value: string);
-        // @signal ready()
-        // @signal renamed()
-        // @signal tree_entered()
-        // @signal tree_exiting()
-        // @signal tree_exited()
-        // @signal child_entered_tree(node: Node)
-        // @signal child_exiting_tree(node: Node)
-        // @signal child_order_changed()
-        // @signal replacing_by(node: Node)
-        // @signal editor_description_changed(node: Node)
-        // @signal editor_state_changed()
+        ready: Signal
+        renamed: Signal
+        tree_entered: Signal
+        tree_exiting: Signal
+        tree_exited: Signal
+        child_entered_tree: Signal
+        child_exiting_tree: Signal
+        child_order_changed: Signal
+        replacing_by: Signal
+        editor_description_changed: Signal
+        editor_state_changed: Signal
         _process(delta: number): void;
         _physics_process(delta: number): void;
         _enter_tree(): void;
@@ -31374,9 +31374,9 @@ declare module "godot" {
     }
 
     class NavigationServer3D extends Object {
-        // @signal map_changed(map: RID)
-        // @signal navigation_debug_changed()
-        // @signal avoidance_debug_changed()
+        map_changed: Signal
+        navigation_debug_changed: Signal
+        avoidance_debug_changed: Signal
         get_maps(): GDArray;
         map_create(): RID;
         map_set_active(map: RID, active: boolean): void;
@@ -31548,9 +31548,9 @@ declare module "godot" {
     }
 
     class NavigationServer2D extends Object {
-        // @signal map_changed(map: RID)
-        // @signal navigation_debug_changed()
-        // @signal avoidance_debug_changed()
+        map_changed: Signal
+        navigation_debug_changed: Signal
+        avoidance_debug_changed: Signal
         get_maps(): GDArray;
         map_create(): RID;
         map_set_active(map: RID, active: boolean): void;
@@ -31802,11 +31802,11 @@ declare module "godot" {
     class MultiplayerAPI extends RefCounted {
         get multiplayer_peer(): MultiplayerPeer;
         set multiplayer_peer(value: MultiplayerPeer);
-        // @signal peer_connected(id: number)
-        // @signal peer_disconnected(id: number)
-        // @signal connected_to_server()
-        // @signal connection_failed()
-        // @signal server_disconnected()
+        peer_connected: Signal
+        peer_disconnected: Signal
+        connected_to_server: Signal
+        connection_failed: Signal
+        server_disconnected: Signal
         has_multiplayer_peer(): boolean;
         get_multiplayer_peer(): MultiplayerPeer;
         set_multiplayer_peer(peer: MultiplayerPeer): void;
@@ -31913,7 +31913,7 @@ declare module "godot" {
     }
 
     class JavaScriptBridge extends Object {
-        // @signal pwa_update_available()
+        pwa_update_available: Signal
         eval(code: string, use_global_execution_context: boolean): Variant;
         get_interface(interface: string): JavaScriptObject;
         create_callback(callable: Callable): JavaScriptObject;
@@ -31963,11 +31963,11 @@ declare module "godot" {
         set icon_scale(value: number);
         get fixed_icon_size(): Vector2i;
         set fixed_icon_size(value: Vector2i);
-        // @signal item_selected(index: number)
-        // @signal empty_clicked(at_position: Vector2, mouse_button_index: number)
-        // @signal item_clicked(index: number, at_position: Vector2, mouse_button_index: number)
-        // @signal multi_selected(index: number, selected: boolean)
-        // @signal item_activated(index: number)
+        item_selected: Signal
+        empty_clicked: Signal
+        item_clicked: Signal
+        multi_selected: Signal
+        item_activated: Signal
         add_item(text: string, icon: Texture2D, selectable: boolean): number;
         add_icon_item(icon: Texture2D, selectable: boolean): number;
         set_item_text(idx: number, text: string): void;
@@ -32097,7 +32097,7 @@ declare module "godot" {
         set emulate_mouse_from_touch(value: boolean);
         get emulate_touch_from_mouse(): boolean;
         set emulate_touch_from_mouse(value: boolean);
-        // @signal joy_connection_changed(device: number, connected: boolean)
+        joy_connection_changed: Signal
         is_anything_pressed(): boolean;
         is_key_pressed(keycode: Key): boolean;
         is_physical_key_pressed(keycode: Key): boolean;
@@ -32271,7 +32271,7 @@ declare module "godot" {
         set max_redirects(value: number);
         get timeout(): number;
         set timeout(value: number);
-        // @signal request_completed(result: number, response_code: number, headers: PackedStringArray, body: PackedByteArray)
+        request_completed: Signal
         request(url: string, custom_headers: PackedStringArray, method: HTTPClient.Method, request_data: string): Error;
         request_raw(url: string, custom_headers: PackedStringArray, method: HTTPClient.Method, request_data_raw: PackedByteArray): Error;
         cancel_request(): void;
@@ -32341,8 +32341,8 @@ declare module "godot" {
         set collision_priority(value: number);
         get bake_navigation(): boolean;
         set bake_navigation(value: boolean);
-        // @signal cell_size_changed(cell_size: Vector3)
-        // @signal changed()
+        cell_size_changed: Signal
+        changed: Signal
         set_collision_layer(layer: number): void;
         get_collision_layer(): number;
         set_collision_mask(mask: number): void;
@@ -32399,8 +32399,8 @@ declare module "godot" {
         set ignore_invalid_connection_type(value: boolean);
         get slots_focus_mode(): number;
         set slots_focus_mode(value: number);
-        // @signal slot_updated(slot_index: number)
-        // @signal slot_sizes_changed()
+        slot_updated: Signal
+        slot_sizes_changed: Signal
         _draw_port(slot_index: number, position: Vector2i, left: boolean, color: Color): void;
         set_title(title: string): void;
         get_title(): string;
@@ -32645,10 +32645,10 @@ declare module "godot" {
         set current_file(value: string);
         get current_path(): string;
         set current_path(value: string);
-        // @signal file_selected(path: string)
-        // @signal files_selected(paths: PackedStringArray)
-        // @signal dir_selected(dir: string)
-        // @signal filename_filter_changed(filter: string)
+        file_selected: Signal
+        files_selected: Signal
+        dir_selected: Signal
+        filename_filter_changed: Signal
         clear_filters(): void;
         add_filter(filter: string, description: string, mime_type: string): void;
         set_filters(filters: PackedStringArray): void;
@@ -32764,8 +32764,8 @@ declare module "godot" {
     }
 
     class EditorUndoRedoManager extends Object {
-        // @signal history_changed()
-        // @signal version_changed()
+        history_changed: Signal
+        version_changed: Signal
         create_action(name: string, merge_mode: UndoRedo.MergeMode, custom_context: GodotObject, backward_undo_ops: boolean, mark_unsaved: boolean): void;
         commit_action(execute: boolean): void;
         is_committing_action(): boolean;
@@ -32972,10 +32972,10 @@ declare module "godot" {
     }
 
     class EditorDebuggerSession extends RefCounted {
-        // @signal started()
-        // @signal stopped()
-        // @signal breaked(can_debug: boolean)
-        // @signal continued()
+        started: Signal
+        stopped: Signal
+        breaked: Signal
+        continued: Signal
         send_message(message: string, data: GDArray): void;
         toggle_profiler(profiler: string, enable: boolean, data: GDArray): void;
         is_breaked(): boolean;
@@ -33070,19 +33070,19 @@ declare module "godot" {
         set use_folding(value: boolean);
         get name_split_ratio(): number;
         set name_split_ratio(value: number);
-        // @signal property_changed(property: string, value: VariantArgument, field: string, changing: boolean)
-        // @signal multiple_properties_changed(properties: PackedStringArray, value: GDArray)
-        // @signal property_keyed(property: string)
-        // @signal property_deleted(property: string)
-        // @signal property_keyed_with_value(property: string, value: VariantArgument)
-        // @signal property_checked(property: string, checked: boolean)
-        // @signal property_overridden()
-        // @signal property_favorited(property: string, favorited: boolean)
-        // @signal property_pinned(property: string, pinned: boolean)
-        // @signal property_can_revert_changed(property: string, can_revert: boolean)
-        // @signal resource_selected(path: string, resource: Resource)
-        // @signal object_id_selected(property: string, id: number)
-        // @signal selected(path: string, focusable_idx: number)
+        property_changed: Signal
+        multiple_properties_changed: Signal
+        property_keyed: Signal
+        property_deleted: Signal
+        property_keyed_with_value: Signal
+        property_checked: Signal
+        property_overridden: Signal
+        property_favorited: Signal
+        property_pinned: Signal
+        property_can_revert_changed: Signal
+        resource_selected: Signal
+        object_id_selected: Signal
+        selected: Signal
         _update_property(): void;
         _set_read_only(read_only: boolean): void;
         set_label(text: string): void;
@@ -33798,8 +33798,8 @@ declare module "godot" {
         set bake_resolution(value: number);
         get point_count(): number;
         set point_count(value: number);
-        // @signal range_changed()
-        // @signal domain_changed()
+        range_changed: Signal
+        domain_changed: Signal
         get_point_count(): number;
         set_point_count(count: number): void;
         add_point(position: Vector2, left_tangent: number, right_tangent: number, left_mode: Curve.TangentMode, right_mode: Curve.TangentMode): number;
@@ -33968,15 +33968,15 @@ declare module "godot" {
         set theme(value: Theme);
         get theme_type_variation(): string;
         set theme_type_variation(value: string);
-        // @signal resized()
-        // @signal gui_input(event: InputEvent)
-        // @signal mouse_entered()
-        // @signal mouse_exited()
-        // @signal focus_entered()
-        // @signal focus_exited()
-        // @signal size_flags_changed()
-        // @signal minimum_size_changed()
-        // @signal theme_changed()
+        resized: Signal
+        gui_input: Signal
+        mouse_entered: Signal
+        mouse_exited: Signal
+        focus_entered: Signal
+        focus_exited: Signal
+        size_flags_changed: Signal
+        minimum_size_changed: Signal
+        theme_changed: Signal
         _has_point(point: Vector2): boolean;
         _structured_text_parser(args: GDArray, text: string): GDArray;
         _get_minimum_size(): Vector2;
@@ -34288,11 +34288,11 @@ declare module "godot" {
         set auto_brace_completion_highlight_matching(value: boolean);
         get auto_brace_completion_pairs(): GDDictionary;
         set auto_brace_completion_pairs(value: GDDictionary);
-        // @signal breakpoint_toggled(line: number)
-        // @signal code_completion_requested()
-        // @signal symbol_lookup(symbol: string, line: number, column: number)
-        // @signal symbol_validate(symbol: string)
-        // @signal symbol_hovered(symbol: string, line: number, column: number)
+        breakpoint_toggled: Signal
+        code_completion_requested: Signal
+        symbol_lookup: Signal
+        symbol_validate: Signal
+        symbol_hovered: Signal
         _confirm_code_completion(replace: boolean): void;
         _request_code_completion(force: boolean): void;
         _filter_code_completion_candidates(candidates: GDArray): GDArray;
@@ -34469,10 +34469,10 @@ declare module "godot" {
         set material(value: CanvasItemMaterial | ShaderMaterial);
         get use_parent_material(): boolean;
         set use_parent_material(value: boolean);
-        // @signal draw()
-        // @signal visibility_changed()
-        // @signal hidden()
-        // @signal item_rect_changed()
+        draw: Signal
+        visibility_changed: Signal
+        hidden: Signal
+        item_rect_changed: Signal
         _draw(): void;
         get_canvas_item(): RID;
         set_visible(visible: boolean): void;
@@ -34667,8 +34667,8 @@ declare module "godot" {
         set input_device(value: string);
         get playback_speed_scale(): number;
         set playback_speed_scale(value: number);
-        // @signal bus_layout_changed()
-        // @signal bus_renamed(bus_index: number, old_name: string, new_name: string)
+        bus_layout_changed: Signal
+        bus_renamed: Signal
         set_bus_count(amount: number): void;
         get_bus_count(): number;
         remove_bus(index: number): void;
@@ -34810,8 +34810,8 @@ declare module "godot" {
         set speed_scale(value: number);
         get movie_quit_on_finish(): boolean;
         set movie_quit_on_finish(value: boolean);
-        // @signal current_animation_changed(name: string)
-        // @signal animation_changed(old_name: string, new_name: string)
+        current_animation_changed: Signal
+        animation_changed: Signal
         animation_set_next(animation_from: string, animation_to: string): void;
         animation_get_next(animation_from: string): string;
         set_blend_time(animation_from: string, animation_to: string, sec: number): void;
@@ -34880,8 +34880,8 @@ declare module "godot" {
     }
 
     class AnimationNodeStateMachinePlayback extends Resource {
-        // @signal state_started(state: string)
-        // @signal state_finished(state: string)
+        state_started: Signal
+        state_finished: Signal
         travel(to_node: string, reset_on_teleport: boolean): void;
         start(node: string, reset: boolean): void;
         next(): void;
@@ -34949,7 +34949,7 @@ declare module "godot" {
         static readonly CONNECTION_ERROR_CONNECTION_EXISTS: number;
         get graph_offset(): Vector2;
         set graph_offset(value: Vector2);
-        // @signal node_changed(node_name: string)
+        node_changed: Signal
         add_node(name: string, node: AnimationNode, position: Vector2): void;
         get_node(name: string): AnimationNode;
         remove_node(name: string): void;
@@ -34985,7 +34985,7 @@ declare module "godot" {
         set blend_mode(value: number);
         get sync(): boolean;
         set sync(value: boolean);
-        // @signal triangles_updated()
+        triangles_updated: Signal
         add_blend_point(node: AnimationRootNode, pos: Vector2, at_index: number): void;
         set_blend_point_position(point: number, pos: Vector2): void;
         get_blend_point_position(point: number): Vector2;
@@ -35070,9 +35070,9 @@ declare module "godot" {
         set filters(value: GDArray);
         _get_filters(): GDArray;
         _set_filters(value: GDArray): void;
-        // @signal tree_changed()
-        // @signal animation_node_renamed(object_id: number, old_name: string, new_name: string)
-        // @signal animation_node_removed(object_id: number, name: string)
+        tree_changed: Signal
+        animation_node_renamed: Signal
+        animation_node_removed: Signal
         _get_child_nodes(): GDDictionary;
         _get_parameter_list(): GDArray;
         _get_child_by_name(name: string): AnimationNode;
@@ -35256,11 +35256,11 @@ declare module "godot" {
         set frame_progress(value: number);
         get speed_scale(): number;
         set speed_scale(value: number);
-        // @signal sprite_frames_changed()
-        // @signal animation_changed()
-        // @signal frame_changed()
-        // @signal animation_looped()
-        // @signal animation_finished()
+        sprite_frames_changed: Signal
+        animation_changed: Signal
+        frame_changed: Signal
+        animation_looped: Signal
+        animation_finished: Signal
         set_sprite_frames(sprite_frames: SpriteFrames): void;
         get_sprite_frames(): SpriteFrames;
         set_animation(name: string): void;
@@ -35303,11 +35303,11 @@ declare module "godot" {
         set flip_h(value: boolean);
         get flip_v(): boolean;
         set flip_v(value: boolean);
-        // @signal sprite_frames_changed()
-        // @signal animation_changed()
-        // @signal frame_changed()
-        // @signal animation_looped()
-        // @signal animation_finished()
+        sprite_frames_changed: Signal
+        animation_changed: Signal
+        frame_changed: Signal
+        animation_looped: Signal
+        animation_finished: Signal
         set_sprite_frames(sprite_frames: SpriteFrames): void;
         get_sprite_frames(): SpriteFrames;
         set_animation(name: string): void;
@@ -35348,9 +35348,9 @@ declare module "godot" {
         set dialog_close_on_escape(value: boolean);
         get dialog_autowrap(): boolean;
         set dialog_autowrap(value: boolean);
-        // @signal confirmed()
-        // @signal canceled()
-        // @signal custom_action(action: string)
+        confirmed: Signal
+        canceled: Signal
+        custom_action: Signal
         get_ok_button(): Button;
         get_label(): Label;
         set_hide_on_ok(enabled: boolean): void;
@@ -35392,9 +35392,9 @@ declare module "godot" {
     }
 
     class GDExtensionManager extends Object {
-        // @signal extensions_reloaded()
-        // @signal extension_loaded(extension: GDExtension)
-        // @signal extension_unloading(extension: GDExtension)
+        extensions_reloaded: Signal
+        extension_loaded: Signal
+        extension_unloading: Signal
         load_extension(path: string): GDExtensionManager.LoadStatus;
         reload_extension(path: string): GDExtensionManager.LoadStatus;
         unload_extension(path: string): GDExtensionManager.LoadStatus;
@@ -35915,7 +35915,7 @@ declare module "godot" {
     class UndoRedo extends Object {
         get max_steps(): number;
         set max_steps(value: number);
-        // @signal version_changed()
+        version_changed: Signal
         create_action(name: string, merge_mode: UndoRedo.MergeMode, backward_undo_ops: boolean): void;
         commit_action(execute: boolean): void;
         is_committing_action(): boolean;
@@ -36044,7 +36044,7 @@ declare module "godot" {
         static readonly NOTIFICATION_APPLICATION_FOCUS_IN: number;
         static readonly NOTIFICATION_APPLICATION_FOCUS_OUT: number;
         static readonly NOTIFICATION_TEXT_SERVER_CHANGED: number;
-        // @signal on_request_permissions_result(permission: string, granted: boolean)
+        on_request_permissions_result: Signal
         _initialize(): void;
         _physics_process(delta: number): boolean;
         _process(delta: number): boolean;
@@ -37270,8 +37270,8 @@ declare module "godot" {
         set resource_name(value: string);
         get resource_scene_unique_id(): string;
         set resource_scene_unique_id(value: string);
-        // @signal changed()
-        // @signal setup_local_to_scene_requested()
+        changed: Signal
+        setup_local_to_scene_requested: Signal
         _setup_local_to_scene(): void;
         _get_rid(): RID;
         _reset_state(): void;
@@ -37321,8 +37321,8 @@ declare module "godot" {
         static readonly NOTIFICATION_POSTINITIALIZE: number;
         static readonly NOTIFICATION_PREDELETE: number;
         static readonly NOTIFICATION_EXTENSION_RELOADED: number;
-        // @signal script_changed()
-        // @signal property_list_changed()
+        script_changed: Signal
+        property_list_changed: Signal
         get_class(): string;
         is_class(class_gd: string): boolean;
         set_gd(property: string, value: VariantArgument): void;

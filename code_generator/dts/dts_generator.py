@@ -244,7 +244,7 @@ class DtsGenerator(CodeGenerator):
         # Signals (as comments — no runtime type)
         for sig in cls_data.get('signals', []):
             params = self._format_params(sig.get('arguments', []))
-            lines.append(f'{ind2}// @signal {sig["name"]}({params})')
+            lines.append(f'{ind2}{sig["name"]}: Signal')
 
         # Methods
         for method in cls_data.get('methods', []):

@@ -328,7 +328,7 @@ void NodeRuntime::init_once() {
 				"if (originalGlobalRequire) Object.assign(globalThis.require, originalGlobalRequire);"
 				""
 				"if (gode.GDObject && gode.GDObject.prototype) {"
-				"  gode.GDObject.prototype.toSignal = function(signal, { timeoutMs, abortSignal } = {}) {"
+				"  gode.GDObject.prototype.to_signal = function(signal, { timeoutMs, abortSignal } = {}) {"
 				"    const obj = this;"
 				"    return new Promise((resolve, reject) => {"
 				"      let done = false;"
@@ -348,7 +348,7 @@ void NodeRuntime::init_once() {
 				"        if (done) return;"
 				"        done = true;"
 				"        cleanup();"
-				"        reject(new Error('toSignal: aborted'));"
+				"        reject(new Error('to_signal: aborted'));"
 				"      };"
 				"      try {"
 				"        obj.connect(signal, callback);"
@@ -362,12 +362,11 @@ void NodeRuntime::init_once() {
 				"          if (done) return;"
 				"          done = true;"
 				"          cleanup();"
-				"          reject(new Error(`toSignal: timeout waiting for '${signal}'`));"
+				"          reject(new Error(`to_signal: timeout waiting for '${signal}'`));"
 				"        }, timeoutMs);"
 				"      }"
 				"    });"
 				"  };"
-				"  gode.GDObject.prototype.to_signal = gode.GDObject.prototype.toSignal;"
 				"}";
 
 		node::LoadEnvironment(env, boot_script.c_str());

@@ -194,7 +194,7 @@ class UnitTest extends godot.Node {
 	}
 
 	async test_to_signal() {
-		GD.print("\n[Testing toSignal]");
+		GD.print("\n[Testing to_signal]");
 		let node = new godot.Node();
 		this.add_child(node);
 
@@ -205,9 +205,9 @@ class UnitTest extends godot.Node {
 			node.name = "NewNameAsync";
 		}, 100);
 
-		await node.toSignal("renamed");
-		GD.print("  -> toSignal resolved!");
-		this.assert(node.name === "NewNameAsync", "toSignal awaited correctly");
+		await node.to_signal("renamed");
+		GD.print("  -> to_signal resolved!");
+		this.assert(node.name === "NewNameAsync", "to_signal awaited correctly");
 
 		// Cleanup
 		this.remove_child(node);
