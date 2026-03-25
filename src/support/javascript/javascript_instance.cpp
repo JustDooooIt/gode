@@ -178,6 +178,11 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 		return Variant();
 	}
 
+	if (!javascript.is_valid() || !javascript->_is_tool()) {
+		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		return Variant();
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);

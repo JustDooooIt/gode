@@ -10,12 +10,6 @@
 
 namespace gode {
 
-class JsEnvManager {
-public:
-	static void init(Napi::Env env);
-	static Napi::Env get_env();
-};
-
 class NodeRuntime {
 public:
 	static v8::Isolate *isolate;
@@ -31,8 +25,8 @@ public:
 
 private:
 	static bool is_esm_file(const std::string &filename, const std::string &code);
-	static Napi::Value compile_esm_module(const std::string &code, const std::string &filename);
-	static Napi::Value compile_cjs_module(const std::string &code, const std::string &filename);
+	static v8::Local<v8::Value> compile_esm_module(const std::string &code, const std::string &filename);
+	static v8::Local<v8::Value> compile_cjs_module(const std::string &code, const std::string &filename);
 };
 
 } // namespace gode

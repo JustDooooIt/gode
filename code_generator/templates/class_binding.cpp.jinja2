@@ -188,7 +188,8 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
     {% if not method.is_static %}
     Napi::Object js_this = info.This().As<Napi::Object>();
     {{ class_name }}Binding* binding_instance = {{ class_name }}Binding::Unwrap(js_this);
-    
+
+    /*
     if (binding_instance->internal_object_id != 0) {
         godot::Object* obj = godot::ObjectDB::get_instance(binding_instance->internal_object_id);
         if (!obj) {
@@ -198,7 +199,8 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
         }
         binding_instance->instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(obj);
     }
-    
+    */
+
     godot::{{ godot_class_name }}* instance = binding_instance->instance;
     if (!instance) {
          Napi::Error::New(info.Env(), "Object is null").ThrowAsJavaScriptException();
