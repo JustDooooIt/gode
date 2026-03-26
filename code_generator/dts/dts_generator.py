@@ -565,6 +565,7 @@ class DtsGenerator(CodeGenerator):
 
     def _generate_globals(self, api: dict) -> list:
         symbols = self._collect_global_symbols(api)
+        symbols.append('VariantArgument')
 
         import_items = ', '.join(f'{name} as Godot{name}' for name in symbols)
 

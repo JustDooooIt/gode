@@ -55,7 +55,7 @@ else
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "strict": false,
+    "strict": true,
     "noCheck": false,
     "outDir": "dist",
     "rootDir": ".",

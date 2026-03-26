@@ -178,7 +178,7 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 		return Variant();
 	}
 
-	if (!javascript.is_valid() || !javascript->_is_tool()) {
+	if (!javascript.is_valid() || (Engine::get_singleton()->is_editor_hint() && !javascript->_is_tool())) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}

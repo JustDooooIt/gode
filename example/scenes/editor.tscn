@@ -103,10 +103,9 @@ size_flags_vertical = 3
 
 [node name="BoardGrid" type="GridContainer" parent="MainSplit/RightPanel/BoardScroll" unique_id=1033922076]
 layout_mode = 2
-columns = 6
 size_flags_horizontal = 3
 size_flags_vertical = 0
-custom_minimum_size = Vector2(0, 0)
+columns = 6
 
 [node name="StatusLabel" type="Label" parent="MainSplit/RightPanel" unique_id=1002453722]
 layout_mode = 2

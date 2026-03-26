@@ -58,7 +58,7 @@ if exist "%TSCONFIG%" (
         echo     "target": "ES2020",
         echo     "module": "ESNext",
         echo     "moduleResolution": "bundler",
-        echo     "strict": false,
+        echo     "strict": true,
         echo     "noCheck": false,
         echo     "outDir": "dist",
         echo     "rootDir": ".",
