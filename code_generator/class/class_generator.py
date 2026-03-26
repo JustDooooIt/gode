@@ -216,12 +216,16 @@ class ClassGenerator(CodeGenerator):
                         method['has_return_value'] = False
                     vararg_methods.append(method)
             
-            # Determine if class inherits from Node
+            # Determine if class inherits from Node or RefCounted
             is_node = False
+            is_ref_counted = False
             current_class = class_name
             while current_class:
                 if current_class == 'Node':
                     is_node = True
+                    break
+                if current_class == 'RefCounted':
+                    is_ref_counted = True
                     break
                 # Find parent class
                 parent = None
@@ -267,6 +271,7 @@ class ClassGenerator(CodeGenerator):
                 'godot_include_name': godot_include_name,
                 'class_name': class_name,
                 'is_node': is_node,
+                'is_ref_counted': is_ref_counted,
                 'snake_name': snake_name,
                 'godot_header_dir': 'core' if class_name == 'Object' else 'classes',
                 'generated_subdir': 'classes',

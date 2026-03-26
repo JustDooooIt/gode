@@ -529,9 +529,6 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 		init_once();
 	}
 
-	// v8::Isolate::Scope isolate_scope(isolate);
-	// v8::HandleScope handle_scope(isolate);
-
 	v8::Local<v8::Context> context = node_context.Get(isolate);
 	v8::Context::Scope context_scope(context);
 

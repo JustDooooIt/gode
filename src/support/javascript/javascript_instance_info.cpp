@@ -216,12 +216,18 @@ static void javascript_instance_to_string(GDExtensionScriptInstanceDataPtr p_ins
 }
 
 static void javascript_instance_refcount_incremented(GDExtensionScriptInstanceDataPtr p_instance) {
-	(void)p_instance;
+	JavascriptInstance *instance = cast_instance(p_instance);
+	if (instance) {
+		reinterpret_cast<RefCounted *>(instance->get_owner())->reference();
+	}
 }
 
 static GDExtensionBool javascript_instance_refcount_decremented(GDExtensionScriptInstanceDataPtr p_instance) {
-	(void)p_instance;
-	return false;
+	JavascriptInstance *instance = cast_instance(p_instance);
+	if (instance) {
+		return reinterpret_cast<RefCounted *>(instance->get_owner())->unreference();
+	}
+	return true;
 }
 
 static GDExtensionObjectPtr javascript_instance_get_script(GDExtensionScriptInstanceDataPtr p_instance) {

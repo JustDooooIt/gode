@@ -159,6 +159,7 @@ declare global {
     hint?: number;
     hint_string?: string;
   }
+  type ExportMap = Record<string, ExportEntry>;
 }
 
 export {};

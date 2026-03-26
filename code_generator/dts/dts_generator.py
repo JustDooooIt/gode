@@ -585,6 +585,7 @@ class DtsGenerator(CodeGenerator):
         lines.append('    hint?: number;')
         lines.append('    hint_string?: string;')
         lines.append('  }')
+        lines.append('  type ExportMap = Record<string, ExportEntry>;')
 
         lines.append('}')
         lines.append('')

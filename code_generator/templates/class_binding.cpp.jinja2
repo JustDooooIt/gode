@@ -140,7 +140,20 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 }
 
 {{ class_name }}Binding::~{{ class_name }}Binding() {
-    {% if is_node %}
+    {% if is_ref_counted %}
+    if (internal_object_id != 0) {
+        godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
+        if (obj) {
+            godot::RefCounted* ref = godot::Object::cast_to<godot::RefCounted>(obj);
+            if (ref) {
+                ref->unreference();
+                if (ref->get_reference_count() == 0) {
+            		godot::memdelete(ref);
+            	}
+            }
+        }
+    }
+    {% elif is_node %}
     if (internal_object_id != 0) {
         godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
         if (obj) {
