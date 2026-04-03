@@ -48,7 +48,6 @@ godot::String JavascriptCallable::get_as_text() const {
 }
 
 bool JavascriptCallable::is_valid() const {
-    // godot::UtilityFunctions::print("DEBUG: JavascriptCallable::is_valid invoked"); // Too spammy?
 	return !func_ref.IsEmpty();
 }
 

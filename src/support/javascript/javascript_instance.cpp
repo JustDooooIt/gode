@@ -84,6 +84,7 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 		Napi::Env env = default_class.Env();
 		Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
 		Napi::Object instance = default_class.New({ external_owner });
+
 		js_instance = Napi::Persistent(instance);
 	}
 }
@@ -102,17 +103,59 @@ bool JavascriptInstance::is_placeholder() const {
 	return placeholder;
 }
 
-bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
+void JavascriptInstance::reload(bool p_keep_state) {
 	if (placeholder) {
-		placeholder_properties[p_name] = p_value;
-		return true;
+		return;
+	}
+
+	if (!javascript->compile()) {
+		return;
 	}
 
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
+
+	HashMap<StringName, Variant> old_state;
+	if (p_keep_state && !js_instance.IsEmpty()) {
+		for (const KeyValue<StringName, PropertyInfo> &E : javascript->get_exported_properties()) {
+			Variant value;
+			if (get(E.key, value)) {
+				old_state[E.key] = value;
+			}
+		}
+	}
+
+	js_instance.Reset();
+
+	Napi::Function default_class = javascript->get_default_class();
+	if (default_class.IsEmpty()) {
+		return;
+	}
+
+	Napi::Env env = default_class.Env();
+	Napi::Value external_owner = Napi::External<Object>::New(env, owner);
+	Napi::Object instance = default_class.New({ external_owner });
+
+	if (p_keep_state) {
+		for (const KeyValue<StringName, Variant> &E : old_state) {
+			instance.Set(String(E.key).utf8().get_data(), godot_to_napi(env, E.value));
+		}
+	}
+
+	js_instance = Napi::Persistent(instance);
+}
+
+bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
+	if (placeholder) {
+		placeholder_properties[p_name] = p_value;
+		return true;
+	}
+	v8::Locker locker(NodeRuntime::isolate);
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	std::string property_name = String(p_name).utf8().get_data();
-	if (js_instance.Value().HasOwnProperty(property_name)) {
+	if (javascript->properties.has(property_name.c_str())) {
 		Napi::Env env = js_instance.Value().Env();
 		return js_instance.Set(property_name, godot_to_napi(env, p_value));
 	}
@@ -135,9 +178,8 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
-	Napi::Object obj = js_instance.Value();
 	const char *prop_name = String(p_name).utf8().get_data();
-	if (obj.HasOwnProperty(prop_name)) {
+	if (javascript->properties.has(prop_name)) {
 		Napi::Value val = js_instance.Get(prop_name);
 		r_value = napi_to_godot(val);
 		return true;
@@ -157,7 +199,7 @@ bool JavascriptInstance::has_method(const StringName &p_method) const {
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	Napi::Object instance = js_instance.Value();
 	std::string method_name = String(p_method).utf8().get_data();
-	return instance.Has(method_name);
+	return javascript->_has_method(method_name.c_str());
 }
 
 int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
@@ -189,9 +231,6 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 	Napi::Object instance = js_instance.Value();
 	Napi::Env env = instance.Env();
 	std::string method_name = String(p_method).utf8().get_data();
-
-	bool ret = false;
-	napi_is_exception_pending(env, &ret);
 
 	if (!instance.Has(method_name)) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
@@ -298,8 +337,10 @@ bool JavascriptInstance::property_can_revert(const StringName &p_name) const {
 }
 
 bool JavascriptInstance::property_get_revert(const StringName &p_name, Variant &r_ret) const {
-	(void)p_name;
-	(void)r_ret;
+	if (javascript.is_valid() && javascript->_has_property_default_value(p_name)) {
+		r_ret = javascript->_get_property_default_value(p_name);
+		return true;
+	}
 	return false;
 }
 

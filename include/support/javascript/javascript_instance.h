@@ -42,6 +42,8 @@ public:
 	bool property_can_revert(const godot::StringName &p_name) const;
 	bool property_get_revert(const godot::StringName &p_name, godot::Variant &r_ret) const;
 
+	void reload(bool p_keep_state);
+
 	void get_property_list(const GDExtensionPropertyInfo *&r_list, uint32_t &r_count) const;
 	void free_property_list(const GDExtensionPropertyInfo *p_list) const;
 	void get_method_list(const GDExtensionMethodInfo *&r_list, uint32_t &r_count) const;

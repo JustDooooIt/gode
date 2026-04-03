@@ -182,23 +182,42 @@ bool Javascript::compile() const {
 											uint32_t pke = ts_node_end_byte(pk);
 											std::string field_key = source.substr(pks, pke - pks);
 
-											if (field_key == "type" && strcmp(ts_node_type(pv), "string") == 0) {
-												uint32_t pvs = ts_node_start_byte(pv) + 1;
-												uint32_t pve = ts_node_end_byte(pv) - 1;
-												std::string type_str = source.substr(pvs, pve - pvs);
-												if (type_str == "bool") pi.type = Variant::BOOL;
-												else if (type_str == "int") pi.type = Variant::INT;
-												else if (type_str == "float" || type_str == "number") pi.type = Variant::FLOAT;
-												else if (type_str == "String" || type_str == "string") pi.type = Variant::STRING;
-												else if (type_str == "Vector2") pi.type = Variant::VECTOR2;
-												else if (type_str == "Vector2i") pi.type = Variant::VECTOR2I;
-												else if (type_str == "Vector3") pi.type = Variant::VECTOR3;
-												else if (type_str == "Vector3i") pi.type = Variant::VECTOR3I;
-												else if (type_str == "Vector4") pi.type = Variant::VECTOR4;
-												else if (type_str == "Vector4i") pi.type = Variant::VECTOR4I;
-												else if (type_str == "Color") pi.type = Variant::COLOR;
-												else if (type_str == "NodePath") pi.type = Variant::NODE_PATH;
-												else if (type_str == "Object") pi.type = Variant::OBJECT;
+											if (field_key == "type") {
+												const char *pv_type = ts_node_type(pv);
+												if (strcmp(pv_type, "string") == 0) {
+													uint32_t pvs = ts_node_start_byte(pv) + 1;
+													uint32_t pve = ts_node_end_byte(pv) - 1;
+													std::string type_str = source.substr(pvs, pve - pvs);
+													if (type_str == "bool") pi.type = Variant::BOOL;
+													else if (type_str == "int") pi.type = Variant::INT;
+													else if (type_str == "float" || type_str == "number") pi.type = Variant::FLOAT;
+													else if (type_str == "String" || type_str == "string") pi.type = Variant::STRING;
+													else if (type_str == "Vector2") pi.type = Variant::VECTOR2;
+													else if (type_str == "Vector2i") pi.type = Variant::VECTOR2I;
+													else if (type_str == "Vector3") pi.type = Variant::VECTOR3;
+													else if (type_str == "Vector3i") pi.type = Variant::VECTOR3I;
+													else if (type_str == "Vector4") pi.type = Variant::VECTOR4;
+													else if (type_str == "Vector4i") pi.type = Variant::VECTOR4I;
+													else if (type_str == "Color") pi.type = Variant::COLOR;
+													else if (type_str == "NodePath") pi.type = Variant::NODE_PATH;
+													else if (type_str == "Object") pi.type = Variant::OBJECT;
+												} else if (strcmp(pv_type, "identifier") == 0) {
+													uint32_t pvs = ts_node_start_byte(pv);
+													uint32_t pve = ts_node_end_byte(pv);
+													std::string type_str = source.substr(pvs, pve - pvs);
+													if (type_str == "Boolean") pi.type = Variant::BOOL;
+													else if (type_str == "Number") pi.type = Variant::FLOAT;
+													else if (type_str == "String") pi.type = Variant::STRING;
+													else if (type_str == "Vector2") pi.type = Variant::VECTOR2;
+													else if (type_str == "Vector2i") pi.type = Variant::VECTOR2I;
+													else if (type_str == "Vector3") pi.type = Variant::VECTOR3;
+													else if (type_str == "Vector3i") pi.type = Variant::VECTOR3I;
+													else if (type_str == "Vector4") pi.type = Variant::VECTOR4;
+													else if (type_str == "Vector4i") pi.type = Variant::VECTOR4I;
+													else if (type_str == "Color") pi.type = Variant::COLOR;
+													else if (type_str == "NodePath") pi.type = Variant::NODE_PATH;
+													else if (type_str == "Object") pi.type = Variant::OBJECT;
+												}
 											} else if (field_key == "hint" && strcmp(ts_node_type(pv), "number") == 0) {
 												uint32_t pvs = ts_node_start_byte(pv);
 												uint32_t pve = ts_node_end_byte(pv);
@@ -236,6 +255,8 @@ bool Javascript::compile() const {
 								property_defaults[field_name] = true;
 							} else if (strcmp(vt, "false") == 0) {
 								property_defaults[field_name] = false;
+							} else if (strcmp(vt, "new_expression") == 0) {
+								property_defaults[field_name] = NodeRuntime::eval_expression(source.substr(vs, ve - vs));
 							}
 						}
 					}
@@ -287,11 +308,41 @@ bool Javascript::compile() const {
 }
 
 Napi::Function Javascript::get_default_class() const {
-	compile();
-	if (default_class.IsEmpty()) {
+	if (!default_class.IsEmpty()) {
+		return default_class.Value();
+	}
+
+	if (!compile()) {
 		return Napi::Function();
 	}
-	return default_class.Value();
+
+	String path = get_path();
+	if (path.is_empty()) {
+		return Napi::Function();
+	}
+
+	String rel = path;
+	if (rel.begins_with("res://")) {
+		rel = rel.substr(6);
+	}
+	String js_path = "res://dist/" + rel.get_basename() + ".js";
+
+	if (!FileAccess::file_exists(js_path)) {
+		return Napi::Function();
+	}
+
+	String js_code = FileAccess::get_file_as_string(js_path);
+	
+	Napi::Value exports = NodeRuntime::compile_script(js_code.utf8().get_data(), js_path.utf8().get_data());
+	Napi::Function cls = NodeRuntime::get_default_class(exports);
+	
+
+	if (!cls.IsEmpty() && !cls.IsUndefined() && !cls.IsNull()) {
+		const_cast<Javascript*>(this)->default_class = Napi::Persistent(cls);
+		return cls;
+	}
+
+	return Napi::Function();
 }
 
 bool Javascript::_editor_can_reload_from_file() {
@@ -482,10 +533,26 @@ String Javascript::_get_source_code() const {
 void Javascript::_set_source_code(const String &p_code) {
 	is_dirty = true;
 	source_code = p_code;
+
+	if (compile()) {
+		for (JavascriptInstance *instance : instances) {
+			if (instance && !instance->is_placeholder()) {
+				instance->reload(true);
+			}
+		}
+	}
 }
 
 Error Javascript::_reload(bool p_keep_state) {
 	compile();
+
+	// Reload all instances
+	for (JavascriptInstance *instance : instances) {
+		if (instance && !instance->is_placeholder()) {
+			instance->reload(p_keep_state);
+		}
+	}
+
 	return Error::OK;
 }
 

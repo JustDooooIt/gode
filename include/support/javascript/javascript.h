@@ -16,6 +16,8 @@ class JavascriptInstance;
 class Javascript : public godot::ScriptExtension {
 	GDCLASS(Javascript, godot::ScriptExtension)
 
+	friend JavascriptInstance;
+
 protected:
 	mutable bool is_dirty = false;
 	mutable bool is_valid = false;
