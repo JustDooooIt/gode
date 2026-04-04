@@ -609,7 +609,7 @@ class DtsGenerator(CodeGenerator):
                 continue
             builtin_types.append(RENAME_MAP.get(name, name))
         
-        variant_arg_types = ['null', 'undefined', 'boolean', 'number', 'string', 'Function', 'GodotObject'] + builtin_types
+        variant_arg_types = ['null', 'undefined', 'boolean', 'number', 'string', 'Function', 'Object'] + builtin_types
         variant_arg_types.extend([JS_OBJECT_TYPE, JS_ARRAY_TYPE])
         variant_arg_types = list(dict.fromkeys(variant_arg_types))
         variant_arg_str = ' | '.join(variant_arg_types)

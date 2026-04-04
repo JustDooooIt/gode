@@ -2,7 +2,7 @@
 
 declare module "godot" {
 
-    type VariantArgument = null | undefined | boolean | number | string | Function | GodotObject | GDString | Vector2 | Vector2i | Rect2 | Rect2i | Vector3 | Vector3i | Transform2D | Vector4 | Vector4i | Plane | Quaternion | AABB | Basis | Transform3D | Projection | Color | StringName | NodePath | RID | Callable | Signal | GDDictionary | GDArray | PackedByteArray | PackedInt32Array | PackedInt64Array | PackedFloat32Array | PackedFloat64Array | PackedStringArray | PackedVector2Array | PackedVector3Array | PackedColorArray | PackedVector4Array | { [key: string]: VariantArgument } | VariantArgument[];
+    type VariantArgument = null | undefined | boolean | number | string | Function | Object | GDString | Vector2 | Vector2i | Rect2 | Rect2i | Vector3 | Vector3i | Transform2D | Vector4 | Vector4i | Plane | Quaternion | AABB | Basis | Transform3D | Projection | Color | StringName | NodePath | RID | Callable | Signal | GDDictionary | GDArray | PackedByteArray | PackedInt32Array | PackedInt64Array | PackedFloat32Array | PackedFloat64Array | PackedStringArray | PackedVector2Array | PackedVector3Array | PackedColorArray | PackedVector4Array | { [key: string]: VariantArgument } | VariantArgument[];
 
     class _GodotObject {
         get_instance_id(): number;
