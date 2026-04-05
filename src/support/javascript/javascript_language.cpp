@@ -1,6 +1,7 @@
 ﻿#include "support/javascript/javascript_language.h"
 #include "godot_cpp/core/memory.hpp"
 #include "support/javascript/javascript.h"
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -59,10 +60,13 @@ String JavascriptLanguage::_get_name() const {
 }
 
 void JavascriptLanguage::_init() {
-	String project_dir = ProjectSettings::get_singleton()->globalize_path("res://");
-	tsc_watch_pid = start_tsc_watch(project_dir);
-	if (tsc_watch_pid < 0) {
-		UtilityFunctions::push_warning("gode: tsconfig.json not found, tsc --watch not started");
+	if (Engine::get_singleton()->is_editor_hint()) {
+		String project_dir = ProjectSettings::get_singleton()->globalize_path("res://");
+
+		tsc_watch_pid = start_tsc_watch(project_dir);
+		if (tsc_watch_pid < 0) {
+			UtilityFunctions::push_warning("gode: tsconfig.json not found, tsc --watch not started");
+		}
 	}
 }
 
@@ -76,11 +80,20 @@ String JavascriptLanguage::_get_extension() const {
 
 void JavascriptLanguage::_finish() {
 	if (tsc_watch_pid >= 0) {
+#ifdef _WIN32
+		// OS::kill 只能杀 cmd.exe，无法杀子进程 node.exe；用 taskkill /T 杀整个进程树
+		PackedStringArray kill_args;
+		kill_args.push_back("/F");
+		kill_args.push_back("/T");
+		kill_args.push_back("/PID");
+		kill_args.push_back(String::num_int64(tsc_watch_pid));
+		OS::get_singleton()->execute("taskkill", kill_args);
+#else
 		OS::get_singleton()->kill(tsc_watch_pid);
+#endif
 		tsc_watch_pid = -1;
 	}
 }
-
 PackedStringArray JavascriptLanguage::_get_reserved_words() const {
 	PackedStringArray arr;
 	return arr;

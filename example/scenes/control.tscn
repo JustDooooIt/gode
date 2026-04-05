@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://d3a46twcb61of"]
 
-[ext_resource type="Script" path="res://scripts/Test.ts" id="1_5p55f"]
+[ext_resource type="Script" path="res://scripts/tests/Test.ts" id="1_5p55f"]
 
 [node name="Control" type="Control" unique_id=1975652661]
 layout_mode = 3
@@ -10,6 +10,3 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_5p55f")
-v = "hello132"
-i::a = 1.0
-i::b = "hello111"

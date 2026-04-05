@@ -115,6 +115,8 @@ void JavascriptInstance::reload(bool p_keep_state) {
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
+	v8::Local<v8::Context> context = NodeRuntime::node_context.Get(NodeRuntime::isolate);
+	v8::Context::Scope context_scope(context);
 
 	HashMap<StringName, Variant> old_state;
 	if (p_keep_state && !js_instance.IsEmpty()) {
@@ -142,11 +144,26 @@ void JavascriptInstance::reload(bool p_keep_state) {
 			std::string key = String(E.key).utf8().get_data();
 			size_t sep = key.find("::");
 			if (sep != std::string::npos) {
-				std::string obj_key = key.substr(0, sep);
-				std::string field_key = key.substr(sep + 2);
-				Napi::Value obj_val = instance.Get(obj_key);
-				if (obj_val.IsObject()) {
-					obj_val.As<Napi::Object>().Set(field_key, godot_to_napi(env, E.value));
+				// Walk down the object chain for arbitrarily deep A::B::C::... keys.
+				// Split into all segments first, then traverse to parent and set leaf.
+				std::vector<std::string> segments;
+				std::string remaining = key;
+				size_t pos;
+				while ((pos = remaining.find("::")) != std::string::npos) {
+					segments.push_back(remaining.substr(0, pos));
+					remaining = remaining.substr(pos + 2);
+				}
+				segments.push_back(remaining); // leaf key
+
+				Napi::Object cur = instance;
+				bool valid = true;
+				for (size_t i = 0; i + 1 < segments.size(); ++i) {
+					Napi::Value child = cur.Get(segments[i]);
+					if (!child.IsObject()) { valid = false; break; }
+					cur = child.As<Napi::Object>();
+				}
+				if (valid) {
+					cur.Set(segments.back(), godot_to_napi(env, E.value));
 				}
 			} else {
 				instance.Set(key, godot_to_napi(env, E.value));
@@ -172,14 +189,22 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	Napi::Env env = js_instance.Value().Env();
 	size_t sep = property_name.find("::");
 	if (sep != std::string::npos) {
-		std::string obj_key = property_name.substr(0, sep);
-		std::string field_key = property_name.substr(sep + 2);
-		Napi::Value obj_val = js_instance.Get(obj_key);
-		if (obj_val.IsObject()) {
-			obj_val.As<Napi::Object>().Set(field_key, godot_to_napi(env, p_value));
-			return true;
+		std::vector<std::string> segments;
+		std::string remaining = property_name;
+		size_t pos;
+		while ((pos = remaining.find("::")) != std::string::npos) {
+			segments.push_back(remaining.substr(0, pos));
+			remaining = remaining.substr(pos + 2);
 		}
-		return false;
+		segments.push_back(remaining);
+		Napi::Object cur = js_instance.Value();
+		for (size_t i = 0; i + 1 < segments.size(); ++i) {
+			Napi::Value child = cur.Get(segments[i]);
+			if (!child.IsObject()) return false;
+			cur = child.As<Napi::Object>();
+		}
+		cur.Set(segments.back(), godot_to_napi(env, p_value));
+		return true;
 	}
 	return js_instance.Set(property_name, godot_to_napi(env, p_value));
 }
@@ -206,14 +231,22 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	}
 	size_t sep = prop_name.find("::");
 	if (sep != std::string::npos) {
-		std::string obj_key = prop_name.substr(0, sep);
-		std::string field_key = prop_name.substr(sep + 2);
-		Napi::Value obj_val = js_instance.Get(obj_key);
-		if (obj_val.IsObject()) {
-			r_value = napi_to_godot(obj_val.As<Napi::Object>().Get(field_key));
-			return true;
+		std::vector<std::string> segments;
+		std::string remaining = prop_name;
+		size_t pos;
+		while ((pos = remaining.find("::")) != std::string::npos) {
+			segments.push_back(remaining.substr(0, pos));
+			remaining = remaining.substr(pos + 2);
 		}
-		return false;
+		segments.push_back(remaining);
+		Napi::Object cur = js_instance.Value();
+		for (size_t i = 0; i + 1 < segments.size(); ++i) {
+			Napi::Value child = cur.Get(segments[i]);
+			if (!child.IsObject()) return false;
+			cur = child.As<Napi::Object>();
+		}
+		r_value = napi_to_godot(cur.Get(segments.back()));
+		return true;
 	}
 	Napi::Value val = js_instance.Get(prop_name);
 	r_value = napi_to_godot(val);

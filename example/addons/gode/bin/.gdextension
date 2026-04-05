@@ -11,8 +11,10 @@ windows.release.x86_64 = "res://addons/gode/bin/Release/libgode.dll"
 [dependencies]
 
 windows.debug.x86_64 = {
-    "res://addons/gode/bin/Debug/libnode.dll": ""
+    "res://addons/gode/bin/Debug/libnode.dll": "",
+    "res://addons/gode/bin/Debug/node.dll": ""
 }
 windows.release.x86_64 = {
-    "res://addons/gode/bin/Release/libnode.dll": ""
+    "res://addons/gode/bin/Release/libnode.dll": "",
+    "res://addons/gode/bin/Release/node.dll": ""
 }

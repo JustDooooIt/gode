@@ -226,9 +226,82 @@ static void collect_parent_properties(const StringName &parent_name, const std::
 	}
 }
 
-static HashMap<StringName, Vector<PropertyInfo>> parse_interfaces(TSNode root_node, uint32_t child_count, const std::string &source) {
+static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count, const std::string &source, HashMap<StringName, Vector<PropertyInfo>> &interfaces);
+
+// 递归解析 object 字面量，将 prefix::key 写入 property_defaults
+static void parse_object_defaults(TSNode obj_node, const std::string &source, const std::string &prefix, HashMap<StringName, Variant> &property_defaults) {
+	for (uint32_t i = 0; i < ts_node_child_count(obj_node); i++) {
+		TSNode pair = ts_node_child(obj_node, i);
+		if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+
+		TSNode key = ts_node_child_by_field_name(pair, "key", 3);
+		TSNode val = ts_node_child_by_field_name(pair, "value", 5);
+		if (ts_node_is_null(key) || ts_node_is_null(val)) continue;
+
+		uint32_t ks = ts_node_start_byte(key);
+		uint32_t ke = ts_node_end_byte(key);
+		std::string full_key = prefix + source.substr(ks, ke - ks);
+		StringName prop_name(full_key.c_str());
+
+		const char *vt = ts_node_type(val);
+		uint32_t vs = ts_node_start_byte(val);
+		uint32_t ve = ts_node_end_byte(val);
+
+		if (strcmp(vt, "object") == 0) {
+			parse_object_defaults(val, source, full_key + "::", property_defaults);
+		} else if (strcmp(vt, "string") == 0) {
+			property_defaults[prop_name] = String(source.substr(vs + 1, ve - vs - 2).c_str());
+		} else if (strcmp(vt, "number") == 0) {
+			property_defaults[prop_name] = std::stod(source.substr(vs, ve - vs));
+		} else if (strcmp(vt, "true") == 0) {
+			property_defaults[prop_name] = true;
+		} else if (strcmp(vt, "false") == 0) {
+			property_defaults[prop_name] = false;
+		}
+	}
+}
+
+static HashMap<StringName, Vector<PropertyInfo>> parse_interfaces(TSNode root_node, uint32_t child_count, const std::string &source, const String &file_path) {
 	HashMap<StringName, Vector<PropertyInfo>> interfaces;
 
+	// 解析当前文件的 interface
+	collect_interfaces_from_node(root_node, child_count, source, interfaces);
+
+	// 扫描 import 语句，从外部文件加载 interface
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "import_statement") != 0) continue;
+
+		TSNode src_node = ts_node_child_by_field_name(child, "source", 6);
+		if (ts_node_is_null(src_node)) continue;
+
+		uint32_t ss = ts_node_start_byte(src_node);
+		uint32_t se = ts_node_end_byte(src_node);
+		std::string import_path = source.substr(ss + 1, se - ss - 2);
+		if (import_path.find("./") != 0 && import_path.find("../") != 0) continue;
+
+		String ts_path = file_path.get_base_dir().path_join(String(import_path.c_str()) + ".ts");
+		if (!FileAccess::file_exists(ts_path)) continue;
+
+		String ext_src_str = FileAccess::get_file_as_string(ts_path);
+		std::string ext_src = ext_src_str.utf8().get_data();
+
+		TSParser *ext_parser = ts_parser_new();
+		ts_parser_set_language(ext_parser, tree_sitter_typescript());
+		TSTree *ext_tree = ts_parser_parse_string(ext_parser, nullptr, ext_src.c_str(), ext_src.length());
+		TSNode ext_root = ts_tree_root_node(ext_tree);
+		uint32_t ext_count = ts_node_child_count(ext_root);
+
+		collect_interfaces_from_node(ext_root, ext_count, ext_src, interfaces);
+
+		ts_tree_delete(ext_tree);
+		ts_parser_delete(ext_parser);
+	}
+
+	return interfaces;
+}
+
+static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count, const std::string &source, HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
 		TSNode iface_node = { 0 };
@@ -302,8 +375,6 @@ static HashMap<StringName, Vector<PropertyInfo>> parse_interfaces(TSNode root_no
 
 		interfaces[iface_name] = fields;
 	}
-
-	return interfaces;
 }
 
 static TSNode find_default_class(TSNode root_node, uint32_t child_count) {
@@ -446,6 +517,10 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 				std::string prefix = String(field_name).utf8().get_data() + std::string("::");
 				HashSet<StringName> visited;
 				expand_interface_fields(iface_key, prefix, 0, visited, interfaces, properties, property_list);
+				// 解析字段初始化器中的默认值
+				if (!ts_node_is_null(field_value_node) && strcmp(ts_node_type(field_value_node), "object") == 0) {
+					parse_object_defaults(field_value_node, source, prefix, property_defaults);
+				}
 			} else {
 				properties[field_name] = pi;
 				property_list.push_back(pi);
@@ -663,7 +738,7 @@ bool Typescript::compile() const {
 		return false;
 	}
 
-	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source);
+	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source, get_path());
 	parse_class_metadata(class_node, source, class_name, base_class_name);
 	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, member_lines, interfaces);
 	parse_static_exports(class_node, source, properties, property_defaults);

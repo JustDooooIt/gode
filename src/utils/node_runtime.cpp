@@ -20,6 +20,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#ifdef WIN32
+#include <windows.h>
+#endif
 
 namespace gode {
 
@@ -78,7 +81,93 @@ static Napi::Value Export(const Napi::CallbackInfo &info) {
 	return env.Undefined();
 }
 
+// 预加载目录中的所有 .dll，确保依赖链在 llama-addon.node 加载前已解析
+// 同时将 Release 目录和 CUDA bin 目录加入 PATH，确保传递依赖（如 cudart64_*.dll）可被找到
+static Napi::Value preload_dlls(const Napi::CallbackInfo &info) {
+	Napi::Env env = info.Env();
+#ifdef WIN32
+	if (info.Length() < 1 || !info[0].IsString()) {
+		return env.Undefined();
+	}
+	std::string dir_utf8 = info[0].As<Napi::String>().Utf8Value();
+
+	auto to_wide = [](const std::string &s) -> std::wstring {
+		int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+		std::wstring w(n, 0);
+		MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+		return w;
+	};
+
+	// 把 Release 目录加到 PATH（影响 LOAD_WITH_ALTERED_SEARCH_PATH 的传递依赖搜索）
+	std::string dirs_to_add = dir_utf8;
+
+	// 找到 CUDA_PATH 并把 bin 加入 PATH（cudart64_*.dll、cublas64_*.dll 等）
+	char cuda_buf[4096] = {};
+	if (GetEnvironmentVariableA("CUDA_PATH", cuda_buf, sizeof(cuda_buf)) > 0) {
+		dirs_to_add += ";" + std::string(cuda_buf) + "\\bin";
+	}
+	// 同时尝试常见的版本号变体（CUDA_PATH_V12_0 等）
+	for (const char *varname : {"CUDA_PATH_V12_6", "CUDA_PATH_V12_5", "CUDA_PATH_V12_4",
+			"CUDA_PATH_V12_3", "CUDA_PATH_V12_2", "CUDA_PATH_V12_1", "CUDA_PATH_V12_0",
+			"CUDA_PATH_V11_8", "CUDA_PATH_V11_7"}) {
+		char buf[4096] = {};
+		if (GetEnvironmentVariableA(varname, buf, sizeof(buf)) > 0) {
+			dirs_to_add += ";" + std::string(buf) + "\\bin";
+			break;
+		}
+	}
+
+	// 更新 PATH
+	char path_buf[32767] = {};
+	GetEnvironmentVariableA("PATH", path_buf, sizeof(path_buf));
+	std::string new_path = dirs_to_add + ";" + std::string(path_buf);
+	SetEnvironmentVariableA("PATH", new_path.c_str());
+
+	// SetDllDirectory 让后续所有 LoadLibraryExW 都能搜索 Release 目录（包括传递依赖）
+	SetDllDirectoryW(to_wide(dir_utf8).c_str());
+
+	// 预加载 Release 目录中的每个 .dll
+	std::wstring wdir = to_wide(dir_utf8);
+	std::wstring pattern = wdir + L"\\*.dll";
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			std::wstring dll_path = wdir + L"\\" + fd.cFileName;
+			HMODULE hm = LoadLibraryExW(dll_path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+			if (!hm) LoadLibraryExW(dll_path.c_str(), nullptr, 0);
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+#endif
+	return env.Undefined();
+}
+
+#ifdef WIN32
+// win_delay_load_hook.cc（由 cmake-js 编译进每个 NAPI addon）在 dliStartProcessing 时
+// 调用 GetModuleHandleA("node.dll")。若找不到则 fallback 到 GetModuleHandle(NULL)
+// 即 GodotEngine.exe，而 GodotEngine.exe 不导出 NAPI 函数 → 崩溃。
+// 修复：加载与 libnode.dll 同目录的 node.dll（由构建系统生成的纯转发存根 DLL），
+// 使 GetModuleHandleA("node.dll") 命中，GetProcAddress 返回正确的 NAPI 地址。
+static void preload_gode_node_exe() {
+	HMODULE libnode = GetModuleHandleW(L"libnode.dll");
+	if (!libnode) return;
+	wchar_t libnode_path[MAX_PATH];
+	if (!GetModuleFileNameW(libnode, libnode_path, MAX_PATH)) return;
+	wchar_t node_dll_path[MAX_PATH];
+	wcscpy_s(node_dll_path, MAX_PATH, libnode_path);
+	wchar_t *sep = wcsrchr(node_dll_path, L'\\');
+	if (!sep) return;
+	wcscpy_s(sep + 1, MAX_PATH - (DWORD)(sep + 1 - node_dll_path), L"node.dll");
+	// 加载纯转发存根 node.dll（无 V8 代码，所有导出 forward 到 libnode）
+	LoadLibraryW(node_dll_path);
+}
+#endif
+
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
+#ifdef WIN32
+	preload_gode_node_exe();
+#endif
 	thread_local_env = env;
 	gode::register_builtin(env, exports);
 	gode::register_classes(env, exports);
@@ -86,6 +175,7 @@ static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 
 	exports.Set("fs_readFile", Napi::Function::New(env, fs_readFile));
 	exports.Set("fs_stat", Napi::Function::New(env, fs_stat));
+	exports.Set("preload_dlls", Napi::Function::New(env, preload_dlls));
 
 	Napi::Object global = env.Global();
 	global.Set("Export", Napi::Function::New(env, Export));
@@ -295,7 +385,22 @@ void NodeRuntime::init_once() {
 				"  if (parent && parent.filename && parent.filename.startsWith('res://')) {"
 				"    if (request.startsWith('./') || request.startsWith('../')) {"
 				"      const parentDir = path.dirname(parent.filename);"
-				"      return path.resolve(parentDir, request);"
+				"      const base = path.resolve(parentDir, request);"
+				"      if (fs.existsSync(base) && fs.statSync(base).isFile()) return base;"
+				"      for (const ext of ['.js', '.json', '.node']) {"
+				"        if (fs.existsSync(base + ext)) return base + ext;"
+				"      }"
+				"      for (const idx of ['/index.js', '/index.json']) {"
+				"        if (fs.existsSync(base + idx)) return base + idx;"
+				"      }"
+				"      return base;"
+				"    }"
+				"    try {"
+				"      return originalResolveFilename.call(Module, request, parent, isMain, options);"
+				"    } catch(e) {"
+				"      const found = findInRes('res://node_modules', request);"
+				"      if (found) return found;"
+				"      throw e;"
 				"    }"
 				"  }"
 				"  return originalResolveFilename.call(Module, request, parent, isMain, options);"
@@ -329,6 +434,25 @@ void NodeRuntime::init_once() {
 				"  return originalGlobalRequire.call(this, id);"
 				"};"
 				"if (originalGlobalRequire) Object.assign(globalThis.require, originalGlobalRequire);"
+				""
+				// patch process.dlopen：.node 原生模块必须用真实 OS 路径加载
+				// res://xxx 路径传给 LoadLibraryW 会导致地址错误和 NAPI init 崩溃
+				// 加载 .node 前将其目录追加到 PATH，让 Windows 能找到同目录的 DLL（如 ggml-cuda.dll）
+				"const _originalDlopen = process.dlopen;"
+				"process.dlopen = function(mod, filename, flags) {"
+				"  let realPath = filename;"
+				"  if (typeof filename === 'string') {"
+				"    let p = filename;"
+				"    if (p.startsWith('file://')) { try { p = require('url').fileURLToPath(p); } catch(_) {} }"  // file:// → OS path
+				"    if (p.startsWith('res://')) { p = require('path').join(process.cwd(), p.slice(6)); }"
+				"    if (p.startsWith('\\\\\\\\?\\\\')) p = p.slice(4);"  // 剥离 \\?\ 前缀
+				"    realPath = p;"
+				"  }"
+				"  if (typeof realPath === 'string' && realPath.endsWith('.node') && typeof gode.preload_dlls === 'function') {"
+				"    try { gode.preload_dlls(require('path').dirname(realPath)); } catch(_) {}"
+				"  }"
+				"  return _originalDlopen(mod, realPath, flags);"
+				"};"
 				""
 				"if (gode.GDObject && gode.GDObject.prototype) {"
 				"  gode.GDObject.prototype.to_signal = function(signal, { timeoutMs, abortSignal } = {}) {"
@@ -370,12 +494,45 @@ void NodeRuntime::init_once() {
 				"      }"
 				"    });"
 				"  };"
-				"}";
+				"}"
+				// patch child_process.fork：拦截 testBindingBinary 的 fork，用本进程内模拟成功，
+				// 避免在 Windows 上 fork 出一个 GodotEngine.exe 子进程来做 addon 兼容性测试。
+				";"
+				"(function() {"
+				"  try {"
+				"    const cp = require('child_process');"
+				"    const _origFork = cp.fork;"
+				"    cp.fork = function(modulePath, args, options) {"
+				"      if (typeof modulePath === 'string' && modulePath.includes('testBindingBinary')) {"
+				"        const { EventEmitter } = require('events');"
+				"        const mock = new EventEmitter();"
+				"        mock.pid = 0; mock.exitCode = null; mock.killed = false;"
+				"        mock.stdout = null; mock.stderr = null;"
+				"        mock.kill = function() {};"
+				"        mock.send = function(msg) {"
+				"          const self = this;"
+				"          if (msg && msg.type === 'start') {"
+				"            process.nextTick(() => self.emit('message', { type: 'loaded' }));"
+				"          } else if (msg && msg.type === 'test') {"
+				"            process.nextTick(() => self.emit('message', { type: 'done' }));"
+				"          } else if (msg && msg.type === 'exit') {"
+				"            process.nextTick(() => { mock.exitCode = 0; self.emit('exit', 0, null); });"
+				"          }"
+				"          return true;"
+				"        };"
+				"        process.nextTick(() => mock.emit('message', { type: 'ready' }));"
+				"        return mock;"
+				"      }"
+				"      return _origFork.apply(cp, arguments);"
+				"    };"
+				"  } catch(e) {}"
+				"})();";
 
 		node::LoadEnvironment(env, boot_script.c_str());
 
 		// 事件循环跑一次，确保 boot_script 执行完毕
-		uv_run(uv_default_loop(), UV_RUN_NOWAIT);
+		isolate->PerformMicrotaskCheckpoint();
+		uv_run(uv_default_loop(), UV_RUN_ONCE);
 
 		// ESM 支持代码单独执行，确保在 boot_script 之后注册
 		std::string esm_script =
@@ -386,43 +543,99 @@ void NodeRuntime::init_once() {
 				""
 				"global.__gode_esm_supported = (typeof vm.SourceTextModule !== 'undefined');"
 				""
-				"global.__gode_esm_cache = new Map();"
-				"global.__gode_esm_pending = new Map();"
+				"global.__gode_esm_cache = new Map();"       // filepath -> namespace (fully evaluated)
+				"global.__gode_esm_pending = new Map();"     // filepath -> Promise<namespace>
+				"global.__gode_esm_mod_cache = new Map();"   // filepath/specifier -> vm.Module (for linker)
+				"global.__gode_cjs_pending = new Map();"     // resolvedPath -> Promise<SyntheticModule> (dedup)
 				""
-				"global.__gode_load_esm = async function(filepath, source) {"
-				"  if (!global.__gode_esm_supported) {"
-				"    throw new Error('vm.SourceTextModule is not available');"
-				"  }"
-				"  if (global.__gode_esm_cache.has(filepath)) {"
-				"    return global.__gode_esm_cache.get(filepath);"
-				"  }"
-				"  if (global.__gode_esm_pending.has(filepath)) {"
-				"    return global.__gode_esm_pending.get(filepath);"
-				"  }"
-				"  const loadPromise = (async () => {"
-				"    const module = new vm.SourceTextModule(source, {"
-				"      identifier: filepath,"
-				"      initializeImportMeta(meta) { meta.url = filepath; },"
-				"      importModuleDynamically: async (specifier, referrer) => {"
-				"        return await global.__gode_resolve_and_load(specifier, referrer.identifier);"
-				"      }"
-				"    });"
-				"    await module.link(async (specifier, referencingModule) => {"
-				"      return await global.__gode_resolve_and_load(specifier, referencingModule.identifier);"
-				"    });"
-				"    await module.evaluate();"
-				"    const ns = module.namespace;"
-				"    global.__gode_esm_cache.set(filepath, ns);"
-				"    global.__gode_esm_pending.delete(filepath);"
-				"    return ns;"
-				"  })();"
-				"  global.__gode_esm_pending.set(filepath, loadPromise);"
-				"  return loadPromise;"
+				// __gode_resolve_to_module: 将 specifier 解析为 vm.Module。
+				// 关键：对 ESM 文件只创建 SourceTextModule 并返回，不调用 link()。
+				// Node.js 的 [kLink] 机制会异步递归地对返回的模块调用同一个 linker，
+				// 从而避免同步递归导致的调用栈溢出。
+				// 将 res:// 路径转为 file:// URL，供 import.meta.url 使用
+				// fileURLToPath() 只认 file:// scheme，所以必须转换
+				"const _gode_res_to_file_url = (p) => {"
+				"  if (!p || !p.startsWith('res://')) return p;"
+				"  const rel = p.slice(6);"  // 去掉 'res://'
+				"  const abs = require('path').join(process.cwd(), rel).replace(/\\\\/g, '/');"
+				"  return 'file:///' + abs;"
 				"};"
 				""
-				"global.__gode_resolve_and_load = async function(specifier, referrerPath) {"
+				// 在 res://node_modules/ 里手动查找包入口，用于 require.resolve 无法处理 res:// 路径时的兜底
+				"function __gode_resolve_in_res(specifier, referrerPath) {"
+				"  const parts = specifier.split('/');"
+				"  const pkgName = parts[0].startsWith('@') ? parts[0] + '/' + parts[1] : parts[0];"
+				"  const subPath = parts.slice(pkgName.split('/').length).join('/');"
+				"  let searchDirs = [];"
+				"  let d = path.dirname(referrerPath);"
+				"  while (true) {"
+				"    searchDirs.push(path.join(d, 'node_modules'));"
+				"    const p = path.dirname(d); if (p === d) break; d = p;"
+				"  }"
+				"  for (const base of searchDirs) {"
+				"    const pkgDir = path.join(base, pkgName);"
+				"    if (!fs.existsSync(pkgDir)) continue;"
+				"    if (subPath) {"
+				"      const direct = path.join(pkgDir, subPath);"
+				"      if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;"
+				"      for (const ext of ['.js', '.mjs', '.json']) {"
+				"        if (fs.existsSync(direct + ext)) return direct + ext;"
+				"      }"
+				"      return null;"
+				"    }"
+				"    const pkgJsonPath = path.join(pkgDir, 'package.json');"
+				"    if (!fs.existsSync(pkgJsonPath)) continue;"
+				"    let pkg; try { pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8')); } catch(_) { continue; }"
+				"    const exp = pkg.exports;"
+				"    if (exp) {"
+				"      const dot = exp['.'];"
+				"      const entry = typeof dot === 'string' ? dot"
+				"        : (dot && (dot.import || dot.module || dot.require || dot.default))"
+				"        || (typeof exp === 'string' ? exp : null);"
+				"      if (entry) { const r = path.resolve(pkgDir, entry); if (fs.existsSync(r)) return r; }"
+				"    }"
+				"    const main = pkg.module || pkg.main || 'index.js';"
+				"    const r = path.resolve(pkgDir, main);"
+				"    if (fs.existsSync(r)) return r;"
+				"    for (const ext of ['.js', '.mjs']) {"
+				"      if (fs.existsSync(r + ext)) return r + ext;"
+				"    }"
+				"  }"
+				"  return null;"
+				"}"
+				""
+				// 解析 package.json imports 字段中的 #subpath 条目
+				"function __gode_resolve_pkg_import(specifier, referrerPath) {"
+				"  let dir = path.dirname(referrerPath);"
+				"  while (true) {"
+				"    const pkgPath = path.join(dir, 'package.json');"
+				"    if (fs.existsSync(pkgPath)) {"
+				"      try {"
+				"        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));"
+				"        if (pkg.imports) {"
+				"          const entry = pkg.imports[specifier];"
+				"          if (entry) {"
+				"            const target = typeof entry === 'string' ? entry"
+				"              : (entry.node || entry.require || entry.default || null);"
+				"            if (target) return path.resolve(dir, target);"
+				"          }"
+				"        }"
+				"      } catch(_) {}"
+				"    }"
+				"    const parent = path.dirname(dir);"
+				"    if (parent === dir) break;"
+				"    dir = parent;"
+				"  }"
+				"  return null;"
+				"}"
+				""
+				"global.__gode_resolve_to_module = async function(specifier, referrerPath) {"
 				"  let resolvedPath;"
-				"  if (specifier.startsWith('./') || specifier.startsWith('../')) {"
+				"  if (specifier.startsWith('#')) {"
+				"    const pkgImport = __gode_resolve_pkg_import(specifier, referrerPath);"
+				"    if (!pkgImport) throw new Error(`Cannot find module '${specifier}' from '${referrerPath}'`);"
+				"    resolvedPath = pkgImport;"
+				"  } else if (specifier.startsWith('./') || specifier.startsWith('../')) {"
 				"    const dir = path.dirname(referrerPath);"
 				"    resolvedPath = path.resolve(dir, specifier);"
 				"    if (!fs.existsSync(resolvedPath)) {"
@@ -433,47 +646,124 @@ void NodeRuntime::init_once() {
 				"  } else if (specifier.startsWith('res://')) {"
 				"    resolvedPath = specifier;"
 				"  } else {"
-				"    let builtinMod;"
-				"    try { builtinMod = require(specifier); } catch(e) {}"
-				"    if (builtinMod !== undefined) {"
-				"      const exportNames = Object.keys(builtinMod);"
+				"    let _cjsMod; try { _cjsMod = require(specifier); } catch(_) {}"
+				"    if (_cjsMod !== undefined) {"
+				"      if (global.__gode_esm_mod_cache.has(specifier)) return global.__gode_esm_mod_cache.get(specifier);"
+				"      const exportNames = Object.keys(_cjsMod);"
 				"      const names = exportNames.includes('default') ? exportNames : ['default', ...exportNames];"
-				"      const syntheticModule = new vm.SyntheticModule(names,"
-				"        function() {"
-				"          this.setExport('default', builtinMod);"
-				"          for (const key of exportNames) {"
-				"            this.setExport(key, builtinMod[key]);"
-				"          }"
-				"        }, { identifier: specifier });"
-				"      await syntheticModule.link(() => {});"
-				"      await syntheticModule.evaluate();"
-				"      return syntheticModule;"
+				"      const synMod = new vm.SyntheticModule(names, function() {"
+				"        this.setExport('default', _cjsMod);"
+				"        for (const key of exportNames) { this.setExport(key, _cjsMod[key]); }"
+				"      }, { identifier: specifier });"
+				"      await synMod.link(() => {});"
+				"      await synMod.evaluate();"
+				"      global.__gode_esm_mod_cache.set(specifier, synMod);"
+				"      return synMod;"
 				"    }"
 				"    try {"
 				"      resolvedPath = require.resolve(specifier, { paths: [path.dirname(referrerPath)] });"
-				"    } catch (e) {"
-				"      throw new Error(`Cannot find module '${specifier}' from '${referrerPath}'`);"
+				"    } catch(e) {"
+				"      resolvedPath = __gode_resolve_in_res(specifier, referrerPath);"
+				"      if (!resolvedPath) {"
+				"        console.error('[gode] resolve failed: ' + specifier + ' from ' + referrerPath);"
+				"        throw new Error(`Cannot find module '${specifier}' from '${referrerPath}'`);"
+				"      }"
 				"    }"
 				"  }"
-				"  const source = fs.readFileSync(resolvedPath, 'utf8');"
+				"  if (global.__gode_esm_mod_cache.has(resolvedPath)) {"
+				"    return global.__gode_esm_mod_cache.get(resolvedPath);"
+				"  }"
+				"  let source;"
+				"  try {"
+				"    source = fs.readFileSync(resolvedPath, 'utf8');"
+				"  } catch(e) {"
+				"    console.error('[gode] readFileSync failed: ' + resolvedPath + ' => ' + e.message);"
+				"    throw e;"
+				"  }"
 				"  const isESM = resolvedPath.endsWith('.mjs') ||"
 				"    (resolvedPath.endsWith('.js') && /^\\s*(import|export)\\s+/m.test(source));"
 				"  if (isESM) {"
-				"    return await global.__gode_load_esm(resolvedPath, source);"
+				"    let mod;"
+				"    try {"
+				"      mod = new vm.SourceTextModule(source, {"
+				"        identifier: resolvedPath,"
+				"        initializeImportMeta(meta) { meta.url = _gode_res_to_file_url(resolvedPath); },"
+				"        importModuleDynamically: async (spec, ref) => {"
+				"          return await global.__gode_resolve_to_module(spec, ref.identifier);"
+				"        }"
+				"      });"
+				"    } catch(e) {"
+				"      console.error('[gode] SourceTextModule parse error in ' + resolvedPath + ': ' + e.message);"
+				"      throw e;"
+				"    }"
+				"    global.__gode_esm_mod_cache.set(resolvedPath, mod);"
+				"    return mod;"
 				"  } else {"
-				"    const cjsModule = require(resolvedPath);"
-				"    const exportNames = Object.keys(cjsModule);"
-				"    const syntheticModule = new vm.SyntheticModule("
-				"      exportNames.length > 0 ? exportNames : ['default'],"
-				"      function() {"
-				"        if (exportNames.length > 0) {"
-				"          for (const key of exportNames) { this.setExport(key, cjsModule[key]); }"
-				"        } else { this.setExport('default', cjsModule); }"
-				"      }, { identifier: resolvedPath });"
-				"    await syntheticModule.link(() => {});"
-				"    await syntheticModule.evaluate();"
-				"    return syntheticModule;"
+				"    if (global.__gode_cjs_pending.has(resolvedPath)) return global.__gode_cjs_pending.get(resolvedPath);"
+				"    const cjsPromise = (async () => {"
+				"      let cjsModule;"
+				"      try {"
+				"        cjsModule = require(resolvedPath);"
+				"      } catch(e) {"
+				"        console.error('[gode] require failed: ' + resolvedPath + ' => ' + e.message);"
+				"        throw e;"
+				"      }"
+				"      const expNames = Object.keys(cjsModule);"
+				"      const allNames = expNames.includes('default') ? expNames : ['default', ...expNames];"
+				"      const synMod = new vm.SyntheticModule(allNames,"
+				"        function() {"
+				"          this.setExport('default', cjsModule);"
+				"          for (const key of expNames) { this.setExport(key, cjsModule[key]); }"
+				"        }, { identifier: resolvedPath });"
+				"      await synMod.link(() => {});"
+				"      await synMod.evaluate();"
+				"      global.__gode_esm_mod_cache.set(resolvedPath, synMod);"
+				"      global.__gode_cjs_pending.delete(resolvedPath);"
+				"      return synMod;"
+				"    })();"
+				"    global.__gode_cjs_pending.set(resolvedPath, cjsPromise);"
+				"    return cjsPromise;"
 				"  }"
+				"};"
+				""
+				"global.__gode_load_esm = async function(filepath, source) {"
+				"  if (!global.__gode_esm_supported) {"
+				"    throw new Error('vm.SourceTextModule is not available');"
+				"  }"
+				"  if (global.__gode_esm_cache.has(filepath)) { return global.__gode_esm_cache.get(filepath); }"
+				"  if (global.__gode_esm_pending.has(filepath)) { return global.__gode_esm_pending.get(filepath); }"
+				"  const loadPromise = (async () => {"
+				"    const module = new vm.SourceTextModule(source, {"
+				"      identifier: filepath,"
+				"      initializeImportMeta(meta) { meta.url = _gode_res_to_file_url(filepath); },"
+				"      importModuleDynamically: async (specifier, referrer) => {"
+				"        return await global.__gode_resolve_to_module(specifier, referrer.identifier);"
+				"      }"
+				"    });"
+				"    global.__gode_esm_mod_cache.set(filepath, module);"
+				"    try {"
+				"      await module.link(async (specifier, referencingModule) => {"
+				"        return await global.__gode_resolve_to_module(specifier, referencingModule.identifier);"
+				"      });"
+				"    } catch(e) {"
+				"      console.error('[gode] link error in ' + filepath + ': ' + e.message);"
+				"      if (e.stack) console.error(e.stack);"
+				"      throw e;"
+				"    }"
+				"    try {"
+				"      await module.evaluate();"
+				"    } catch(e) {"
+				"      console.error('[gode] evaluate error in ' + filepath + ': ' + e.message);"
+				"      if (e.stack) console.error(e.stack);"
+				"      throw e;"
+				"    }"
+				"    const ns = module.namespace;"
+				"    global.__gode_esm_cache.set(filepath, ns);"
+				"    global.__gode_esm_pending.delete(filepath);"
+				"    return ns;"
+				"  })();"
+				"  global.__gode_esm_pending.set(filepath, loadPromise);"
+				"  return loadPromise;"
 				"};"
 				""
 				"global.__gode_compile_esm = async function(code, filename) {"
@@ -481,6 +771,8 @@ void NodeRuntime::init_once() {
 				"    const ns = await global.__gode_load_esm(filename, code);"
 				"    return ns;"
 				"  } catch (e) {"
+				"    console.error('[gode] compile_esm FAILED: ' + filename + ' => ' + (e && e.message));"
+				"    if (e && e.stack) console.error(e.stack);"
 				"    return e;"
 				"  }"
 				"};"
@@ -672,20 +964,22 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	v8::Local<v8::Promise> promise = promise_val.As<v8::Promise>();
 
-	// Promise 的 resolve/reject 是通过微任务（microtask）触发的。
-	isolate->PerformMicrotaskCheckpoint();
-	uv_run(uv_default_loop(), UV_RUN_ONCE);
+	// ESM 加载涉及大量异步操作，循环驱动事件循环直到 Promise settled
+	while (promise->State() == v8::Promise::kPending) {
+		isolate->PerformMicrotaskCheckpoint();
+		uv_run(uv_default_loop(), UV_RUN_ONCE);
+		if (promise->State() != v8::Promise::kPending) break;
+	}
 
 	if (promise->State() == v8::Promise::kRejected) {
 		v8::Local<v8::Value> error = promise->Result();
-
-		// 尝试获取错误信息
 		v8::String::Utf8Value error_str(isolate, error);
 		godot::UtilityFunctions::print("compile_esm_module: Promise rejected: ", *error_str);
 		return v8::Local<v8::Value>();
 	}
 
 	v8::Local<v8::Value> final_exports = promise->Result();
+
 	if (final_exports->IsUndefined()) {
 		v8::Local<v8::Value> undefined_val = v8::Undefined(isolate);
 		return escapable_scope.Escape(undefined_val);

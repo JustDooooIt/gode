@@ -241,6 +241,32 @@ if(NODE_LIBRARY)
             "${NODE_DLL_TO_COPY}"
             "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/$<CONFIG>"
     )
+
+    # node.dll — 纯转发存根 DLL，供 cmake-js NAPI addon 的 win_delay_load_hook 使用。
+    # win_delay_load_hook.cc 调用 GetModuleHandleA("node.dll") 来获取 NAPI 函数地址；
+    # 若找不到 node.dll 则 fallback 到 GodotEngine.exe（不导出 NAPI）→ null 调用 → 崩溃。
+    # node.def 每条导出已是 "symbol = libnode.symbol" 格式，故此 DLL 无 V8 代码，纯转发。
+    set(NODE_STUB_SRC "${CMAKE_BINARY_DIR}/node_stub_empty.c")
+    file(WRITE "${NODE_STUB_SRC}" "// Empty stub — all exports are forwarders via node.def\n")
+
+    add_library(node_stub SHARED "${NODE_STUB_SRC}")
+    set_target_properties(node_stub PROPERTIES
+        OUTPUT_NAME "node"
+        PREFIX ""
+    )
+    target_link_options(node_stub PRIVATE
+        "/DEF:${NODE_ROOT_OUT}/Release/node.def"
+        "/NOENTRY"
+        "/NODEFAULTLIB"
+    )
+    target_link_libraries(node_stub PRIVATE "$<$<CONFIG:Debug>:${NODE_LIB_DEBUG}>$<$<CONFIG:Release>:${NODE_LIB_RELEASE}>$<$<CONFIG:RelWithDebInfo>:${NODE_LIB_RELEASE}>$<$<CONFIG:MinSizeRel>:${NODE_LIB_RELEASE}>")
+
+    add_custom_command(TARGET node_stub POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:node_stub>
+            "${CMAKE_SOURCE_DIR}/example/addons/gode/bin/$<CONFIG>/node.dll"
+    )
 endif()
 
 add_custom_command(TARGET gode POST_BUILD
