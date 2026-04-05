@@ -90,6 +90,7 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 }
 
 JavascriptInstance::~JavascriptInstance() {
+	javascript->instances.erase(this);
 	if (!js_instance.IsEmpty()) {
 		js_instance.Reset();
 	}
