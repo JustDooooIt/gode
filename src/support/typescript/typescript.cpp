@@ -377,6 +377,57 @@ static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count,
 	}
 }
 
+// 检查默认导出类是否带有 @Tool 装饰器（大小写均支持），运行时为空操作，由 tree-sitter 静态解析
+static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const std::string &source) {
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "export_statement") != 0) {
+			continue;
+		}
+
+		// 确认是 export default ... class
+		bool is_default_export = false;
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			if (strcmp(ts_node_type(ts_node_child(child, j)), "default") == 0) {
+				is_default_export = true;
+				break;
+			}
+		}
+		if (!is_default_export) {
+			continue;
+		}
+
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			TSNode en = ts_node_child(child, j);
+			const char *en_type = ts_node_type(en);
+			// 装饰器在 export_statement 上
+			if (strcmp(en_type, "decorator") == 0) {
+				uint32_t ds = ts_node_start_byte(en);
+				uint32_t de = ts_node_end_byte(en);
+				std::string deco = source.substr(ds, de - ds);
+				if (deco == "@Tool" || deco == "@tool") {
+					return true;
+				}
+			}
+			// 装饰器在 class_declaration 内部
+			if (strcmp(en_type, "class_declaration") == 0) {
+				for (uint32_t k = 0; k < ts_node_child_count(en); k++) {
+					TSNode cn = ts_node_child(en, k);
+					if (strcmp(ts_node_type(cn), "decorator") == 0) {
+						uint32_t ds = ts_node_start_byte(cn);
+						uint32_t de = ts_node_end_byte(cn);
+						std::string deco = source.substr(ds, de - ds);
+						if (deco == "@Tool" || deco == "@tool") {
+							return true;
+						}
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
 static TSNode find_default_class(TSNode root_node, uint32_t child_count) {
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
@@ -882,9 +933,9 @@ bool Typescript::compile() const {
 	property_defaults.clear();
 	constants.clear();
 	member_lines.clear();
-	is_tool_script = false;
 
 	uint32_t child_count = ts_node_child_count(root_node);
+	is_tool_script = check_tool_decorator(root_node, child_count, source);
 	TSNode class_node = find_default_class(root_node, child_count);
 
 	if (ts_node_is_null(class_node)) {

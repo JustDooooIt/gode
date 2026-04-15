@@ -74,8 +74,11 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 			return;
 		}
 
-		// 在 JS 实例化之前向 owner 注册 @Signal 装饰的信号
+		// 在 JS 实例化之前向 owner 注册信号（跳过已存在的，避免重复添加报错）
 		for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+			if (owner->has_user_signal(E.key)) {
+				continue;
+			}
 			Array args;
 			for (const PropertyInfo &arg : E.value.arguments) {
 				Dictionary d;
@@ -127,8 +130,11 @@ void JavascriptInstance::reload(bool p_keep_state) {
 		return;
 	}
 
-	// 重载时重新注册 @Signal 信号（add_user_signal 对已存在信号是幂等的）
+	// 重载时注册新增信号（跳过已存在的，避免重复添加报错）
 	for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+		if (owner->has_user_signal(E.key)) {
+			continue;
+		}
 		Array args;
 		for (const PropertyInfo &arg : E.value.arguments) {
 			Dictionary d;

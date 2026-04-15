@@ -592,6 +592,8 @@ class DtsGenerator(CodeGenerator):
         lines.append('  function Export(hint: number, hintString?: string): any;')
         lines.append('  function Export(options?: ExportOptions): any;')
         lines.append('')
+        lines.append('  function Tool(target: Function): void;')
+        lines.append('')
         lines.append('  interface ExportEntry {')
         lines.append('    type: string;')
         lines.append('    hint?: number;')

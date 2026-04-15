@@ -1,6 +1,6 @@
-[gd_scene format=3 uid="uid://signal_test_scene"]
+[gd_scene format=3 uid="uid://dy7s0g04vlejb"]
 
 [ext_resource type="Script" path="res://scripts/tests/signal_test.ts" id="1_signalts"]
 
-[node name="SignalTest" type="Node"]
+[node name="SignalTest" type="Node" unique_id=58953213]
 script = ExtResource("1_signalts")

@@ -161,6 +161,8 @@ declare global {
   function Export(hint: number, hintString?: string): any;
   function Export(options?: ExportOptions): any;
 
+  function Tool(target: Function): void;
+
   interface ExportEntry {
     type: string;
     hint?: number;

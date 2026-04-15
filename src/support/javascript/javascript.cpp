@@ -688,7 +688,9 @@ TypedArray<Dictionary> Javascript::_get_script_property_list() const {
 }
 
 int32_t Javascript::_get_member_line(const StringName &p_member) const {
-	return -1;
+	compile();
+	const int32_t *line = member_lines.getptr(p_member);
+	return line ? *line : -1;
 }
 
 Dictionary Javascript::_get_constants() const {
