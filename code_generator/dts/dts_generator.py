@@ -576,8 +576,13 @@ class DtsGenerator(CodeGenerator):
         lines.append('')
         lines.append('declare global {')
         for name in symbols:
-            lines.append(f'  type {name} = Godot{name};')
-            lines.append(f'  const {name}: typeof Godot{name};')
+            if name == 'Signal':
+                # Signal 支持泛型类型注解：fieldName!: Signal<() => void>，由 tree-sitter 静态解析参数
+                lines.append(f'  type {name}<T extends (...args: any[]) => void = (...args: any[]) => void> = Godot{name};')
+                lines.append(f'  const {name}: typeof Godot{name};')
+            else:
+                lines.append(f'  type {name} = Godot{name};')
+                lines.append(f'  const {name}: typeof Godot{name};')
 
         lines.append('  interface ExportOptions {')
         lines.append('    hint?: number;')

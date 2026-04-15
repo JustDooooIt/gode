@@ -455,7 +455,58 @@ static void expand_interface_fields(
 	visited.erase(iface_name);
 }
 
-static void parse_class_members(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
+static void parse_signal_params(TSNode func_type_node, const std::string &source, MethodInfo &mi) {
+	// func_type_node 即为 function_type 节点：(params) => void
+	if (strcmp(ts_node_type(func_type_node), "function_type") != 0) return;
+
+	// 找 formal_parameters 子节点
+	TSNode params = { 0 };
+	for (uint32_t i = 0; i < ts_node_child_count(func_type_node); i++) {
+		TSNode c = ts_node_child(func_type_node, i);
+		if (strcmp(ts_node_type(c), "formal_parameters") == 0) {
+			params = c;
+			break;
+		}
+	}
+	if (ts_node_is_null(params)) return;
+
+	for (uint32_t i = 0; i < ts_node_child_count(params); i++) {
+		TSNode param = ts_node_child(params, i);
+		const char *ptype = ts_node_type(param);
+		if (strcmp(ptype, "required_parameter") != 0 && strcmp(ptype, "optional_parameter") != 0) {
+			continue;
+		}
+
+		TSNode pattern = ts_node_child_by_field_name(param, "pattern", 7);
+		if (ts_node_is_null(pattern)) continue;
+		uint32_t ps = ts_node_start_byte(pattern);
+		uint32_t pe = ts_node_end_byte(pattern);
+
+		PropertyInfo arg_pi;
+		arg_pi.name = StringName(source.substr(ps, pe - ps).c_str());
+		arg_pi.usage = PROPERTY_USAGE_DEFAULT;
+		arg_pi.hint = PROPERTY_HINT_NONE;
+		arg_pi.type = Variant::NIL;
+
+		// 遍历子节点找 type_annotation（不依赖 field name）
+		for (uint32_t j = 0; j < ts_node_child_count(param); j++) {
+			TSNode pc = ts_node_child(param, j);
+			if (strcmp(ts_node_type(pc), "type_annotation") == 0) {
+				TSNode inner_type = ts_node_named_child(pc, 0);
+				if (!ts_node_is_null(inner_type)) {
+					uint32_t ts = ts_node_start_byte(inner_type);
+					uint32_t te = ts_node_end_byte(inner_type);
+					arg_pi.type = parse_type_string(source.substr(ts, te - ts));
+				}
+				break;
+			}
+		}
+
+		mi.arguments.push_back(arg_pi);
+	}
+}
+
+static void parse_class_members(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
 	TSNode body_node = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body_node)) {
 		return;
@@ -466,15 +517,53 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 		const char *member_type = ts_node_type(member);
 
 		if (strcmp(member_type, "public_field_definition") == 0) {
+			// 扫描装饰器，检测 @Export
 			bool has_export_decorator = false;
 			for (uint32_t k = 0; k < ts_node_child_count(member); k++) {
 				TSNode child = ts_node_child(member, k);
 				if (strcmp(ts_node_type(child), "decorator") == 0) {
 					uint32_t ds = ts_node_start_byte(child);
 					uint32_t de = ts_node_end_byte(child);
-					if (source.substr(ds, de - ds).find("@Export") == 0) {
+					std::string deco_text = source.substr(ds, de - ds);
+					if (deco_text.find("@Export") == 0) {
 						has_export_decorator = true;
-						break;
+					}
+				}
+			}
+
+			// Signal<T> 类型注解：检测 fieldName!: Signal<(...) => void> 形式
+			TSNode type_anno = ts_node_child_by_field_name(member, "type", 4);
+			if (!ts_node_is_null(type_anno)) {
+				TSNode type_inner = ts_node_named_child(type_anno, 0);
+				if (!ts_node_is_null(type_inner) && strcmp(ts_node_type(type_inner), "generic_type") == 0) {
+					TSNode type_name_node = ts_node_child_by_field_name(type_inner, "name", 4);
+					if (!ts_node_is_null(type_name_node)) {
+						uint32_t tns = ts_node_start_byte(type_name_node);
+						uint32_t tne = ts_node_end_byte(type_name_node);
+						std::string type_name_str = source.substr(tns, tne - tns);
+						if (type_name_str == "Signal") {
+							TSNode name_node = ts_node_child_by_field_name(member, "name", 4);
+							if (!ts_node_is_null(name_node)) {
+								uint32_t ns = ts_node_start_byte(name_node);
+								uint32_t ne = ts_node_end_byte(name_node);
+								StringName signal_name(source.substr(ns, ne - ns).c_str());
+								MethodInfo mi;
+								mi.name = signal_name;
+								// 从 Signal<T> 的类型参数中取出 function_type 解析参数列表
+								TSNode type_args = ts_node_child_by_field_name(type_inner, "type_arguments", 14);
+								if (!ts_node_is_null(type_args)) {
+									for (uint32_t ti = 0; ti < ts_node_named_child_count(type_args); ti++) {
+										TSNode targ = ts_node_named_child(type_args, ti);
+										if (strcmp(ts_node_type(targ), "function_type") == 0) {
+											parse_signal_params(targ, source, mi);
+											break;
+										}
+									}
+								}
+								signals[signal_name] = mi;
+							}
+							continue;
+						}
 					}
 				}
 			}
@@ -740,7 +829,7 @@ bool Typescript::compile() const {
 
 	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source, get_path());
 	parse_class_metadata(class_node, source, class_name, base_class_name);
-	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, member_lines, interfaces);
+	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, signals, member_lines, interfaces);
 	parse_static_exports(class_node, source, properties, property_defaults);
 	collect_parent_properties(base_class_name, source, root_node, child_count, get_path(), properties, property_defaults);
 

@@ -45,7 +45,7 @@ declare global {
   const RID: typeof GodotRID;
   type Callable = GodotCallable;
   const Callable: typeof GodotCallable;
-  type Signal = GodotSignal;
+  type Signal<T extends (...args: any[]) => void = (...args: any[]) => void> = GodotSignal;
   const Signal: typeof GodotSignal;
   type GDDictionary = GodotGDDictionary;
   const GDDictionary: typeof GodotGDDictionary;

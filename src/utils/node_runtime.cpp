@@ -179,6 +179,7 @@ static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 
 	Napi::Object global = env.Global();
 	global.Set("Export", Napi::Function::New(env, Export));
+	global.Set("Signal", Napi::Function::New(env, Export)); // @Signal 装饰器，运行时为空操作，由 tree-sitter 静态解析
 
 	return exports;
 }

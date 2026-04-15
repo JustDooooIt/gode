@@ -598,8 +598,7 @@ bool Javascript::_is_tool() const {
 }
 
 bool Javascript::_is_valid() const {
-	compile();
-	return is_valid;
+	return compile();
 }
 
 bool Javascript::_is_abstract() const {
@@ -622,12 +621,29 @@ StringName Javascript::get_global_name() const {
 
 bool Javascript::_has_script_signal(const StringName &p_signal) const {
 	compile();
-	return false;
+	return signals.has(p_signal);
 }
 
 TypedArray<Dictionary> Javascript::_get_script_signal_list() const {
 	compile();
 	TypedArray<Dictionary> list;
+	for (const KeyValue<StringName, MethodInfo> &E : signals) {
+		Dictionary d;
+		d["name"] = String(E.key);
+		Array args;
+		for (const PropertyInfo &arg : E.value.arguments) {
+			Dictionary ad;
+			ad["name"] = String(arg.name);
+			ad["type"] = (int)arg.type;
+			ad["class_name"] = String(arg.class_name);
+			ad["hint"] = (int)arg.hint;
+			ad["hint_string"] = arg.hint_string;
+			ad["usage"] = (int)arg.usage;
+			args.push_back(ad);
+		}
+		d["args"] = args;
+		list.push_back(d);
+	}
 	return list;
 }
 

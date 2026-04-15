@@ -6,6 +6,8 @@
 #include <v8-locker.h>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 using namespace godot;
 
@@ -72,6 +74,18 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 			return;
 		}
 
+		// 在 JS 实例化之前向 owner 注册 @Signal 装饰的信号
+		for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+			Array args;
+			for (const PropertyInfo &arg : E.value.arguments) {
+				Dictionary d;
+				d["name"] = String(arg.name);
+				d["type"] = (int)arg.type;
+				args.push_back(d);
+			}
+			owner->add_user_signal(E.key, args);
+		}
+
 		v8::Locker locker(NodeRuntime::isolate);
 		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 		v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -111,6 +125,18 @@ void JavascriptInstance::reload(bool p_keep_state) {
 
 	if (!javascript->compile()) {
 		return;
+	}
+
+	// 重载时重新注册 @Signal 信号（add_user_signal 对已存在信号是幂等的）
+	for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+		Array args;
+		for (const PropertyInfo &arg : E.value.arguments) {
+			Dictionary d;
+			d["name"] = String(arg.name);
+			d["type"] = (int)arg.type;
+			args.push_back(d);
+		}
+		owner->add_user_signal(E.key, args);
 	}
 
 	v8::Locker locker(NodeRuntime::isolate);
