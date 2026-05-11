@@ -24,6 +24,7 @@ public:
 	static godot::Variant eval_expression(const std::string &expr);
     static void spin_loop();
 	static void shutdown();
+	static void cleanup_handles();
 
 private:
 	static bool is_esm_file(const std::string &filename, const std::string &code);

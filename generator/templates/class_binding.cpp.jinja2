@@ -20,7 +20,7 @@ namespace gode {
 Napi::FunctionReference {{ class_name }}Binding::constructor;
 
 Napi::Object {{ class_name }}Binding::create_singleton(Napi::Env env, godot::{{ godot_class_name }}* instance) {
-    Napi::External<godot::{{ godot_class_name }}> external = Napi::External<godot::{{ godot_class_name }}>::New(env, instance);
+    Napi::External<godot::Object> external = Napi::External<godot::Object>::New(env, instance);
     return constructor.New({external});
 }
 
@@ -37,6 +37,7 @@ void {{ class_name }}Binding_wrap(const Napi::Object &obj, godot::Object *instan
     godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(binding->instance);
     if (ref) {
         ref->reference();
+        gode::register_refcounted_reference(ref);
         binding->referenced_instance = true;
     }
 }
@@ -173,7 +174,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 
 {{ class_name }}Binding::{{ class_name }}Binding(const Napi::CallbackInfo& info) : Napi::ObjectWrap<{{ class_name }}Binding>(info) {
     if (info.Length() == 1 && info[0].IsExternal()) {
-        instance = info[0].As<Napi::External<godot::{{ godot_class_name }}>>().Data();
+        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(info[0].As<Napi::External<godot::Object>>().Data());
         owns_instance = false;
     } else if (info.Length() == 1 && info[0].IsObject()) {
         instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(gode::unwrap_godot_object(info[0].As<Napi::Object>()));
@@ -191,6 +192,14 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     if (instance) {
         internal_object_id = instance->get_instance_id();
         register_godot_instance(instance, info.This().As<Napi::Object>());
+        if (!owns_instance) {
+            godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(instance);
+            if (ref) {
+                ref->reference();
+                gode::register_refcounted_reference(ref);
+                referenced_instance = true;
+            }
+        }
     }
 }
 
@@ -200,7 +209,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
         godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
         if (obj) {
             godot::RefCounted* ref = godot::Object::cast_to<godot::RefCounted>(obj);
-            if (ref && (owns_instance || referenced_instance)) {
+            if (ref && (owns_instance || (referenced_instance && gode::take_refcounted_reference(internal_object_id)))) {
                 ref->unreference();
                 if (ref->get_reference_count() == 0) {
             		godot::memdelete(ref);
@@ -216,6 +225,13 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
             if (owns_instance && node && !node->is_inside_tree()) {
             	godot::memdelete(node);
             }
+        }
+    }
+    {% else %}
+    if (owns_instance && internal_object_id != 0) {
+        godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
+        if (obj) {
+            godot::memdelete(obj);
         }
     }
     {% endif %}

@@ -3,6 +3,7 @@
 
 #include <napi.h>
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/type_info.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 #include <string>
@@ -24,6 +25,11 @@ struct ClassInfo {
 void register_class(const std::string &name, const std::string &godot_class_name, Napi::FunctionReference *ref, UnwrapFunc unwrapper, WrapFunc wrapper);
 godot::Object *unwrap_godot_object(const Napi::Object &value);
 void register_godot_instance(godot::Object *obj, Napi::Object js_obj);
+void register_refcounted_reference(godot::RefCounted *obj);
+bool take_refcounted_reference(uint64_t id);
+void clear_value_convert_caches();
+void release_cached_orphan_nodes();
+void release_cached_refcounted_references();
 void bind_builtin_owner_property(const Napi::Value &value, godot::Object *owner, const godot::StringName &property);
 void bind_builtin_parent_property(const Napi::Value &value, const Napi::Object &parent, const godot::StringName &property);
 
