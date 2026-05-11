@@ -443,7 +443,7 @@ Gode 会从项目根目录的 `node_modules` 中解析 npm 包。导出预设应
 
 ## 案例展示
 
-- [Gode TPS Demo](https://github.com/godothub/gode-tps-demo)：官方3D案例的JavaScript版本
+- [TPS Demo](https://github.com/godehub/tps-demo)：官方3D案例的JavaScript版本
 
 ## 常见问题
 

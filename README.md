@@ -443,7 +443,7 @@ Dependency trimming, bundling, native npm addon handling, and production-only in
 
 ## Showcase
 
-- [Gode TPS Demo](https://github.com/godothub/gode-tps-demo): JavaScript version of the official 3D demo
+- [TPS Demo](https://github.com/godehub/tps-demo): JavaScript version of the official 3D demo
 
 ## FAQ
 
