@@ -2,6 +2,7 @@
 #include "support/javascript/javascript.h"
 #include "support/javascript/javascript_instance.h"
 #include "support/javascript/javascript_language.h"
+#include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <vector>
 
@@ -66,8 +67,23 @@ static GDExtensionBool javascript_instance_get_class_category(GDExtensionScriptI
 
 static GDExtensionVariantType javascript_instance_get_property_type(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionBool *r_is_valid) {
 	JavascriptInstance *instance = cast_instance(p_instance);
-	(void)instance;
-	(void)p_name;
+	if (!instance) {
+		if (r_is_valid) {
+			*r_is_valid = false;
+		}
+		return GDEXTENSION_VARIANT_TYPE_NIL;
+	}
+	const StringName &name = *reinterpret_cast<const StringName *>(p_name);
+	Ref<Javascript> script = instance->get_script();
+	if (script.is_valid()) {
+		const HashMap<StringName, PropertyInfo> &props = script->get_exported_properties();
+		if (props.has(name)) {
+			if (r_is_valid) {
+				*r_is_valid = true;
+			}
+			return (GDExtensionVariantType)props[name].type;
+		}
+	}
 	if (r_is_valid) {
 		*r_is_valid = false;
 	}
@@ -109,9 +125,20 @@ static GDExtensionObjectPtr javascript_instance_get_owner(GDExtensionScriptInsta
 }
 
 static void javascript_instance_get_property_state(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionScriptInstancePropertyStateAdd p_add_func, void *p_userdata) {
-	(void)p_instance;
-	(void)p_add_func;
-	(void)p_userdata;
+	JavascriptInstance *instance = cast_instance(p_instance);
+	if (!instance || !p_add_func) {
+		return;
+	}
+	Ref<Javascript> script = instance->get_script();
+	if (!script.is_valid()) {
+		return;
+	}
+	for (const KeyValue<StringName, PropertyInfo> &E : script->get_exported_properties()) {
+		Variant value;
+		if (instance->get(E.key, value)) {
+			p_add_func(&E.key, &value, p_userdata);
+		}
+	}
 }
 
 static const GDExtensionMethodInfo *javascript_instance_get_method_list(GDExtensionScriptInstanceDataPtr p_instance, uint32_t *r_count) {
@@ -224,14 +251,21 @@ static void javascript_instance_to_string(GDExtensionScriptInstanceDataPtr p_ins
 static void javascript_instance_refcount_incremented(GDExtensionScriptInstanceDataPtr p_instance) {
 	JavascriptInstance *instance = cast_instance(p_instance);
 	if (instance) {
-		reinterpret_cast<RefCounted *>(instance->get_owner())->reference();
+		RefCounted *ref = Object::cast_to<RefCounted>(instance->get_owner());
+		if (ref) {
+			ref->reference();
+		}
 	}
 }
 
 static GDExtensionBool javascript_instance_refcount_decremented(GDExtensionScriptInstanceDataPtr p_instance) {
 	JavascriptInstance *instance = cast_instance(p_instance);
 	if (instance) {
-		return reinterpret_cast<RefCounted *>(instance->get_owner())->unreference();
+		RefCounted *ref = Object::cast_to<RefCounted>(instance->get_owner());
+		if (ref) {
+			return ref->unreference();
+		}
+		return false;
 	}
 	return true;
 }
@@ -257,11 +291,11 @@ static GDExtensionBool javascript_instance_is_placeholder(GDExtensionScriptInsta
 }
 
 static GDExtensionBool javascript_instance_set_fallback(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value) {
-	return true;
+	return false;
 }
 
 static GDExtensionBool javascript_instance_get_fallback(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionVariantPtr r_ret) {
-	return true;
+	return false;
 }
 
 static GDExtensionScriptLanguagePtr javascript_instance_get_language(GDExtensionScriptInstanceDataPtr p_instance) {
