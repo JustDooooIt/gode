@@ -2,11 +2,9 @@
 #define GODOT_JAVASCRIPT_INSTANCE_H
 
 #include <napi.h>
+#include <vector>
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace gode {
 
@@ -17,7 +15,6 @@ class JavascriptInstance {
 	godot::Object *owner = nullptr;
 	Napi::ObjectReference js_instance;
 	bool placeholder = false;
-	bool disposed = false;
 	godot::HashMap<godot::StringName, godot::Variant> placeholder_properties;
 
 	mutable std::vector<godot::PropertyInfo> prop_list_cache;
@@ -28,20 +25,13 @@ class JavascriptInstance {
 	mutable std::vector<std::vector<GDExtensionPropertyInfo>> method_arg_gde_cache;
 	mutable std::vector<godot::PropertyInfo> method_return_cache;
 	mutable std::vector<GDExtensionPropertyInfo> method_return_gde_cache;
-	mutable godot::HashMap<godot::StringName, std::string> name_utf8_cache;
-	mutable std::unordered_map<std::string, std::vector<std::string>> property_path_cache;
 
 private:
 	void notification_bind(Napi::Object instance, int32_t p_what, bool p_reversed);
-	const std::string &get_cached_name_utf8(const godot::StringName &p_name) const;
-	const std::vector<std::string> &get_cached_property_path(const std::string &p_name) const;
-	void dispose();
 
 public:
 	JavascriptInstance(const godot::Ref<Javascript> &p_javascript, godot::Object *p_owner, bool p_placeholder);
 	~JavascriptInstance();
-
-	static void dispose_all();
 
 	godot::Object *get_owner() const;
 	bool is_placeholder() const;

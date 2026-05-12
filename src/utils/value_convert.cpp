@@ -6,7 +6,6 @@
 
 #include "godot_cpp/variant/utility_functions.hpp"
 #include <godot_cpp/classes/object.hpp>
-#include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/core/object.hpp>
 #include <godot_cpp/classes/class_db_singleton.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
@@ -64,8 +63,6 @@ namespace gode {
 static std::unordered_map<std::string, ClassInfo> class_registry;
 static std::vector<ClassInfo> class_list;
 static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
-static std::unordered_map<std::string, ClassInfo *> object_class_cache;
-static std::unordered_map<uint64_t, uint32_t> refcounted_references;
 
 constexpr const char *GODOT_OBJECT_ID_SYMBOL = "__gode.godot_object_id__";
 constexpr const char *GODOT_OBJECT_PTR_SYMBOL = "__gode.godot_object_ptr__";
@@ -97,7 +94,6 @@ void register_class(const std::string &name, const std::string &godot_class_name
 	ClassInfo info = { godot_class_name, ref, unwrapper, wrapper };
 	class_registry[name] = info;
 	class_list.push_back(info);
-	object_class_cache.clear();
 }
 
 void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
@@ -108,68 +104,7 @@ void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
 	uint64_t id = obj->get_instance_id();
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_ID_SYMBOL), Napi::BigInt::New(env, id));
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_PTR_SYMBOL), Napi::External<godot::Object>::New(env, obj));
-	object_cache[id] = Napi::Weak(js_obj);
-}
-
-void register_refcounted_reference(godot::RefCounted *obj) {
-	if (obj) {
-		refcounted_references[obj->get_instance_id()]++;
-	}
-}
-
-bool take_refcounted_reference(uint64_t id) {
-	auto found = refcounted_references.find(id);
-	if (found == refcounted_references.end()) {
-		return false;
-	}
-	if (found->second <= 1) {
-		refcounted_references.erase(found);
-	} else {
-		found->second--;
-	}
-	return true;
-}
-
-void clear_value_convert_caches() {
-	for (auto &[_, ref] : object_cache) {
-		if (!ref.IsEmpty()) {
-			ref.Reset();
-		}
-	}
-	object_cache.clear();
-	object_class_cache.clear();
-}
-
-void release_cached_refcounted_references() {
-	std::vector<std::pair<uint64_t, uint32_t>> refs(refcounted_references.begin(), refcounted_references.end());
-	for (const auto &[id, count] : refs) {
-		for (uint32_t i = 0; i < count; i++) {
-			if (!take_refcounted_reference(id)) {
-				continue;
-			}
-			godot::Object *obj = godot::ObjectDB::get_instance(id);
-			godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(obj);
-			if (ref) {
-				ref->unreference();
-				if (ref->get_reference_count() == 0) {
-					godot::memdelete(ref);
-				}
-			}
-		}
-	}
-}
-
-void release_cached_orphan_nodes() {
-	for (auto &[id, _] : object_cache) {
-		godot::Object *obj = godot::ObjectDB::get_instance(id);
-		if (!obj) {
-			continue;
-		}
-		godot::Node *node = godot::Object::cast_to<godot::Node>(obj);
-		if (node && !node->is_inside_tree() && node->get_parent() == nullptr) {
-			godot::memdelete(node);
-		}
-	}
+	object_cache[id] = Napi::Persistent(js_obj);
 }
 
 godot::Object *unwrap_godot_object(const Napi::Object &obj) {
@@ -285,14 +220,8 @@ static ClassInfo *find_class_info_for_object(godot::Object *obj) {
 
 	const godot::StringName object_class = obj->get_class();
 	const std::string exact_name = godot::String(object_class).utf8().get_data();
-	auto cached = object_class_cache.find(exact_name);
-	if (cached != object_class_cache.end()) {
-		return cached->second;
-	}
-
 	auto exact = class_registry.find(exact_name);
 	if (exact != class_registry.end()) {
-		object_class_cache[exact_name] = &exact->second;
 		return &exact->second;
 	}
 
@@ -319,7 +248,6 @@ static ClassInfo *find_class_info_for_object(godot::Object *obj) {
 			best_distance = distance;
 		}
 	}
-	object_class_cache[exact_name] = best;
 	return best;
 }
 
@@ -433,7 +361,14 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 			if (class_info) {
 				ClassInfo &info = *class_info;
 				if (info.constructor && !info.constructor->IsEmpty()) {
-					return info.constructor->Value().New({ Napi::External<godot::Object>::New(env, obj) });
+					Napi::Object js_obj = info.constructor->Value().New({});
+					if (info.wrapper) {
+						info.wrapper(js_obj, obj);
+					}
+
+					register_godot_instance(obj, js_obj);
+
+					return js_obj;
 				}
 			}
 			return env.Null();

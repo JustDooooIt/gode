@@ -75,20 +75,9 @@ static Napi::Value fs_stat(const Napi::CallbackInfo &info) {
 	return Napi::Number::New(env, 0); // Not found
 }
 
-static Napi::Value DecoratorNoop(const Napi::CallbackInfo &info) {
+static Napi::Value Export(const Napi::CallbackInfo &info) {
 	Napi::Env env = info.Env();
 	return env.Undefined();
-}
-
-static Napi::Value DecoratorShim(const Napi::CallbackInfo &info) {
-	Napi::Env env = info.Env();
-	if (info.Length() == 1 && info[0].IsFunction()) {
-		return env.Undefined();
-	}
-	if (info.Length() >= 2 && (info[0].IsObject() || info[0].IsFunction()) && (info[1].IsString() || info[1].IsSymbol() || info[1].IsNumber() || info[1].IsObject())) {
-		return env.Undefined();
-	}
-	return Napi::Function::New(env, DecoratorNoop);
 }
 
 // 预加载目录中的所有 .dll，确保依赖链在 llama-addon.node 加载前已解析
@@ -188,23 +177,9 @@ static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 	exports.Set("preload_dlls", Napi::Function::New(env, preload_dlls));
 
 	Napi::Object global = env.Global();
-	global.Set("Export", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportCategory", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportGroup", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportSubgroup", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportRange", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportEnum", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportFlags", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportFile", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportDir", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportMultiline", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportColorNoAlpha", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportNodePath", Napi::Function::New(env, DecoratorShim));
-	global.Set("ExportResource", Napi::Function::New(env, DecoratorShim));
-	global.Set("Signal", Napi::Function::New(env, DecoratorShim)); // @Signal 装饰器，运行时为空操作，由 tree-sitter 静态解析
-	global.Set("Rpc", Napi::Function::New(env, DecoratorShim));    // @Rpc 装饰器，运行时为空操作，由 tree-sitter 静态解析
-	global.Set("Tool", Napi::Function::New(env, DecoratorShim));   // @Tool 装饰器，运行时为空操作，由 tree-sitter 静态解析
-	global.Set("GlobalClass", Napi::Function::New(env, DecoratorShim));
+	global.Set("Export", Napi::Function::New(env, Export));
+	global.Set("Signal", Napi::Function::New(env, Export)); // @Signal 装饰器，运行时为空操作，由 tree-sitter 静态解析
+	global.Set("Tool", Napi::Function::New(env, Export));   // @Tool 装饰器，运行时为空操作，由 tree-sitter 静态解析
 
 	return exports;
 }
@@ -310,16 +285,6 @@ void NodeRuntime::init_once() {
 				"} catch (e) {"
 				"  console.error('[Gode] Injection error:', e);"
 				"}"
-				""
-				"const __godeDecoratorNoop = (..._args) => (..._decoratorArgs) => undefined;"
-				"if (typeof globalThis.Export !== 'function') globalThis.Export = __godeDecoratorNoop;"
-				"for (const __name of ['ExportCategory','ExportGroup','ExportSubgroup','ExportRange','ExportEnum','ExportFlags','ExportFile','ExportDir','ExportMultiline','ExportColorNoAlpha','ExportNodePath','ExportResource']) {"
-				"  if (typeof globalThis[__name] !== 'function') globalThis[__name] = __godeDecoratorNoop;"
-				"}"
-				"if (typeof globalThis.Signal !== 'function') globalThis.Signal = __godeDecoratorNoop;"
-				"if (typeof globalThis.Rpc !== 'function') globalThis.Rpc = __godeDecoratorNoop;"
-				"if (typeof globalThis.Tool !== 'function') globalThis.Tool = __godeDecoratorNoop;"
-				"if (typeof globalThis.GlobalClass !== 'function') globalThis.GlobalClass = __godeDecoratorNoop;"
 				""
 				"const originalReadFileSync = fs.readFileSync;"
 				"fs.readFileSync = function(p, options) {"
@@ -1088,10 +1053,6 @@ godot::Variant NodeRuntime::eval_expression(const std::string &expr) {
 
 	std::string code = "(function() { return " + expr + "; })()";
 
-	v8::Locker locker(isolate);
-	v8::Isolate::Scope isolate_scope(isolate);
-	v8::HandleScope handle_scope(isolate);
-
 	v8::Local<v8::Context> context = node_context.Get(isolate);
 	v8::Context::Scope context_scope(context);
 	v8::TryCatch try_catch(isolate);
@@ -1145,14 +1106,7 @@ void NodeRuntime::shutdown() {
 
 		{
 			v8::Context::Scope context_scope(node_context.Get(isolate));
-			release_cached_refcounted_references();
-			release_cached_orphan_nodes();
-			clear_value_convert_caches();
-			isolate->PerformMicrotaskCheckpoint();
-			isolate->LowMemoryNotification();
 			node::SpinEventLoop(env).ToChecked();
-			isolate->PerformMicrotaskCheckpoint();
-			isolate->LowMemoryNotification();
 		}
 
 		node::Stop(env);
@@ -1182,23 +1136,6 @@ void NodeRuntime::shutdown() {
 	allocator.reset();
 
 	node_initialized = false;
-}
-
-void NodeRuntime::cleanup_handles() {
-	if (!node_initialized || !env || !isolate) {
-		return;
-	}
-
-	v8::Locker locker(isolate);
-	v8::Isolate::Scope isolate_scope(isolate);
-	v8::HandleScope handle_scope(isolate);
-	v8::Context::Scope context_scope(node_context.Get(isolate));
-
-	release_cached_refcounted_references();
-	release_cached_orphan_nodes();
-	clear_value_convert_caches();
-	isolate->PerformMicrotaskCheckpoint();
-	isolate->LowMemoryNotification();
 }
 
 } // namespace gode

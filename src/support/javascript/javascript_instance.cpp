@@ -1,6 +1,5 @@
 #include "support/javascript/javascript_instance.h"
 #include "support/javascript/javascript.h"
-#include "support/javascript/javascript_language.h"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
 #include <v8-isolate.h>
@@ -95,7 +94,6 @@ void _attach_promise_rejection_handler(Napi::Value value, const std::string &met
 	Napi::Env env = value.Env();
 	Napi::Function on_rejected = Napi::Function::New(env, [method_name](const Napi::CallbackInfo &info) {
 		std::string message = info.Length() > 0 ? _js_error_to_string(info[0]) : "Unknown async JavaScript exception";
-		JavascriptLanguage::report_exception(String(message.c_str()), String(message.c_str()));
 		UtilityFunctions::printerr("Async JS Exception in ", method_name.c_str(), ": ", message.c_str());
 		return info.Env().Undefined();
 	}, "__gode_async_rejection_handler");
@@ -103,32 +101,11 @@ void _attach_promise_rejection_handler(Napi::Value value, const std::string &met
 	value.As<Napi::Promise>().Catch(on_rejected);
 }
 
-String _napi_error_stack(const Napi::Error &p_error) {
-	try {
-		Napi::Value value = p_error.Value();
-		if (value.IsObject()) {
-			Napi::Object obj = value.As<Napi::Object>();
-			if (obj.Has("stack")) {
-				Napi::Value stack = obj.Get("stack");
-				if (!stack.IsNull() && !stack.IsUndefined()) {
-					return String(stack.ToString().Utf8Value().c_str());
-				}
-			}
-		}
-	} catch (...) {
-	}
-	return String(p_error.Message().c_str());
-}
-
 } // namespace
-
-static godot::HashSet<JavascriptInstance *> live_instances;
-
 JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Object *p_owner, bool p_placeholder) :
 		javascript(p_javascript),
 		owner(p_owner),
 		placeholder(p_placeholder) {
-	live_instances.insert(this);
 	if (!placeholder) {
 		if (!javascript.is_valid()) {
 			return;
@@ -170,80 +147,10 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 	}
 }
 
-const std::string &JavascriptInstance::get_cached_name_utf8(const StringName &p_name) const {
-	if (!name_utf8_cache.has(p_name)) {
-		name_utf8_cache[p_name] = String(p_name).utf8().get_data();
-	}
-	return name_utf8_cache[p_name];
-}
-
-const std::vector<std::string> &JavascriptInstance::get_cached_property_path(const std::string &p_name) const {
-	auto found = property_path_cache.find(p_name);
-	if (found != property_path_cache.end()) {
-		return found->second;
-	}
-
-	std::vector<std::string> segments;
-	size_t start = 0;
-	while (true) {
-		size_t pos = p_name.find("::", start);
-		if (pos == std::string::npos) {
-			segments.push_back(p_name.substr(start));
-			break;
-		}
-		segments.push_back(p_name.substr(start, pos - start));
-		start = pos + 2;
-	}
-
-	auto inserted = property_path_cache.emplace(p_name, std::move(segments));
-	return inserted.first->second;
-}
-
 JavascriptInstance::~JavascriptInstance() {
-	dispose();
-	live_instances.erase(this);
-	if (javascript.is_valid()) {
-		if (placeholder) {
-			javascript->placeholder_instances.erase(this);
-		} else {
-			javascript->instances.erase(this);
-		}
-	}
-}
-
-void JavascriptInstance::dispose_all() {
-	Vector<JavascriptInstance *> instances;
-	instances.resize(live_instances.size());
-	int64_t index = 0;
-	for (JavascriptInstance *instance : live_instances) {
-		instances.write[index++] = instance;
-	}
-	for (JavascriptInstance *instance : instances) {
-		if (instance) {
-			instance->dispose();
-		}
-	}
-}
-
-void JavascriptInstance::dispose() {
-	if (disposed) {
-		return;
-	}
-	disposed = true;
-	Object *old_owner = owner;
-	owner = nullptr;
-	if (javascript.is_valid() && old_owner) {
-		javascript->instance_objects.erase(old_owner);
-	}
+	javascript->instances.erase(this);
 	if (!js_instance.IsEmpty()) {
 		js_instance.Reset();
-	}
-	if (NodeRuntime::isolate) {
-		v8::Locker locker(NodeRuntime::isolate);
-		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-		v8::HandleScope handle_scope(NodeRuntime::isolate);
-		NodeRuntime::isolate->PerformMicrotaskCheckpoint();
-		NodeRuntime::isolate->LowMemoryNotification();
 	}
 }
 
@@ -256,7 +163,7 @@ bool JavascriptInstance::is_placeholder() const {
 }
 
 void JavascriptInstance::reload(bool p_keep_state) {
-	if (disposed || placeholder || !owner) {
+	if (placeholder) {
 		return;
 	}
 
@@ -308,10 +215,19 @@ void JavascriptInstance::reload(bool p_keep_state) {
 
 	if (p_keep_state) {
 		for (const KeyValue<StringName, Variant> &E : old_state) {
-			const std::string &key = get_cached_name_utf8(E.key);
+			std::string key = String(E.key).utf8().get_data();
 			size_t sep = key.find("::");
 			if (sep != std::string::npos) {
-				const std::vector<std::string> &segments = get_cached_property_path(key);
+				// Walk down the object chain for arbitrarily deep A::B::C::... keys.
+				// Split into all segments first, then traverse to parent and set leaf.
+				std::vector<std::string> segments;
+				std::string remaining = key;
+				size_t pos;
+				while ((pos = remaining.find("::")) != std::string::npos) {
+					segments.push_back(remaining.substr(0, pos));
+					remaining = remaining.substr(pos + 2);
+				}
+				segments.push_back(remaining); // leaf key
 
 				Napi::Object cur = instance;
 				bool valid = true;
@@ -333,9 +249,6 @@ void JavascriptInstance::reload(bool p_keep_state) {
 }
 
 bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
-	if (disposed) {
-		return false;
-	}
 	if (placeholder) {
 		placeholder_properties[p_name] = p_value;
 		return true;
@@ -343,17 +256,21 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
-	const std::string &property_name = get_cached_name_utf8(p_name);
+	std::string property_name = String(p_name).utf8().get_data();
 	if (!javascript->properties.has(property_name.c_str())) {
-		return false;
-	}
-	if (js_instance.IsEmpty()) {
 		return false;
 	}
 	Napi::Env env = js_instance.Value().Env();
 	size_t sep = property_name.find("::");
 	if (sep != std::string::npos) {
-		const std::vector<std::string> &segments = get_cached_property_path(property_name);
+		std::vector<std::string> segments;
+		std::string remaining = property_name;
+		size_t pos;
+		while ((pos = remaining.find("::")) != std::string::npos) {
+			segments.push_back(remaining.substr(0, pos));
+			remaining = remaining.substr(pos + 2);
+		}
+		segments.push_back(remaining);
 		Napi::Object cur = js_instance.Value();
 		for (size_t i = 0; i + 1 < segments.size(); ++i) {
 			Napi::Value child = cur.Get(segments[i]);
@@ -367,9 +284,6 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
-	if (disposed) {
-		return false;
-	}
 	if (placeholder) {
 		if (placeholder_properties.has(p_name)) {
 			r_value = placeholder_properties[p_name];
@@ -385,16 +299,20 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
-	const std::string &prop_name = get_cached_name_utf8(p_name);
+	std::string prop_name = String(p_name).utf8().get_data();
 	if (!javascript->properties.has(prop_name.c_str())) {
-		return false;
-	}
-	if (js_instance.IsEmpty()) {
 		return false;
 	}
 	size_t sep = prop_name.find("::");
 	if (sep != std::string::npos) {
-		const std::vector<std::string> &segments = get_cached_property_path(prop_name);
+		std::vector<std::string> segments;
+		std::string remaining = prop_name;
+		size_t pos;
+		while ((pos = remaining.find("::")) != std::string::npos) {
+			segments.push_back(remaining.substr(0, pos));
+			remaining = remaining.substr(pos + 2);
+		}
+		segments.push_back(remaining);
 		Napi::Object cur = js_instance.Value();
 		for (size_t i = 0; i + 1 < segments.size(); ++i) {
 			Napi::Value child = cur.Get(segments[i]);
@@ -410,9 +328,6 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 }
 
 bool JavascriptInstance::has_method(const StringName &p_method) const {
-	if (disposed) {
-		return false;
-	}
 	if (placeholder) {
 		return javascript->_has_method(p_method);
 	}
@@ -422,15 +337,12 @@ bool JavascriptInstance::has_method(const StringName &p_method) const {
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::HandleScope scope(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-	const std::string &method_name = get_cached_name_utf8(p_method);
+	Napi::Object instance = js_instance.Value();
+	std::string method_name = String(p_method).utf8().get_data();
 	return javascript->_has_method(method_name.c_str());
 }
 
 int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
-	if (disposed) {
-		r_is_valid = false;
-		return 0;
-	}
 	v8::Locker locker(NodeRuntime::isolate);
 	if (!javascript.is_valid()) {
 		r_is_valid = false;
@@ -446,10 +358,6 @@ int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method
 }
 
 Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_args, int32_t p_argcount, GDExtensionCallError &r_error) {
-	if (disposed || !owner) {
-		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
-		return Variant();
-	}
 	if (placeholder) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
@@ -471,18 +379,21 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 	v8::Context::Scope context_scope(NodeRuntime::node_context.Get(NodeRuntime::isolate));
 	Napi::Object instance = js_instance.Value();
 	Napi::Env env = instance.Env();
-	const std::string &method_name = get_cached_name_utf8(p_method);
+	std::string method_name = String(p_method).utf8().get_data();
 
-	Napi::Value method_value = instance.Get(method_name);
-	if (!method_value.IsFunction()) {
+	if (!instance.Has(method_name)) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
 
-	Napi::Function method = method_value.As<Napi::Function>();
+	if (!instance.Get(method_name).IsFunction()) {
+		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		return Variant();
+	}
+
+	Napi::Function method = js_instance.Get(method_name).As<Napi::Function>();
 
 	std::vector<napi_value> args;
-	args.reserve(p_argcount);
 	for (int i = 0; i < p_argcount; ++i) {
 		Napi::Value jsvalue = godot_to_napi(env, p_args[i]);
 		args.push_back(jsvalue);
@@ -499,8 +410,6 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 		}
 		return napi_to_godot(result);
 	} catch (const Napi::Error &e) {
-		String stack = _napi_error_stack(e);
-		JavascriptLanguage::report_exception(String(e.Message().c_str()), stack);
 		UtilityFunctions::printerr("JS Exception in ", method_name.c_str(), ": ", e.Message().c_str());
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		r_error.argument = 0;
@@ -540,8 +449,6 @@ void JavascriptInstance::notification_bind(Napi::Object instance, int32_t p_what
 				Napi::Value result = method.Call(instance, { Napi::Number::New(instance.Env(), p_what), Napi::Boolean::New(instance.Env(), p_reversed) });
 				_attach_promise_rejection_handler(result, notification_method_name);
 			} catch (const Napi::Error &e) {
-				String stack = _napi_error_stack(e);
-				JavascriptLanguage::report_exception(String(e.Message().c_str()), stack);
 				UtilityFunctions::printerr("JS Exception in ", notification_method_name.c_str(), ": ", e.Message().c_str());
 			} catch (const std::exception &e) {
 				UtilityFunctions::printerr("Native exception in JS notification: ", e.what());
@@ -557,7 +464,7 @@ void JavascriptInstance::notification_bind(Napi::Object instance, int32_t p_what
 }
 
 void JavascriptInstance::notification(int32_t p_what, bool p_reversed) {
-	if (disposed || !owner || placeholder) {
+	if (placeholder) {
 		return;
 	}
 	if (js_instance.IsEmpty()) {
@@ -571,17 +478,9 @@ void JavascriptInstance::notification(int32_t p_what, bool p_reversed) {
 
 	Napi::Object instance = js_instance.Value();
 	notification_bind(instance, p_what, p_reversed);
-
-	if (p_what == Object::NOTIFICATION_PREDELETE) {
-		dispose();
-	}
 }
 
 String JavascriptInstance::to_string(bool &r_is_valid) const {
-	if (disposed) {
-		r_is_valid = false;
-		return String();
-	}
 	if (placeholder) {
 		r_is_valid = true;
 		return "JavascriptInstance(Placeholder)";

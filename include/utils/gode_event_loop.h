@@ -16,7 +16,6 @@ public:
 	~GodeEventLoop();
 
 	void _process(double delta) override;
-	void _exit_tree() override;
 };
 
 } // namespace gode
