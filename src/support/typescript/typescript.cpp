@@ -14,17 +14,33 @@ using namespace gode;
 
 extern "C" const TSLanguage *tree_sitter_typescript();
 
+static std::string node_text(const std::string &source, TSNode node) {
+	if (ts_node_is_null(node)) {
+		return std::string();
+	}
+	uint32_t start = ts_node_start_byte(node);
+	uint32_t end = ts_node_end_byte(node);
+	return source.substr(start, end - start);
+}
+
+static std::string strip_quotes(std::string text) {
+	if (text.size() >= 2 && ((text.front() == '"' && text.back() == '"') || (text.front() == '\'' && text.back() == '\''))) {
+		return text.substr(1, text.size() - 2);
+	}
+	return text;
+}
+
 static Variant::Type parse_type_string(const std::string &type_str) {
-	if (type_str == "bool" || type_str == "boolean") {
+	if (type_str == "bool" || type_str == "boolean" || type_str == "Boolean") {
 		return Variant::BOOL;
 	}
 	if (type_str == "int") {
 		return Variant::INT;
 	}
-	if (type_str == "float" || type_str == "number") {
+	if (type_str == "float" || type_str == "number" || type_str == "Number") {
 		return Variant::FLOAT;
 	}
-	if (type_str == "string") {
+	if (type_str == "String" || type_str == "string") {
 		return Variant::STRING;
 	}
 	if (type_str == "Vector2") {
@@ -39,11 +55,20 @@ static Variant::Type parse_type_string(const std::string &type_str) {
 	if (type_str == "Vector3i") {
 		return Variant::VECTOR3I;
 	}
+	if (type_str == "Vector4") {
+		return Variant::VECTOR4;
+	}
+	if (type_str == "Vector4i") {
+		return Variant::VECTOR4I;
+	}
 	if (type_str == "Color") {
 		return Variant::COLOR;
 	}
 	if (type_str == "NodePath") {
 		return Variant::NODE_PATH;
+	}
+	if (type_str == "Object") {
+		return Variant::OBJECT;
 	}
 	return Variant::NIL;
 }
@@ -557,6 +582,127 @@ static void parse_signal_params(TSNode func_type_node, const std::string &source
 	}
 }
 
+static void parse_signal_entry(const std::string &signal_name, TSNode value, const std::string &source, HashMap<StringName, MethodInfo> &signals) {
+	MethodInfo mi;
+	mi.name = StringName(signal_name.c_str());
+
+	TSNode args_node = { 0 };
+	if (strcmp(ts_node_type(value), "array") == 0) {
+		args_node = value;
+	} else if (strcmp(ts_node_type(value), "object") == 0) {
+		for (uint32_t i = 0; i < ts_node_named_child_count(value); i++) {
+			TSNode pair = ts_node_named_child(value, i);
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
+			TSNode key = ts_node_child_by_field_name(pair, "key", 3);
+			if (strip_quotes(node_text(source, key)) == "args") {
+				args_node = ts_node_child_by_field_name(pair, "value", 5);
+				break;
+			}
+		}
+	}
+
+	if (!ts_node_is_null(args_node) && strcmp(ts_node_type(args_node), "array") == 0) {
+		for (uint32_t i = 0; i < ts_node_named_child_count(args_node); i++) {
+			TSNode arg_node = ts_node_named_child(args_node, i);
+			PropertyInfo arg;
+			arg.type = Variant::NIL;
+			arg.usage = PROPERTY_USAGE_DEFAULT;
+			arg.hint = PROPERTY_HINT_NONE;
+
+			if (strcmp(ts_node_type(arg_node), "string") == 0) {
+				arg.name = StringName(strip_quotes(node_text(source, arg_node)).c_str());
+			} else if (strcmp(ts_node_type(arg_node), "object") == 0) {
+				for (uint32_t j = 0; j < ts_node_named_child_count(arg_node); j++) {
+					TSNode pair = ts_node_named_child(arg_node, j);
+					if (strcmp(ts_node_type(pair), "pair") != 0) {
+						continue;
+					}
+					TSNode key = ts_node_child_by_field_name(pair, "key", 3);
+					TSNode val = ts_node_child_by_field_name(pair, "value", 5);
+					std::string key_text = strip_quotes(node_text(source, key));
+					if (key_text == "name") {
+						arg.name = StringName(strip_quotes(node_text(source, val)).c_str());
+					} else if (key_text == "type") {
+						arg.type = parse_type_string(strip_quotes(node_text(source, val)));
+					}
+				}
+			}
+
+			mi.arguments.push_back(arg);
+		}
+	}
+
+	signals[mi.name] = mi;
+}
+
+static int parse_rpc_mode(const std::string &mode) {
+	if (mode == "any_peer" || mode == "any") return 1;
+	if (mode == "authority" || mode == "master") return 2;
+	if (mode == "disabled") return 0;
+	return std::atoi(mode.c_str());
+}
+
+static int parse_transfer_mode(const std::string &mode) {
+	if (mode == "unreliable") return 0;
+	if (mode == "unreliable_ordered") return 1;
+	if (mode == "reliable") return 2;
+	return std::atoi(mode.c_str());
+}
+
+static void parse_static_metadata(const std::string &name, TSNode value, const std::string &source, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs) {
+	if (name == "signals" && strcmp(ts_node_type(value), "object") == 0) {
+		for (uint32_t i = 0; i < ts_node_named_child_count(value); i++) {
+			TSNode pair = ts_node_named_child(value, i);
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
+			TSNode key = ts_node_child_by_field_name(pair, "key", 3);
+			TSNode val = ts_node_child_by_field_name(pair, "value", 5);
+			parse_signal_entry(strip_quotes(node_text(source, key)), val, source, signals);
+		}
+		return;
+	}
+
+	if ((name == "rpc_config" || name == "rpcs") && strcmp(ts_node_type(value), "object") == 0) {
+		for (uint32_t i = 0; i < ts_node_named_child_count(value); i++) {
+			TSNode pair = ts_node_named_child(value, i);
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
+			StringName method(strip_quotes(node_text(source, ts_node_child_by_field_name(pair, "key", 3))).c_str());
+			TSNode cfg_node = ts_node_child_by_field_name(pair, "value", 5);
+			Dictionary cfg;
+			cfg["rpc_mode"] = 2;
+			cfg["transfer_mode"] = 2;
+			cfg["call_local"] = false;
+			cfg["channel"] = 0;
+			if (strcmp(ts_node_type(cfg_node), "object") == 0) {
+				for (uint32_t j = 0; j < ts_node_named_child_count(cfg_node); j++) {
+					TSNode cfg_pair = ts_node_named_child(cfg_node, j);
+					if (strcmp(ts_node_type(cfg_pair), "pair") != 0) {
+						continue;
+					}
+					std::string key = strip_quotes(node_text(source, ts_node_child_by_field_name(cfg_pair, "key", 3)));
+					TSNode val = ts_node_child_by_field_name(cfg_pair, "value", 5);
+					std::string val_text = strip_quotes(node_text(source, val));
+					if (key == "rpc_mode" || key == "mode") {
+						cfg["rpc_mode"] = parse_rpc_mode(val_text);
+					} else if (key == "transfer_mode" || key == "transferMode") {
+						cfg["transfer_mode"] = parse_transfer_mode(val_text);
+					} else if (key == "call_local" || key == "callLocal") {
+						cfg["call_local"] = val_text == "true";
+					} else if (key == "channel") {
+						cfg["channel"] = std::atoi(val_text.c_str());
+					}
+				}
+			}
+			rpc_configs[method] = cfg;
+		}
+	}
+}
+
 static void parse_method_params(TSNode method_node, const std::string &source, MethodInfo &mi) {
 	TSNode params = ts_node_child_by_field_name(method_node, "parameters", strlen("parameters"));
 	if (ts_node_is_null(params)) {
@@ -600,7 +746,7 @@ static void parse_method_params(TSNode method_node, const std::string &source, M
 	}
 }
 
-static void parse_class_members(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
+static void parse_class_members(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
 	TSNode body_node = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body_node)) {
 		return;
@@ -611,6 +757,21 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 		const char *member_type = ts_node_type(member);
 
 		if (strcmp(member_type, "public_field_definition") == 0) {
+			bool is_static = false;
+			for (uint32_t k = 0; k < ts_node_child_count(member); k++) {
+				if (strcmp(ts_node_type(ts_node_child(member, k)), "static") == 0) {
+					is_static = true;
+					break;
+				}
+			}
+			if (is_static) {
+				TSNode field_name_node = ts_node_child_by_field_name(member, "name", 4);
+				TSNode field_value_node = ts_node_child_by_field_name(member, "value", 5);
+				if (!ts_node_is_null(field_name_node) && !ts_node_is_null(field_value_node)) {
+					parse_static_metadata(strip_quotes(node_text(source, field_name_node)), field_value_node, source, signals, rpc_configs);
+				}
+			}
+
 			// 扫描装饰器，检测 @Export 并解析其参数
 			bool has_export_decorator = false;
 			PropertyHint export_hint = PROPERTY_HINT_NONE;
@@ -973,6 +1134,7 @@ bool Typescript::compile() const {
 	property_list.clear();
 	methods.clear();
 	signals.clear();
+	rpc_configs.clear();
 	properties.clear();
 	property_defaults.clear();
 	constants.clear();
@@ -991,7 +1153,7 @@ bool Typescript::compile() const {
 
 	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source, get_path());
 	parse_class_metadata(class_node, source, class_name, base_class_name);
-	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, signals, member_lines, interfaces);
+	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, signals, rpc_configs, member_lines, interfaces);
 	parse_static_exports(class_node, source, properties, property_defaults);
 	collect_parent_properties(base_class_name, source, root_node, child_count, get_path(), properties, property_defaults);
 
