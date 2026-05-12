@@ -1,3 +1,10 @@
+## 1.7.0
+
+- Added TypeScript metadata parsing for static `signals` and `rpc_config`, matching the JavaScript script metadata workflow.
+- Expanded TypeScript Variant type parsing for metadata fields such as `Object`, `Vector4`, and boxed primitive names.
+- Updated generated TypeScript declarations to expose Godot class enum values on constructors, matching runtime usage such as `Window.MODE_FULLSCREEN` and `Viewport.MSAA_DISABLED`.
+- Corrected generated TypeScript declarations for `Object.set()` and `Object.get()` so they match the JavaScript runtime API names.
+
 ## 1.6.3
 
 - Fixed JavaScript script instance argument marshaling from Godot callbacks by copying the incoming Variant pointer array before calling JS methods, preventing unstable native crashes in high-frequency callbacks.
