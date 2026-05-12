@@ -1,3 +1,10 @@
+## 1.7.0
+
+- 为 TypeScript 增加静态 `signals` 和 `rpc_config` 元数据解析，使其与 JavaScript 脚本元数据工作流一致。
+- 扩展 TypeScript 元数据中的 Variant 类型解析，支持 `Object`、`Vector4` 和 boxed primitive 名称等写法。
+- 更新生成的 TypeScript 声明，将 Godot 类枚举值暴露到构造器上，对齐 `Window.MODE_FULLSCREEN`、`Viewport.MSAA_DISABLED` 等运行时用法。
+- 修正生成的 TypeScript 声明中 `Object.set()` 和 `Object.get()` 的方法名，使其与 JavaScript 运行时 API 一致。
+
 ## 1.6.3
 
 - 修复 Godot 回调 JavaScript 脚本实例时的参数转换：先复制传入的 Variant 指针数组再调用 JS 方法，避免高频回调中出现不稳定的 native 崩溃。
