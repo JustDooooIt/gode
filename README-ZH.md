@@ -100,7 +100,7 @@ TypeScript 脚本会编译为 `res://dist` 下对应的 JavaScript 文件。建�
 		"rootDir": ".",
 		"outDir": "dist",
 		"paths": {
-			"godot": ["addons/gode/types/godot.d.ts"]
+			"godot": ["./addons/gode/types/godot.d.ts"]
 		},
 		"types": ["node"]
 	},
