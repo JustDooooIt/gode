@@ -83,7 +83,7 @@ TS_RESERVED = frozenset([
     'void', 'function', 'var', 'let', 'const', 'if', 'else',
     'for', 'while', 'break', 'continue', 'switch', 'case',
     'default', 'import', 'export', 'from', 'extends', 'super',
-    'this', 'static', 'get', 'set', 'in', 'of', 'instanceof',
+    'this', 'static', 'in', 'of', 'instanceof',
     'throw', 'try', 'catch', 'finally', 'async', 'await',
     'yield', 'debugger', 'with', 'enum',
 ])
@@ -311,6 +311,26 @@ class DtsGenerator(CodeGenerator):
         lines.append(f'{ind}}}')
         return lines
 
+    def _gen_enum_static_constants(self, enums: list, indent: int) -> list:
+        """Godot exposes class enum values directly on constructors at runtime.
+
+        The nested namespace enum keeps enum types available as `Viewport.MSAA`,
+        while these static constants type expressions such as
+        `Viewport.MSAA_DISABLED` and `Window.MODE_FULLSCREEN`.
+        """
+        ind = self._ind(indent)
+        lines = []
+        seen = set()
+        for enum in enums:
+            enum_name = sanitize_name(enum['name'])
+            for val in enum.get('values', []):
+                name = sanitize_name(val['name'])
+                if name in seen:
+                    continue
+                seen.add(name)
+                lines.append(f'{ind}static readonly {name}: {enum_name};')
+        return lines
+
     # ── Builtin class ─────────────────────────────────────────────────────────
 
     def _gen_builtin(self, cls_data: dict, ts_name: str, indent: int) -> list:
@@ -333,6 +353,8 @@ class DtsGenerator(CodeGenerator):
         for const in cls_data.get('constants', []):
             ts_type = godot_type_to_ts(const['type'])
             lines.append(f'{ind2}static readonly {const["name"]}: {ts_type};')
+
+        lines += self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1)
 
         # Methods
         for method in cls_data.get('methods', []):
@@ -378,6 +400,8 @@ class DtsGenerator(CodeGenerator):
         # Constants
         for const in cls_data.get('constants', []):
             lines.append(f'{ind2}static readonly {const["name"]}: number;')
+
+        lines += self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1)
 
         # Properties
         # Track which method names the methods loop will declare (to avoid duplicates)
