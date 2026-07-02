@@ -96,7 +96,7 @@ jobs:
 
       - name: Build Linux
         shell: bash
-        run: ./shell/build-linux.sh --arch x64 --fresh
+        run: ./shell/build-linux.sh --arch x64 --config Release --fresh
 
       - name: Download Godot
         shell: bash
