@@ -2,6 +2,7 @@
 set -euo pipefail
 
 architecture="arm64"
+configuration="Debug"
 api_level="28"
 android_ndk_version="28.1.13356709"
 android_ndk_name="android-ndk-r28b"
@@ -9,16 +10,23 @@ android_ndk_base_url="https://dl.google.com/android/repository"
 generator=""
 jobs=0
 fresh=0
+clean=0
 skip_codegen=0
+python_executable="${PYTHON3_EXECUTABLE:-}"
+ndk_dir_override=""
 
 usage() {
-	printf 'Usage: %s [--arch arm64] [--api-level N] [--generator NAME] [--jobs N] [--fresh] [--skip-codegen]\n' "$0"
+	printf 'Usage: %s [--arch arm64] [--config Debug|Release|RelWithDebInfo|MinSizeRel] [--api-level N] [--generator NAME] [--jobs N] [--fresh] [--clean] [--skip-codegen] [--python PATH] [--ndk-dir PATH]\n' "$0"
 }
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--arch)
 			architecture="${2:?missing value for --arch}"
+			shift 2
+			;;
+		--config)
+			configuration="${2:?missing value for --config}"
 			shift 2
 			;;
 		--api-level)
@@ -37,9 +45,21 @@ while [ "$#" -gt 0 ]; do
 			fresh=1
 			shift
 			;;
+		--clean)
+			clean=1
+			shift
+			;;
 		--skip-codegen)
 			skip_codegen=1
 			shift
+			;;
+		--python)
+			python_executable="${2:?missing value for --python}"
+			shift 2
+			;;
+		--ndk-dir)
+			ndk_dir_override="${2:?missing value for --ndk-dir}"
+			shift 2
 			;;
 		-h|--help)
 			usage
@@ -58,15 +78,29 @@ case "$architecture" in
 	*) printf 'Unsupported Android architecture: %s\n' "$architecture" >&2; exit 2 ;;
 esac
 
+case "$configuration" in
+	Debug) godotcpp_target="template_debug"; config_dir="debug" ;;
+	Release) godotcpp_target="template_release"; config_dir="release" ;;
+	RelWithDebInfo) godotcpp_target="template_release"; config_dir="relwithdebinfo" ;;
+	MinSizeRel) godotcpp_target="template_release"; config_dir="minsizerel" ;;
+	*) printf 'Unsupported build configuration: %s\n' "$configuration" >&2; exit 2 ;;
+esac
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 build_root="$repo_root/build"
-build_dir="$build_root/android/$architecture"
+build_dir="$build_root/android/$architecture/$config_dir"
 bin_dir="$repo_root/example/addons/gode/binary/android/$architecture"
 expected_library="$bin_dir/libgode.so"
 libnode_library="$repo_root/libnode/android/$architecture/libnode.a"
-configuration="Release"
-python_executable="${PYTHON3_EXECUTABLE:-$(command -v python3)}"
+
+if [ -z "$python_executable" ]; then
+	python_executable="$(command -v python3 || command -v python || true)"
+fi
+if [ -z "$python_executable" ]; then
+	printf 'Python was not found. Install Python, set PYTHON3_EXECUTABLE, or pass --python PATH.\n' >&2
+	exit 1
+fi
 
 if [ ! -f "$libnode_library" ]; then
 	printf 'Missing libnode static library: %s\n' "$libnode_library" >&2
@@ -89,7 +123,15 @@ case "$host_os" in
 		;;
 esac
 
-ndk_dir="$build_root/$android_ndk_name"
+if [ -n "$ndk_dir_override" ]; then
+	if [ ! -d "$ndk_dir_override" ]; then
+		printf 'Android NDK directory was not found: %s\n' "$ndk_dir_override" >&2
+		exit 1
+	fi
+	ndk_dir="$(cd "$ndk_dir_override" && pwd)"
+else
+	ndk_dir="$build_root/$android_ndk_name"
+fi
 ndk_archive="$build_root/$ndk_archive_name"
 toolchain_file="$ndk_dir/build/cmake/android.toolchain.cmake"
 
@@ -163,7 +205,7 @@ download_ndk_archive() {
 	mv "$partial_archive" "$ndk_archive"
 }
 
-if [ ! -f "$toolchain_file" ]; then
+if [ ! -f "$toolchain_file" ] && [ -z "$ndk_dir_override" ]; then
 	mkdir -p "$build_root"
 	download_ndk_archive
 
@@ -183,7 +225,11 @@ if [ ! -f "$toolchain_file" ]; then
 fi
 
 if [ ! -f "$toolchain_file" ]; then
-	printf 'Android NDK %s was not found after extraction.\nExpected toolchain: %s\n' "$android_ndk_version" "$toolchain_file" >&2
+	if [ -n "$ndk_dir_override" ]; then
+		printf 'Android NDK toolchain file was not found in --ndk-dir.\nExpected toolchain: %s\n' "$toolchain_file" >&2
+	else
+		printf 'Android NDK %s was not found after extraction.\nExpected toolchain: %s\n' "$android_ndk_version" "$toolchain_file" >&2
+	fi
 	exit 1
 fi
 
@@ -213,6 +259,14 @@ if [ -z "$generator" ]; then
 	fi
 fi
 
+case "$build_dir" in
+	"$build_root"/*) ;;
+	*) printf 'Refusing to modify path outside build directory: %s\n' "$build_dir" >&2; exit 1 ;;
+esac
+
+if [ "$clean" -eq 1 ]; then
+	rm -rf "$build_dir"
+fi
 mkdir -p "$build_dir"
 if [ "$fresh" -eq 1 ]; then
 	rm -f "$build_dir/CMakeCache.txt"
@@ -238,10 +292,11 @@ cmake \
 	-DANDROID_STL=c++_shared \
 	-DPython3_EXECUTABLE="$python_executable" \
 	-DGODE_RUN_CODEGEN="$codegen" \
-	-DGODE_TARGET_ARCH="$architecture"
+	-DGODE_TARGET_ARCH="$architecture" \
+	-DGODOTCPP_TARGET="$godotcpp_target"
 
 printf 'Building gode (%s, android/%s)...\n' "$configuration" "$architecture"
-cmake --build "$build_dir" --target gode --parallel "$jobs"
+cmake --build "$build_dir" --target gode --config "$configuration" --parallel "$jobs"
 
 if [ ! -f "$expected_library" ]; then
 	printf 'Build finished, but expected GDExtension library was not found: %s\n' "$expected_library" >&2
