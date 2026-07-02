@@ -1,5 +1,5 @@
-#include "support/typescript/typescript_saver.h"
-#include "support/typescript/typescript.h"
+#include "support/typescript_saver.h"
+#include "support/typescript.h"
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/classes/resource_uid.hpp>

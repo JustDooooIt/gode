@@ -1,6 +1,6 @@
-﻿#include "support/javascript/javascript_language.h"
+﻿#include "support/javascript_language.h"
 #include "godot_cpp/core/memory.hpp"
-#include "support/javascript/javascript.h"
+#include "support/javascript.h"
 #include <godot_cpp/classes/resource_loader.hpp>
 
 using namespace godot;

@@ -1,18 +1,18 @@
-#include "support/javascript/javascript.h"
-#include "support/javascript/javascript_instance.h"
-#include "support/javascript/javascript_instance_info.h"
-#include "support/javascript/javascript_language.h"
+#include "support/javascript.h"
+#include "support/javascript_instance.h"
+#include "support/javascript_instance_info.h"
+#include "support/javascript_language.h"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
 #include <tree_sitter/api.h>
 #include <v8-isolate.h>
 #include <v8-locker.h>
+#include <cctype>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/core/gdextension_interface_loader.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
-#include <cctype>
 
 using namespace godot;
 using namespace gode;
@@ -20,6 +20,21 @@ using namespace gode;
 extern "C" const TSLanguage *tree_sitter_javascript();
 
 void Javascript::_bind_methods() {
+}
+
+Javascript::~Javascript() {
+	if (default_class.IsEmpty()) {
+		return;
+	}
+
+	if (!NodeRuntime::is_running()) {
+		default_class.SuppressDestruct();
+		return;
+	}
+
+	v8::Locker locker(NodeRuntime::isolate);
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	default_class.Reset();
 }
 
 namespace {
@@ -41,19 +56,45 @@ static std::string strip_quotes(std::string p_text) {
 }
 
 static Variant::Type parse_variant_type(const std::string &p_type) {
-	if (p_type == "bool" || p_type == "boolean" || p_type == "Boolean") return Variant::BOOL;
-	if (p_type == "int") return Variant::INT;
-	if (p_type == "float" || p_type == "number" || p_type == "Number") return Variant::FLOAT;
-	if (p_type == "String" || p_type == "string") return Variant::STRING;
-	if (p_type == "Vector2") return Variant::VECTOR2;
-	if (p_type == "Vector2i") return Variant::VECTOR2I;
-	if (p_type == "Vector3") return Variant::VECTOR3;
-	if (p_type == "Vector3i") return Variant::VECTOR3I;
-	if (p_type == "Vector4") return Variant::VECTOR4;
-	if (p_type == "Vector4i") return Variant::VECTOR4I;
-	if (p_type == "Color") return Variant::COLOR;
-	if (p_type == "NodePath") return Variant::NODE_PATH;
-	if (p_type == "Object") return Variant::OBJECT;
+	if (p_type == "bool" || p_type == "boolean" || p_type == "Boolean") {
+		return Variant::BOOL;
+	}
+	if (p_type == "int") {
+		return Variant::INT;
+	}
+	if (p_type == "float" || p_type == "number" || p_type == "Number") {
+		return Variant::FLOAT;
+	}
+	if (p_type == "String" || p_type == "string") {
+		return Variant::STRING;
+	}
+	if (p_type == "Vector2") {
+		return Variant::VECTOR2;
+	}
+	if (p_type == "Vector2i") {
+		return Variant::VECTOR2I;
+	}
+	if (p_type == "Vector3") {
+		return Variant::VECTOR3;
+	}
+	if (p_type == "Vector3i") {
+		return Variant::VECTOR3I;
+	}
+	if (p_type == "Vector4") {
+		return Variant::VECTOR4;
+	}
+	if (p_type == "Vector4i") {
+		return Variant::VECTOR4I;
+	}
+	if (p_type == "Color") {
+		return Variant::COLOR;
+	}
+	if (p_type == "NodePath") {
+		return Variant::NODE_PATH;
+	}
+	if (p_type == "Object") {
+		return Variant::OBJECT;
+	}
 	return Variant::NIL;
 }
 
@@ -67,7 +108,9 @@ static void parse_signal_entry(const std::string &p_signal_name, TSNode p_value,
 	} else if (strcmp(ts_node_type(p_value), "object") == 0) {
 		for (uint32_t i = 0; i < ts_node_named_child_count(p_value); i++) {
 			TSNode pair = ts_node_named_child(p_value, i);
-			if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
 			TSNode key = ts_node_child_by_field_name(pair, "key", 3);
 			if (strip_quotes(node_text(p_source, key)) == "args") {
 				args_node = ts_node_child_by_field_name(pair, "value", 5);
@@ -86,7 +129,9 @@ static void parse_signal_entry(const std::string &p_signal_name, TSNode p_value,
 			} else if (strcmp(ts_node_type(arg_node), "object") == 0) {
 				for (uint32_t j = 0; j < ts_node_named_child_count(arg_node); j++) {
 					TSNode pair = ts_node_named_child(arg_node, j);
-					if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+					if (strcmp(ts_node_type(pair), "pair") != 0) {
+						continue;
+					}
 					TSNode key = ts_node_child_by_field_name(pair, "key", 3);
 					TSNode val = ts_node_child_by_field_name(pair, "value", 5);
 					std::string key_text = strip_quotes(node_text(p_source, key));
@@ -138,16 +183,28 @@ static void parse_method_params(TSNode p_method_node, const std::string &p_sourc
 }
 
 static int parse_rpc_mode(const std::string &p_mode) {
-	if (p_mode == "any_peer" || p_mode == "any") return 1;
-	if (p_mode == "authority" || p_mode == "master") return 2;
-	if (p_mode == "disabled") return 0;
+	if (p_mode == "any_peer" || p_mode == "any") {
+		return 1;
+	}
+	if (p_mode == "authority" || p_mode == "master") {
+		return 2;
+	}
+	if (p_mode == "disabled") {
+		return 0;
+	}
 	return std::atoi(p_mode.c_str());
 }
 
 static int parse_transfer_mode(const std::string &p_mode) {
-	if (p_mode == "unreliable") return 0;
-	if (p_mode == "unreliable_ordered") return 1;
-	if (p_mode == "reliable") return 2;
+	if (p_mode == "unreliable") {
+		return 0;
+	}
+	if (p_mode == "unreliable_ordered") {
+		return 1;
+	}
+	if (p_mode == "reliable") {
+		return 2;
+	}
 	return std::atoi(p_mode.c_str());
 }
 
@@ -155,7 +212,9 @@ static void parse_static_metadata(const std::string &p_name, TSNode p_value, con
 	if (p_name == "signals" && strcmp(ts_node_type(p_value), "object") == 0) {
 		for (uint32_t i = 0; i < ts_node_named_child_count(p_value); i++) {
 			TSNode pair = ts_node_named_child(p_value, i);
-			if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
 			TSNode key = ts_node_child_by_field_name(pair, "key", 3);
 			TSNode val = ts_node_child_by_field_name(pair, "value", 5);
 			parse_signal_entry(strip_quotes(node_text(p_source, key)), val, p_source, r_signals);
@@ -166,7 +225,9 @@ static void parse_static_metadata(const std::string &p_name, TSNode p_value, con
 	if ((p_name == "rpc_config" || p_name == "rpcs") && strcmp(ts_node_type(p_value), "object") == 0) {
 		for (uint32_t i = 0; i < ts_node_named_child_count(p_value); i++) {
 			TSNode pair = ts_node_named_child(p_value, i);
-			if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+			if (strcmp(ts_node_type(pair), "pair") != 0) {
+				continue;
+			}
 			StringName method(strip_quotes(node_text(p_source, ts_node_child_by_field_name(pair, "key", 3))).c_str());
 			TSNode cfg_node = ts_node_child_by_field_name(pair, "value", 5);
 			Dictionary cfg;
@@ -177,7 +238,9 @@ static void parse_static_metadata(const std::string &p_name, TSNode p_value, con
 			if (strcmp(ts_node_type(cfg_node), "object") == 0) {
 				for (uint32_t j = 0; j < ts_node_named_child_count(cfg_node); j++) {
 					TSNode cfg_pair = ts_node_named_child(cfg_node, j);
-					if (strcmp(ts_node_type(cfg_pair), "pair") != 0) continue;
+					if (strcmp(ts_node_type(cfg_pair), "pair") != 0) {
+						continue;
+					}
 					std::string key = strip_quotes(node_text(p_source, ts_node_child_by_field_name(cfg_pair, "key", 3)));
 					TSNode val = ts_node_child_by_field_name(cfg_pair, "value", 5);
 					std::string val_text = strip_quotes(node_text(p_source, val));
@@ -195,6 +258,21 @@ static void parse_static_metadata(const std::string &p_name, TSNode p_value, con
 			r_rpc_configs[method] = cfg;
 		}
 	}
+}
+
+static TSNode find_class_declaration_in_export(TSNode p_node) {
+	if (strcmp(ts_node_type(p_node), "export_statement") != 0) {
+		return {};
+	}
+
+	for (uint32_t i = 0; i < ts_node_child_count(p_node); i++) {
+		TSNode child = ts_node_child(p_node, i);
+		if (strcmp(ts_node_type(child), "class_declaration") == 0) {
+			return child;
+		}
+	}
+
+	return {};
 }
 
 } // namespace
@@ -262,6 +340,13 @@ bool Javascript::compile() const {
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
 		const char *node_type = ts_node_type(child);
+		if (strcmp(node_type, "export_statement") == 0) {
+			TSNode exported_class = find_class_declaration_in_export(child);
+			if (!ts_node_is_null(exported_class)) {
+				child = exported_class;
+				node_type = ts_node_type(child);
+			}
+		}
 
 		if (strcmp(node_type, "class_declaration") == 0) {
 			// Get class name
@@ -319,7 +404,14 @@ bool Javascript::compile() const {
 							is_static = true;
 						} else if (strcmp(child_type, "property_identifier") == 0) {
 							prop_name_node = field_child;
-						} else if (strcmp(child_type, "object") == 0 || strcmp(child_type, "string") == 0 || strcmp(child_type, "number") == 0 || strcmp(child_type, "true") == 0 || strcmp(child_type, "false") == 0) {
+						} else if (strcmp(child_type, "object") == 0 ||
+								strcmp(child_type, "array") == 0 ||
+								strcmp(child_type, "new_expression") == 0 ||
+								strcmp(child_type, "string") == 0 ||
+								strcmp(child_type, "number") == 0 ||
+								strcmp(child_type, "true") == 0 ||
+								strcmp(child_type, "false") == 0 ||
+								strcmp(child_type, "null") == 0) {
 							value_node = field_child;
 						}
 					}
@@ -356,11 +448,15 @@ bool Javascript::compile() const {
 										uint32_t pc = ts_node_child_count(val_node);
 										for (uint32_t n = 0; n < pc; n++) {
 											TSNode prop_pair = ts_node_child(val_node, n);
-											if (strcmp(ts_node_type(prop_pair), "pair") != 0) continue;
+											if (strcmp(ts_node_type(prop_pair), "pair") != 0) {
+												continue;
+											}
 
 											TSNode pk = ts_node_child_by_field_name(prop_pair, "key", 3);
 											TSNode pv = ts_node_child_by_field_name(prop_pair, "value", 5);
-											if (ts_node_is_null(pk) || ts_node_is_null(pv)) continue;
+											if (ts_node_is_null(pk) || ts_node_is_null(pv)) {
+												continue;
+											}
 
 											uint32_t pks = ts_node_start_byte(pk);
 											uint32_t pke = ts_node_end_byte(pk);
@@ -410,14 +506,21 @@ bool Javascript::compile() const {
 								property_defaults[field_name] = String(source.substr(vs + 1, ve - vs - 2).c_str());
 							} else if (strcmp(vt, "number") == 0) {
 								std::string num_str = source.substr(vs, ve - vs);
-								if (properties[field_name].type == Variant::INT) property_defaults[field_name] = std::stoi(num_str);
-								else property_defaults[field_name] = std::stod(num_str);
+								if (properties[field_name].type == Variant::INT) {
+									property_defaults[field_name] = std::stoi(num_str);
+								} else {
+									property_defaults[field_name] = std::stod(num_str);
+								}
 							} else if (strcmp(vt, "true") == 0) {
 								property_defaults[field_name] = true;
 							} else if (strcmp(vt, "false") == 0) {
 								property_defaults[field_name] = false;
-							} else if (strcmp(vt, "new_expression") == 0) {
+							} else if (strcmp(vt, "new_expression") == 0 ||
+									strcmp(vt, "object") == 0 ||
+									strcmp(vt, "array") == 0) {
 								property_defaults[field_name] = NodeRuntime::eval_expression(source.substr(vs, ve - vs));
+							} else if (strcmp(vt, "null") == 0) {
+								property_defaults[field_name] = Variant();
 							}
 						}
 					}
@@ -425,26 +528,26 @@ bool Javascript::compile() const {
 
 				if (strcmp(member_type, "method_definition") == 0) {
 					TSNode method_name_node = ts_node_child_by_field_name(member, "name", strlen("name"));
+					if (ts_node_is_null(method_name_node)) {
+						continue;
+					}
 					uint32_t start = ts_node_start_byte(method_name_node);
 					uint32_t end = ts_node_end_byte(method_name_node);
 					String method_name_str = String::utf8(source.substr(start, end - start).c_str());
+					if (method_name_str == "constructor") {
+						continue;
+					}
 					StringName method_name = StringName(method_name_str);
 
 					// Check for static modifier
 					bool is_static = false;
-					TSNode static_node = ts_node_child_by_field_name(member, "static", strlen("static"));
-					if (!ts_node_is_null(static_node)) {
-						// Wait, Tree-sitter JS grammar usually puts 'static' keyword as a child of method_definition?
-						// Or it's a field "static" (boolean)? No, it's a child node "static".
-						// Let's check child nodes for "static" keyword.
-						uint32_t method_child_count = ts_node_child_count(member);
-						for (uint32_t k = 0; k < method_child_count; k++) {
-							TSNode method_child = ts_node_child(member, k);
-							const char *child_type = ts_node_type(method_child);
-							if (strcmp(child_type, "static") == 0) {
-								is_static = true;
-								break;
-							}
+					uint32_t method_child_count = ts_node_child_count(member);
+					for (uint32_t k = 0; k < method_child_count; k++) {
+						TSNode method_child = ts_node_child(member, k);
+						const char *child_type = ts_node_type(method_child);
+						if (strcmp(child_type, "static") == 0) {
+							is_static = true;
+							break;
 						}
 					}
 

@@ -1,7 +1,7 @@
 #ifndef GODOT_GODE_TYPESCRIPT_H
 #define GODOT_GODE_TYPESCRIPT_H
 
-#include "support/javascript/javascript.h"
+#include "support/javascript.h"
 
 namespace gode {
 

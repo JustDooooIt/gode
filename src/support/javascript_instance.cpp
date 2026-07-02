@@ -1,14 +1,15 @@
-#include "support/javascript/javascript_instance.h"
-#include "support/javascript/javascript.h"
+#include "support/javascript_instance.h"
+#include "support/javascript.h"
+#include "utils/napi_error_utils.h"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
 #include <v8-isolate.h>
 #include <v8-locker.h>
+#include <exception>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
-#include <exception>
 
 using namespace godot;
 
@@ -61,31 +62,6 @@ bool _find_script_method_from_prototype_chain(const Napi::Object &p_instance, co
 	return false;
 }
 
-std::string _js_error_to_string(Napi::Value value) {
-	try {
-		if (value.IsObject()) {
-			Napi::Object obj = value.As<Napi::Object>();
-			if (obj.Has("stack")) {
-				Napi::Value stack = obj.Get("stack");
-				if (!stack.IsNull() && !stack.IsUndefined()) {
-					return stack.ToString().Utf8Value();
-				}
-			}
-			if (obj.Has("message")) {
-				Napi::Value message = obj.Get("message");
-				if (!message.IsNull() && !message.IsUndefined()) {
-					return message.ToString().Utf8Value();
-				}
-			}
-		}
-		if (!value.IsNull() && !value.IsUndefined()) {
-			return value.ToString().Utf8Value();
-		}
-	} catch (...) {
-	}
-	return "Unknown async JavaScript exception";
-}
-
 void _attach_promise_rejection_handler(Napi::Value value, const std::string &method_name) {
 	if (!value.IsPromise()) {
 		return;
@@ -93,10 +69,9 @@ void _attach_promise_rejection_handler(Napi::Value value, const std::string &met
 
 	Napi::Env env = value.Env();
 	Napi::Function on_rejected = Napi::Function::New(env, [method_name](const Napi::CallbackInfo &info) {
-		std::string message = info.Length() > 0 ? _js_error_to_string(info[0]) : "Unknown async JavaScript exception";
-		UtilityFunctions::printerr("Async JS Exception in ", method_name.c_str(), ": ", message.c_str());
-		return info.Env().Undefined();
-	}, "__gode_async_rejection_handler");
+		std::string message = info.Length() > 0 ? js_error_to_string(info[0]) : "Unknown async JavaScript exception";
+		log_js_error("Async JS exception in " + method_name, message);
+		return info.Env().Undefined(); }, "__gode_async_rejection_handler");
 
 	value.As<Napi::Promise>().Catch(on_rejected);
 }
@@ -139,18 +114,48 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 			return;
 		}
 
-		Napi::Env env = default_class.Env();
-		Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
-		Napi::Object instance = default_class.New({ external_owner });
+			Napi::Env env = default_class.Env();
+			Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
+			Napi::Object instance;
+			try {
+				instance = default_class.New({ external_owner });
+				if (log_and_clear_pending_js_exception(env, "JS script constructor")) {
+					return;
+				}
+			} catch (const Napi::Error &e) {
+				log_js_error("JS script constructor", js_error_to_string(e));
+				return;
+			} catch (const std::exception &e) {
+				UtilityFunctions::printerr("Native exception in JS script constructor: ", e.what());
+				return;
+			} catch (...) {
+				UtilityFunctions::printerr("Unknown exception in JS script constructor");
+				return;
+			}
 
-		js_instance = Napi::Persistent(instance);
-	}
+			js_instance = Napi::Persistent(instance);
+		}
 }
 
 JavascriptInstance::~JavascriptInstance() {
-	javascript->instances.erase(this);
+	if (javascript.is_valid()) {
+		if (placeholder) {
+			javascript->placeholder_instances.erase(this);
+		} else {
+			javascript->instances.erase(this);
+			if (owner) {
+				javascript->instance_objects.erase(owner);
+			}
+		}
+	}
 	if (!js_instance.IsEmpty()) {
-		js_instance.Reset();
+		if (NodeRuntime::is_running()) {
+			v8::Locker locker(NodeRuntime::isolate);
+			v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+			js_instance.Reset();
+		} else {
+			js_instance.SuppressDestruct();
+		}
 	}
 }
 
@@ -211,7 +216,22 @@ void JavascriptInstance::reload(bool p_keep_state) {
 
 	Napi::Env env = default_class.Env();
 	Napi::Value external_owner = Napi::External<Object>::New(env, owner);
-	Napi::Object instance = default_class.New({ external_owner });
+	Napi::Object instance;
+	try {
+		instance = default_class.New({ external_owner });
+		if (log_and_clear_pending_js_exception(env, "JS script reload constructor")) {
+			return;
+		}
+	} catch (const Napi::Error &e) {
+		log_js_error("JS script reload constructor", js_error_to_string(e));
+		return;
+	} catch (const std::exception &e) {
+		UtilityFunctions::printerr("Native exception in JS script reload constructor: ", e.what());
+		return;
+	} catch (...) {
+		UtilityFunctions::printerr("Unknown exception in JS script reload constructor");
+		return;
+	}
 
 	if (p_keep_state) {
 		for (const KeyValue<StringName, Variant> &E : old_state) {
@@ -233,14 +253,27 @@ void JavascriptInstance::reload(bool p_keep_state) {
 				bool valid = true;
 				for (size_t i = 0; i + 1 < segments.size(); ++i) {
 					Napi::Value child = cur.Get(segments[i]);
-					if (!child.IsObject()) { valid = false; break; }
+					if (!child.IsObject()) {
+						valid = false;
+						break;
+					}
 					cur = child.As<Napi::Object>();
 				}
 				if (valid) {
-					cur.Set(segments.back(), godot_to_napi(env, E.value));
+					Napi::Value js_value = godot_to_napi(env, E.value);
+					if (log_and_clear_pending_js_exception(env, "JS script reload state conversion " + key)) {
+						continue;
+					}
+					cur.Set(segments.back(), js_value);
+					log_and_clear_pending_js_exception(env, "JS script reload state restore " + key);
 				}
 			} else {
-				instance.Set(key, godot_to_napi(env, E.value));
+				Napi::Value js_value = godot_to_napi(env, E.value);
+				if (log_and_clear_pending_js_exception(env, "JS script reload state conversion " + key)) {
+					continue;
+				}
+				instance.Set(key, js_value);
+				log_and_clear_pending_js_exception(env, "JS script reload state restore " + key);
 			}
 		}
 	}
@@ -253,6 +286,9 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 		placeholder_properties[p_name] = p_value;
 		return true;
 	}
+	if (js_instance.IsEmpty()) {
+		return false;
+	}
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -260,27 +296,55 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	if (!javascript->properties.has(property_name.c_str())) {
 		return false;
 	}
-	Napi::Env env = js_instance.Value().Env();
-	size_t sep = property_name.find("::");
-	if (sep != std::string::npos) {
-		std::vector<std::string> segments;
-		std::string remaining = property_name;
-		size_t pos;
-		while ((pos = remaining.find("::")) != std::string::npos) {
-			segments.push_back(remaining.substr(0, pos));
-			remaining = remaining.substr(pos + 2);
+	try {
+		Napi::Env env = js_instance.Value().Env();
+		std::string context = "JS property set " + property_name;
+		Napi::Value js_value = godot_to_napi(env, p_value);
+		if (log_and_clear_pending_js_exception(env, context)) {
+			return false;
 		}
-		segments.push_back(remaining);
-		Napi::Object cur = js_instance.Value();
-		for (size_t i = 0; i + 1 < segments.size(); ++i) {
-			Napi::Value child = cur.Get(segments[i]);
-			if (!child.IsObject()) return false;
-			cur = child.As<Napi::Object>();
+		size_t sep = property_name.find("::");
+		if (sep != std::string::npos) {
+			std::vector<std::string> segments;
+			std::string remaining = property_name;
+			size_t pos;
+			while ((pos = remaining.find("::")) != std::string::npos) {
+				segments.push_back(remaining.substr(0, pos));
+				remaining = remaining.substr(pos + 2);
+			}
+			segments.push_back(remaining);
+			Napi::Object cur = js_instance.Value();
+			for (size_t i = 0; i + 1 < segments.size(); ++i) {
+				Napi::Value child = cur.Get(segments[i]);
+				if (log_and_clear_pending_js_exception(env, context)) {
+					return false;
+				}
+				if (!child.IsObject()) {
+					return false;
+				}
+				cur = child.As<Napi::Object>();
+			}
+			cur.Set(segments.back(), js_value);
+			if (log_and_clear_pending_js_exception(env, context)) {
+				return false;
+			}
+			return true;
 		}
-		cur.Set(segments.back(), godot_to_napi(env, p_value));
-		return true;
+		bool ok = js_instance.Set(property_name, js_value);
+		if (log_and_clear_pending_js_exception(env, context)) {
+			return false;
+		}
+		return ok;
+	} catch (const Napi::Error &e) {
+		log_js_error("JS property set " + property_name, js_error_to_string(e));
+		return false;
+	} catch (const std::exception &e) {
+		UtilityFunctions::printerr("Native exception in JS property set ", property_name.c_str(), ": ", e.what());
+		return false;
+	} catch (...) {
+		UtilityFunctions::printerr("Unknown exception in JS property set ", property_name.c_str());
+		return false;
 	}
-	return js_instance.Set(property_name, godot_to_napi(env, p_value));
 }
 
 bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
@@ -303,28 +367,57 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	if (!javascript->properties.has(prop_name.c_str())) {
 		return false;
 	}
-	size_t sep = prop_name.find("::");
-	if (sep != std::string::npos) {
-		std::vector<std::string> segments;
-		std::string remaining = prop_name;
-		size_t pos;
-		while ((pos = remaining.find("::")) != std::string::npos) {
-			segments.push_back(remaining.substr(0, pos));
-			remaining = remaining.substr(pos + 2);
-		}
-		segments.push_back(remaining);
-		Napi::Object cur = js_instance.Value();
-		for (size_t i = 0; i + 1 < segments.size(); ++i) {
-			Napi::Value child = cur.Get(segments[i]);
-			if (!child.IsObject()) return false;
-			cur = child.As<Napi::Object>();
-		}
-		r_value = napi_to_godot(cur.Get(segments.back()));
-		return true;
+	if (js_instance.IsEmpty()) {
+		return false;
 	}
-	Napi::Value val = js_instance.Get(prop_name);
-	r_value = napi_to_godot(val);
-	return true;
+	try {
+		Napi::Env env = js_instance.Value().Env();
+		std::string context = "JS property get " + prop_name;
+		Napi::Value val;
+		size_t sep = prop_name.find("::");
+		if (sep != std::string::npos) {
+			std::vector<std::string> segments;
+			std::string remaining = prop_name;
+			size_t pos;
+			while ((pos = remaining.find("::")) != std::string::npos) {
+				segments.push_back(remaining.substr(0, pos));
+				remaining = remaining.substr(pos + 2);
+			}
+			segments.push_back(remaining);
+			Napi::Object cur = js_instance.Value();
+			for (size_t i = 0; i + 1 < segments.size(); ++i) {
+				Napi::Value child = cur.Get(segments[i]);
+				if (log_and_clear_pending_js_exception(env, context)) {
+					return false;
+				}
+				if (!child.IsObject()) {
+					return false;
+				}
+				cur = child.As<Napi::Object>();
+			}
+			val = cur.Get(segments.back());
+		} else {
+			val = js_instance.Get(prop_name);
+		}
+		if (log_and_clear_pending_js_exception(env, context)) {
+			return false;
+		}
+		Variant converted = napi_to_godot(val);
+		if (log_and_clear_pending_js_exception(env, context)) {
+			return false;
+		}
+		r_value = converted;
+		return true;
+	} catch (const Napi::Error &e) {
+		log_js_error("JS property get " + prop_name, js_error_to_string(e));
+		return false;
+	} catch (const std::exception &e) {
+		UtilityFunctions::printerr("Native exception in JS property get ", prop_name.c_str(), ": ", e.what());
+		return false;
+	} catch (...) {
+		UtilityFunctions::printerr("Unknown exception in JS property get ", prop_name.c_str());
+		return false;
+	}
 }
 
 bool JavascriptInstance::has_method(const StringName &p_method) const {
@@ -381,36 +474,61 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 	Napi::Env env = instance.Env();
 	std::string method_name = String(p_method).utf8().get_data();
 
-	if (!instance.Has(method_name)) {
-		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
-		return Variant();
-	}
-
-	if (!instance.Get(method_name).IsFunction()) {
-		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
-		return Variant();
-	}
-
-	Napi::Function method = js_instance.Get(method_name).As<Napi::Function>();
-
-	std::vector<napi_value> args;
-	for (int i = 0; i < p_argcount; ++i) {
-		Napi::Value jsvalue = godot_to_napi(env, p_args[i]);
-		args.push_back(jsvalue);
-	}
-
 	try {
+		if (!instance.Has(method_name)) {
+			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			return Variant();
+		}
+
+		Napi::Value method_value = instance.Get(method_name);
+		if (!method_value.IsFunction()) {
+			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			return Variant();
+		}
+
+		Napi::Function method = method_value.As<Napi::Function>();
+
+		std::vector<napi_value> args;
+		args.reserve(p_argcount);
+		std::string context = "JS method " + method_name;
+		for (int i = 0; i < p_argcount; ++i) {
+			Napi::Value jsvalue = godot_to_napi(env, p_args[i]);
+			if (log_and_clear_pending_js_exception(env, context + " argument conversion")) {
+				r_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+				r_error.argument = i;
+				r_error.expected = 0;
+				return Variant();
+			}
+			args.push_back(jsvalue);
+		}
+
 		Napi::Value result = method.Call(instance, args);
+		if (log_and_clear_pending_js_exception(env, context + " call")) {
+			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			r_error.argument = 0;
+			r_error.expected = 0;
+			return Variant();
+		}
+		if (result.IsPromise()) {
+			_attach_promise_rejection_handler(result, method_name);
+			r_error.error = GDEXTENSION_CALL_OK;
+			r_error.argument = 0;
+			r_error.expected = 0;
+			return Variant();
+		}
+		Variant converted = napi_to_godot(result);
+		if (log_and_clear_pending_js_exception(env, context + " return conversion")) {
+			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			r_error.argument = 0;
+			r_error.expected = 0;
+			return Variant();
+		}
 		r_error.error = GDEXTENSION_CALL_OK;
 		r_error.argument = 0;
 		r_error.expected = 0;
-		if (result.IsPromise()) {
-			_attach_promise_rejection_handler(result, method_name);
-			return Variant();
-		}
-		return napi_to_godot(result);
+		return converted;
 	} catch (const Napi::Error &e) {
-		UtilityFunctions::printerr("JS Exception in ", method_name.c_str(), ": ", e.Message().c_str());
+		log_js_error("JS exception in " + method_name, js_error_to_string(e));
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		r_error.argument = 0;
 		r_error.expected = 0;
@@ -447,9 +565,11 @@ void JavascriptInstance::notification_bind(Napi::Object instance, int32_t p_what
 			Napi::Function method = method_val.As<Napi::Function>();
 			try {
 				Napi::Value result = method.Call(instance, { Napi::Number::New(instance.Env(), p_what), Napi::Boolean::New(instance.Env(), p_reversed) });
-				_attach_promise_rejection_handler(result, notification_method_name);
+				if (!log_and_clear_pending_js_exception(instance.Env(), "JS notification " + notification_method_name)) {
+					_attach_promise_rejection_handler(result, notification_method_name);
+				}
 			} catch (const Napi::Error &e) {
-				UtilityFunctions::printerr("JS Exception in ", notification_method_name.c_str(), ": ", e.Message().c_str());
+				log_js_error("JS exception in " + notification_method_name, js_error_to_string(e));
 			} catch (const std::exception &e) {
 				UtilityFunctions::printerr("Native exception in JS notification: ", e.what());
 			} catch (...) {
@@ -493,19 +613,46 @@ String JavascriptInstance::to_string(bool &r_is_valid) const {
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	Napi::Object obj = js_instance.Value();
-	Napi::Value proto_val = obj.Get("__proto__");
-	if (proto_val.IsObject()) {
-		Napi::Object proto = proto_val.As<Napi::Object>();
-		if (proto.HasOwnProperty("toString")) {
-			Napi::Value ts_val = proto.Get("toString");
-			if (ts_val.IsFunction()) {
-				Napi::Value result = ts_val.As<Napi::Function>().Call(obj, {});
-				if (result.IsString()) {
-					r_is_valid = true;
-					return String(result.As<Napi::String>().Utf8Value().c_str());
+	Napi::Env env = obj.Env();
+	try {
+		Napi::Value proto_val = obj.Get("__proto__");
+		if (log_and_clear_pending_js_exception(env, "JS toString prototype lookup")) {
+			r_is_valid = false;
+			return String();
+		}
+		if (proto_val.IsObject()) {
+			Napi::Object proto = proto_val.As<Napi::Object>();
+			if (proto.HasOwnProperty("toString")) {
+				Napi::Value ts_val = proto.Get("toString");
+				if (log_and_clear_pending_js_exception(env, "JS toString lookup")) {
+					r_is_valid = false;
+					return String();
+				}
+				if (ts_val.IsFunction()) {
+					Napi::Value result = ts_val.As<Napi::Function>().Call(obj, {});
+					if (log_and_clear_pending_js_exception(env, "JS toString call")) {
+						r_is_valid = false;
+						return String();
+					}
+					if (result.IsString()) {
+						r_is_valid = true;
+						return String(result.As<Napi::String>().Utf8Value().c_str());
+					}
 				}
 			}
 		}
+	} catch (const Napi::Error &e) {
+		log_js_error("JS toString", js_error_to_string(e));
+		r_is_valid = false;
+		return String();
+	} catch (const std::exception &e) {
+		UtilityFunctions::printerr("Native exception in JS toString: ", e.what());
+		r_is_valid = false;
+		return String();
+	} catch (...) {
+		UtilityFunctions::printerr("Unknown exception in JS toString");
+		r_is_valid = false;
+		return String();
 	}
 	r_is_valid = true;
 	String cls_name = String(javascript->_get_global_name());
@@ -516,8 +663,7 @@ String JavascriptInstance::to_string(bool &r_is_valid) const {
 }
 
 bool JavascriptInstance::property_can_revert(const StringName &p_name) const {
-	(void)p_name;
-	return false;
+	return javascript.is_valid() && javascript->_has_property_default_value(p_name);
 }
 
 bool JavascriptInstance::property_get_revert(const StringName &p_name, Variant &r_ret) const {

@@ -1,5 +1,5 @@
-#include "support/typescript/typescript_language.h"
-#include "support/typescript/typescript.h"
+#include "support/typescript_language.h"
+#include "support/typescript.h"
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 

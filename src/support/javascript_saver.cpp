@@ -1,5 +1,5 @@
-#include "support/javascript/javascript_saver.h"
-#include "support/javascript/javascript.h"
+#include "support/javascript_saver.h"
+#include "support/javascript.h"
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/resource_format_saver.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>

@@ -1,5 +1,6 @@
-#include "support/javascript/javascript_callable.h"
+#include "support/javascript_callable.h"
 
+#include "utils/napi_error_utils.h"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
 
@@ -15,7 +16,13 @@ JavascriptCallable::JavascriptCallable(Napi::Function p_function) {
 
 JavascriptCallable::~JavascriptCallable() {
 	if (!func_ref.IsEmpty()) {
-		func_ref.Reset();
+		if (NodeRuntime::is_running()) {
+			v8::Locker locker(NodeRuntime::isolate);
+			v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+			func_ref.Reset();
+		} else {
+			func_ref.SuppressDestruct();
+		}
 	}
 }
 
@@ -27,20 +34,28 @@ Napi::Function JavascriptCallable::get_function() const {
 }
 
 uint32_t JavascriptCallable::hash() const {
-    v8::Locker locker(NodeRuntime::isolate);
-    v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-    v8::HandleScope handle_scope(NodeRuntime::isolate);
+	if (!NodeRuntime::is_running()) {
+		return 0;
+	}
 
-    if (func_ref.IsEmpty()) return 0;
-    
-    // Napi::Value has operator napi_value()
-    napi_value nv = func_ref.Value();
-    // In Node.js environment, napi_value is effectively v8::Local<v8::Value>
-    v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&nv);
-    
-    if (v8_val.IsEmpty() || !v8_val->IsObject()) return 0;
-    
-    return v8_val.As<v8::Object>()->GetIdentityHash();
+	v8::Locker locker(NodeRuntime::isolate);
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	v8::HandleScope handle_scope(NodeRuntime::isolate);
+
+	if (func_ref.IsEmpty()) {
+		return 0;
+	}
+
+	// Napi::Value has operator napi_value()
+	napi_value nv = func_ref.Value();
+	// In Node.js environment, napi_value is effectively v8::Local<v8::Value>
+	v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value> *>(&nv);
+
+	if (v8_val.IsEmpty() || !v8_val->IsObject()) {
+		return 0;
+	}
+
+	return v8_val.As<v8::Object>()->GetIdentityHash();
 }
 
 godot::String JavascriptCallable::get_as_text() const {
@@ -56,11 +71,18 @@ godot::ObjectID JavascriptCallable::get_object() const {
 }
 
 void JavascriptCallable::call(const godot::Variant **p_arguments, int p_argcount, godot::Variant &r_return_value, GDExtensionCallError &r_call_error) const {
+	if (!NodeRuntime::is_running()) {
+		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		r_call_error.argument = 0;
+		r_call_error.expected = 0;
+		return;
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Context::Scope context_scope(NodeRuntime::node_context.Get(NodeRuntime::isolate));
-    
+
 	if (func_ref.IsEmpty()) {
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return;
@@ -68,19 +90,55 @@ void JavascriptCallable::call(const godot::Variant **p_arguments, int p_argcount
 
 	Napi::Function func = func_ref.Value();
 	Napi::Env env = func.Env();
-	std::vector<napi_value> args;
-	for (int i = 0; i < p_argcount; ++i) {
-		args.push_back(godot_to_napi(env, *p_arguments[i]));
-	}
 
 	try {
+		std::vector<napi_value> args;
+		args.reserve(p_argcount);
+		for (int i = 0; i < p_argcount; ++i) {
+			Napi::Value js_value = godot_to_napi(env, *p_arguments[i]);
+			if (log_and_clear_pending_js_exception(env, "JS Callable argument conversion")) {
+				r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+				r_call_error.argument = i;
+				r_call_error.expected = 0;
+				return;
+			}
+			args.push_back(js_value);
+		}
+
 		Napi::Value result = func.Call(env.Global(), args);
-		r_return_value = napi_to_godot(result);
+		if (log_and_clear_pending_js_exception(env, "JS Callable call")) {
+			r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			r_call_error.argument = 0;
+			r_call_error.expected = 0;
+			return;
+		}
+		godot::Variant converted = napi_to_godot(result);
+		if (log_and_clear_pending_js_exception(env, "JS Callable return conversion")) {
+			r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+			r_call_error.argument = 0;
+			r_call_error.expected = 0;
+			return;
+		}
+		r_return_value = converted;
 		r_call_error.error = GDEXTENSION_CALL_OK;
+		r_call_error.argument = 0;
+		r_call_error.expected = 0;
 		NodeRuntime::isolate->PerformMicrotaskCheckpoint();
 	} catch (const Napi::Error &e) {
-		godot::UtilityFunctions::printerr("JS Exception in Callable: ", e.Message().c_str());
+		log_js_error("JS exception in Callable", js_error_to_string(e));
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		r_call_error.argument = 0;
+		r_call_error.expected = 0;
+	} catch (const std::exception &e) {
+		godot::UtilityFunctions::printerr("Native exception in JS Callable: ", e.what());
+		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		r_call_error.argument = 0;
+		r_call_error.expected = 0;
+	} catch (...) {
+		godot::UtilityFunctions::printerr("Unknown exception in JS Callable");
+		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		r_call_error.argument = 0;
+		r_call_error.expected = 0;
 	}
 }
 

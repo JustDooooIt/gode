@@ -1,7 +1,7 @@
 #ifndef GODOT_GODE_TYPESCRIPT_LOADER_H
 #define GODOT_GODE_TYPESCRIPT_LOADER_H
 
-#include "support/typescript/typescript.h"
+#include "support/typescript.h"
 #include <godot_cpp/classes/resource_format_loader.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 
@@ -16,6 +16,7 @@ private:
 public:
 	~TypescriptLoader();
 	static TypescriptLoader *get_singleton();
+	void clear_cache();
 
 private:
 	static TypescriptLoader *singleton;

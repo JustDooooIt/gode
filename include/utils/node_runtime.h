@@ -18,6 +18,7 @@ public:
 	static v8::Global<v8::Context> node_context;
 
 	static void init_once();
+	static bool is_running();
 	static void run_script(const std::string &code);
 	static Napi::Value compile_script(const std::string &code, const std::string &filename);
 	static Napi::Function get_default_class(Napi::Value module_exports);
@@ -26,8 +27,6 @@ public:
 	static void shutdown();
 
 private:
-	static bool is_esm_file(const std::string &filename, const std::string &code);
-	static bool is_esm_file();
 	static v8::Local<v8::Value> compile_esm_module(const std::string &code, const std::string &filename);
 	static v8::Local<v8::Value> compile_cjs_module(const std::string &code, const std::string &filename);
 };

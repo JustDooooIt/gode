@@ -1,5 +1,5 @@
-#include "support/typescript/typescript.h"
-#include "support/typescript/typescript_language.h"
+#include "support/typescript.h"
+#include "support/typescript_language.h"
 #include "utils/node_runtime.h"
 #include "utils/value_convert.h"
 
@@ -257,11 +257,15 @@ static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count,
 static void parse_object_defaults(TSNode obj_node, const std::string &source, const std::string &prefix, HashMap<StringName, Variant> &property_defaults) {
 	for (uint32_t i = 0; i < ts_node_child_count(obj_node); i++) {
 		TSNode pair = ts_node_child(obj_node, i);
-		if (strcmp(ts_node_type(pair), "pair") != 0) continue;
+		if (strcmp(ts_node_type(pair), "pair") != 0) {
+			continue;
+		}
 
 		TSNode key = ts_node_child_by_field_name(pair, "key", 3);
 		TSNode val = ts_node_child_by_field_name(pair, "value", 5);
-		if (ts_node_is_null(key) || ts_node_is_null(val)) continue;
+		if (ts_node_is_null(key) || ts_node_is_null(val)) {
+			continue;
+		}
 
 		uint32_t ks = ts_node_start_byte(key);
 		uint32_t ke = ts_node_end_byte(key);
@@ -295,18 +299,26 @@ static HashMap<StringName, Vector<PropertyInfo>> parse_interfaces(TSNode root_no
 	// 扫描 import 语句，从外部文件加载 interface
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
-		if (strcmp(ts_node_type(child), "import_statement") != 0) continue;
+		if (strcmp(ts_node_type(child), "import_statement") != 0) {
+			continue;
+		}
 
 		TSNode src_node = ts_node_child_by_field_name(child, "source", 6);
-		if (ts_node_is_null(src_node)) continue;
+		if (ts_node_is_null(src_node)) {
+			continue;
+		}
 
 		uint32_t ss = ts_node_start_byte(src_node);
 		uint32_t se = ts_node_end_byte(src_node);
 		std::string import_path = source.substr(ss + 1, se - ss - 2);
-		if (import_path.find("./") != 0 && import_path.find("../") != 0) continue;
+		if (import_path.find("./") != 0 && import_path.find("../") != 0) {
+			continue;
+		}
 
 		String ts_path = file_path.get_base_dir().path_join(String(import_path.c_str()) + ".ts");
-		if (!FileAccess::file_exists(ts_path)) continue;
+		if (!FileAccess::file_exists(ts_path)) {
+			continue;
+		}
 
 		String ext_src_str = FileAccess::get_file_as_string(ts_path);
 		std::string ext_src = ext_src_str.utf8().get_data();
@@ -504,7 +516,9 @@ static void expand_interface_fields(
 		const HashMap<StringName, Vector<PropertyInfo>> &interfaces,
 		HashMap<StringName, PropertyInfo> &properties,
 		Vector<PropertyInfo> &property_list) {
-	if (visited.has(iface_name)) return;
+	if (visited.has(iface_name)) {
+		return;
+	}
 	visited.insert(iface_name);
 
 	PropertyInfo group_pi;
@@ -533,7 +547,9 @@ static void expand_interface_fields(
 
 static void parse_signal_params(TSNode func_type_node, const std::string &source, MethodInfo &mi) {
 	// func_type_node 即为 function_type 节点：(params) => void
-	if (strcmp(ts_node_type(func_type_node), "function_type") != 0) return;
+	if (strcmp(ts_node_type(func_type_node), "function_type") != 0) {
+		return;
+	}
 
 	// 找 formal_parameters 子节点
 	TSNode params = { 0 };
@@ -544,7 +560,9 @@ static void parse_signal_params(TSNode func_type_node, const std::string &source
 			break;
 		}
 	}
-	if (ts_node_is_null(params)) return;
+	if (ts_node_is_null(params)) {
+		return;
+	}
 
 	for (uint32_t i = 0; i < ts_node_child_count(params); i++) {
 		TSNode param = ts_node_child(params, i);
@@ -554,7 +572,9 @@ static void parse_signal_params(TSNode func_type_node, const std::string &source
 		}
 
 		TSNode pattern = ts_node_child_by_field_name(param, "pattern", 7);
-		if (ts_node_is_null(pattern)) continue;
+		if (ts_node_is_null(pattern)) {
+			continue;
+		}
 		uint32_t ps = ts_node_start_byte(pattern);
 		uint32_t pe = ts_node_end_byte(pattern);
 
@@ -638,16 +658,28 @@ static void parse_signal_entry(const std::string &signal_name, TSNode value, con
 }
 
 static int parse_rpc_mode(const std::string &mode) {
-	if (mode == "any_peer" || mode == "any") return 1;
-	if (mode == "authority" || mode == "master") return 2;
-	if (mode == "disabled") return 0;
+	if (mode == "any_peer" || mode == "any") {
+		return 1;
+	}
+	if (mode == "authority" || mode == "master") {
+		return 2;
+	}
+	if (mode == "disabled") {
+		return 0;
+	}
 	return std::atoi(mode.c_str());
 }
 
 static int parse_transfer_mode(const std::string &mode) {
-	if (mode == "unreliable") return 0;
-	if (mode == "unreliable_ordered") return 1;
-	if (mode == "reliable") return 2;
+	if (mode == "unreliable") {
+		return 0;
+	}
+	if (mode == "unreliable_ordered") {
+		return 1;
+	}
+	if (mode == "reliable") {
+		return 2;
+	}
 	return std::atoi(mode.c_str());
 }
 
@@ -954,8 +986,12 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 						property_defaults[field_name] = true;
 					} else if (strcmp(vt, "false") == 0) {
 						property_defaults[field_name] = false;
-					} else if (strcmp(vt, "new_expression") == 0) {
+					} else if (strcmp(vt, "new_expression") == 0 ||
+							strcmp(vt, "object") == 0 ||
+							strcmp(vt, "array") == 0) {
 						property_defaults[field_name] = NodeRuntime::eval_expression(source.substr(vs, ve - vs));
+					} else if (strcmp(vt, "null") == 0) {
+						property_defaults[field_name] = Variant();
 					}
 				}
 			}
@@ -971,6 +1007,9 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 			uint32_t s = ts_node_start_byte(mn);
 			uint32_t e = ts_node_end_byte(mn);
 			StringName method_name(source.substr(s, e - s).c_str());
+			if (method_name == StringName("constructor")) {
+				continue;
+			}
 
 			bool is_static = false;
 			for (uint32_t k = 0; k < ts_node_child_count(member); k++) {
@@ -1036,10 +1075,7 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, Has
 			std::string field_key = source.substr(fks, fke - fks);
 
 			if (field_key == "type") {
-				uint32_t vs = ts_node_start_byte(fval);
-				uint32_t ve = ts_node_end_byte(fval);
-				// string literal: strip quotes
-				pi.type = parse_type_string(source.substr(vs + 1, ve - vs - 2));
+				pi.type = parse_type_string(strip_quotes(node_text(source, fval)));
 			} else if (field_key == "default") {
 				const char *vt = ts_node_type(fval);
 				uint32_t vs = ts_node_start_byte(fval);
@@ -1052,6 +1088,12 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, Has
 					property_defaults[prop_name] = true;
 				} else if (strcmp(vt, "false") == 0) {
 					property_defaults[prop_name] = false;
+				} else if (strcmp(vt, "new_expression") == 0 ||
+						strcmp(vt, "object") == 0 ||
+						strcmp(vt, "array") == 0) {
+					property_defaults[prop_name] = NodeRuntime::eval_expression(source.substr(vs, ve - vs));
+				} else if (strcmp(vt, "null") == 0) {
+					property_defaults[prop_name] = Variant();
 				}
 			}
 		}

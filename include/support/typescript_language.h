@@ -1,7 +1,7 @@
 #ifndef GODOT_GODE_TYPESCRIPT_LANGUAGE_H
 #define GODOT_GODE_TYPESCRIPT_LANGUAGE_H
 
-#include "support/javascript/javascript_language.h"
+#include "support/javascript_language.h"
 
 namespace gode {
 

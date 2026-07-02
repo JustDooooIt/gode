@@ -1,7 +1,7 @@
-﻿#include "support/javascript/javascript_loader.h"
+﻿#include "support/javascript_loader.h"
 
 #include "godot_cpp/classes/resource_uid.hpp"
-#include "support/javascript/javascript.h"
+#include "support/javascript.h"
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 
@@ -25,11 +25,16 @@ void JavascriptLoader::_bind_methods() {
 }
 
 JavascriptLoader::~JavascriptLoader() {
+	clear_cache();
 	if (singleton == this) {
 		// ClassDB::_unregister_engine_singleton(JavascriptLoader::get_class_static());
 		// memdelete(singleton);
 		singleton = nullptr;
 	}
+}
+
+void JavascriptLoader::clear_cache() {
+	scripts.clear();
 }
 
 PackedStringArray JavascriptLoader::_get_recognized_extensions() const {

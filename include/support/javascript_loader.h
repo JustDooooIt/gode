@@ -1,7 +1,7 @@
 #ifndef GODOT_JAVASCRIPT_LOADER_H
 #define GODOT_JAVASCRIPT_LOADER_H
 
-#include "support/javascript/javascript.h"
+#include "support/javascript.h"
 #include <godot_cpp/classes/resource_format_loader.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 
@@ -16,6 +16,7 @@ private:
 public:
 	~JavascriptLoader();
 	static JavascriptLoader *get_singleton();
+	void clear_cache();
 
 private:
 	static JavascriptLoader *singleton;

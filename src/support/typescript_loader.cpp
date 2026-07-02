@@ -1,6 +1,6 @@
-#include "support/typescript/typescript_loader.h"
+#include "support/typescript_loader.h"
 #include "godot_cpp/classes/resource_uid.hpp"
-#include "support/typescript/typescript.h"
+#include "support/typescript.h"
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 
@@ -18,9 +18,14 @@ TypescriptLoader *TypescriptLoader::get_singleton() {
 }
 
 TypescriptLoader::~TypescriptLoader() {
+	clear_cache();
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+void TypescriptLoader::clear_cache() {
+	scripts.clear();
 }
 
 PackedStringArray TypescriptLoader::_get_recognized_extensions() const {
