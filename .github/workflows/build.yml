@@ -32,27 +32,27 @@ jobs:
           - platform: windows
             arch: x64
             runner: windows-2022
-            script: ./shell/build-windows.ps1 -Architecture x64 -Fresh
+            script: ./shell/build-windows.ps1 -Architecture x64 -Configuration Release -Fresh
             artifact_path: example/addons/gode/binary/windows/x64/libgode.dll
           - platform: linux
             arch: x64
             runner: ubuntu-22.04
-            script: ./shell/build-linux.sh --arch x64 --fresh
+            script: ./shell/build-linux.sh --arch x64 --config Release --fresh
             artifact_path: example/addons/gode/binary/linux/x64/libgode.so
           - platform: macos
             arch: arm64
             runner: macos-26
-            script: ./shell/build-macos.sh --arch arm64 --deployment-target 10.15 --fresh
+            script: ./shell/build-macos.sh --arch arm64 --config Release --deployment-target 10.15 --fresh
             artifact_path: example/addons/gode/binary/macos/arm64/libgode.dylib
           - platform: ios
             arch: arm64
             runner: macos-26
-            script: ./shell/build-ios.sh --arch arm64 --fresh
+            script: ./shell/build-ios.sh --arch arm64 --config Release --fresh
             artifact_path: example/addons/gode/binary/ios/arm64/libgode.dylib
           - platform: android
             arch: arm64
             runner: macos-26
-            script: ./shell/build-android.sh --arch arm64 --fresh
+            script: ./shell/build-android.sh --arch arm64 --config Release --fresh
             artifact_path: example/addons/gode/binary/android/arm64/libgode.so
 
     steps:
