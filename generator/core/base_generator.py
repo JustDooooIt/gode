@@ -25,6 +25,24 @@ class CodeGenerator:
             keep_trailing_newline=True
         )
 
+    def write_file_if_changed(self, output_path, content):
+        output_parent_dir = os.path.dirname(output_path)
+        if output_parent_dir and not os.path.exists(output_parent_dir):
+            os.makedirs(output_parent_dir)
+
+        if os.path.exists(output_path):
+            with open(output_path, 'r', encoding='utf-8') as f:
+                if f.read() == content:
+                    print(f"Unchanged: {output_path}")
+                    return False
+
+        tmp_path = output_path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(content)
+        os.replace(tmp_path, output_path)
+        print(f"Generated: {output_path}")
+        return True
+
     def render(self, template_name, context, output_filename, output_key='default'):
         template = self.env.get_template(template_name)
         rendered_content = template.render(context)
@@ -46,13 +64,7 @@ class CodeGenerator:
             output_dir = self.output_dirs[output_key]
 
         output_path = os.path.join(output_dir, output_filename)
-        output_parent_dir = os.path.dirname(output_path)
-        if output_parent_dir and not os.path.exists(output_parent_dir):
-            os.makedirs(output_parent_dir)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(rendered_content)
-        
-        print(f"Generated: {output_path}")
+        self.write_file_if_changed(output_path, rendered_content)
 
     def run(self):
         """Override this method to implement the generation logic."""

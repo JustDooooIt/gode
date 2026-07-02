@@ -32,7 +32,7 @@ def discover_generators(package_name):
         except ImportError as e:
             print(f"Failed to import module {name}: {e}")
 
-    return generators
+    return sorted(generators, key=lambda cls: f"{cls.__module__}.{cls.__name__}")
 
 def main():
     print(f"Using template directory: {TEMPLATE_DIR}")
@@ -54,6 +54,7 @@ def main():
 
     # Run generators
     print("\nStarting code generation...")
+    failed_generators = []
     for gen_class in all_generators:
         print(f"Running {gen_class.__name__}...")
         try:
@@ -70,8 +71,16 @@ def main():
             print(f"Error running {gen_class.__name__}: {e}")
             import traceback
             traceback.print_exc()
+            failed_generators.append(gen_class.__name__)
+
+    if failed_generators:
+        print("\nCode generation failed:")
+        for name in failed_generators:
+            print(f"  - {name}")
+        return 1
 
     print("\nCode generation completed.")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

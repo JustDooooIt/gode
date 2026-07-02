@@ -7,48 +7,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_generator import CodeGenerator
 from utils.api_path import find_extension_api_json
+from utils.binding_policy import method_bind_out_argument_indices, skipped_method_reason
 from utils.string_utils import to_snake_case, sanitize_method_name
-
-BUILTIN_TYPES = {
-    'String', 'StringName', 'NodePath', 'Variant', 'Vector2', 'Vector2i', 'Vector3', 'Vector3i',
-    'Vector4', 'Vector4i', 'Color', 'Rect2', 'Rect2i', 'Transform2D', 'Plane', 'Quaternion',
-    'AABB', 'Basis', 'Transform3D', 'Projection', 'Callable', 'Signal', 'Dictionary', 'Array',
-    'PackedByteArray', 'PackedInt32Array', 'PackedInt64Array', 'PackedFloat32Array',
-    'PackedFloat64Array', 'PackedStringArray', 'PackedVector2Array', 'PackedVector3Array',
-    'PackedColorArray', 'PackedVector4Array', 'RID',
-}
-
-
-def default_arg_napi_expr(arg, env_expr='info.Env()'):
-    value = arg.get('default_value')
-    if value is None:
-        return f"{env_expr}.Undefined()"
-
-    arg_type = arg.get('type')
-    if value == 'null':
-        return f"{env_expr}.Null()"
-    if arg_type == 'bool' or value in ('true', 'false'):
-        return f"Napi::Boolean::New({env_expr}, {value})"
-    if arg_type in ('int', 'float') or isinstance(value, (int, float)):
-        return f"Napi::Number::New({env_expr}, static_cast<double>({value}))"
-    if isinstance(value, str) and arg_type and arg_type.startswith('typedarray::'):
-        return f"gode::godot_to_napi({env_expr}, godot::Array())"
-    if isinstance(value, str) and arg_type in BUILTIN_TYPES:
-        if value == '[]':
-            return f"gode::godot_to_napi({env_expr}, godot::{arg_type}())"
-        if value == '{}':
-            return f"gode::godot_to_napi({env_expr}, godot::{arg_type}())"
-        cpp_value = value
-        if value.startswith(f"{arg_type}("):
-            cpp_value = value.replace(f"{arg_type}(", f"godot::{arg_type}(", 1).replace("inf", "INFINITY")
-        elif arg_type == 'RID' and value == 'RID()':
-            cpp_value = 'godot::RID()'
-        elif arg_type in ('String', 'StringName', 'NodePath') and value.startswith('"'):
-            cpp_value = f"godot::{arg_type}({value})"
-        return f"gode::godot_to_napi({env_expr}, {cpp_value})"
-    if isinstance(value, str) and value.lstrip('-').isdigit():
-        return f"Napi::Number::New({env_expr}, static_cast<double>({value}))"
-    return f"{env_expr}.Undefined()"
+from utils.type_mappings import (
+    GODOT_BUILTIN_TYPES,
+    default_arg_napi_expr,
+    get_cpp_type,
+    js_class_name as get_js_class_name,
+    typed_collection_element_types,
+)
 
 
 def resolve_property_accessor(name, method_names):
@@ -62,51 +29,6 @@ def resolve_property_accessor(name, method_names):
 
 
 class ClassGenerator(CodeGenerator):
-    def get_cpp_type(self, type_name, meta, refcounted_classes, is_arg=False):
-        if type_name == 'void': return 'void'
-        
-        # Primitives
-        if type_name == 'int':
-            if 'int64' in meta: return 'int64_t'
-            if 'uint64' in meta: return 'uint64_t'
-            if 'int32' in meta: return 'int32_t'
-            if 'uint32' in meta: return 'uint32_t'
-            if 'int16' in meta: return 'int16_t'
-            if 'uint16' in meta: return 'uint16_t'
-            if 'int8' in meta: return 'int8_t'
-            if 'uint8' in meta: return 'uint8_t'
-            return 'int64_t'
-        
-        if type_name == 'float':
-            return 'godot::real_t'
-            
-        if type_name == 'bool': return 'bool'
-        
-        # Enums
-        if type_name.startswith('enum::'):
-            return f"godot::{type_name.replace('enum::', '').replace('.', '::')}"
-        if type_name.startswith('bitfield::'):
-            return f"godot::BitField<godot::{type_name.replace('bitfield::', '').replace('.', '::')}>"
-            
-        # Builtins
-        builtins = ['String', 'StringName', 'NodePath', 'Variant', 'Vector2', 'Vector2i', 'Vector3', 'Vector3i', 'Vector4', 'Vector4i', 'Color', 'Rect2', 'Rect2i', 'Transform2D', 'Plane', 'Quaternion', 'AABB', 'Basis', 'Transform3D', 'Projection', 'Callable', 'Signal', 'Dictionary', 'Array', 'PackedByteArray', 'PackedInt32Array', 'PackedInt64Array', 'PackedFloat32Array', 'PackedFloat64Array', 'PackedStringArray', 'PackedVector2Array', 'PackedVector3Array', 'PackedColorArray', 'PackedVector4Array', 'RID']
-        
-        if type_name in builtins:
-            if is_arg:
-                return f"const godot::{type_name} &"
-            else:
-                return f"godot::{type_name}"
-                
-        # Objects
-        if type_name in refcounted_classes:
-            if is_arg:
-                return f"const godot::Ref<godot::{type_name}> &"
-            else:
-                return f"godot::Ref<godot::{type_name}>"
-        
-        # Other Classes (pointers)
-        return f"godot::{type_name} *"
-
     def run(self):
         api_path = find_extension_api_json()
         
@@ -169,31 +91,21 @@ class ClassGenerator(CodeGenerator):
             godot_include_name = 'class_db_singleton' if class_name == 'ClassDB' else snake_name
             godot_class_name = 'ClassDBSingleton' if class_name == 'ClassDB' else class_name
             
-            # Rename classes that collide with JS builtins
-            js_class_renames = {
-                'Object': 'GDObject',
-            }
-            js_class_name = js_class_renames.get(class_name, class_name)
+            js_class_name = get_js_class_name(class_name)
             
             raw_methods = class_def.get('methods', [])
             methods = []
+            skipped_methods = []
             
-            # Filter methods with unsafe pointer arguments
+            # Filter methods that cannot be represented safely in JavaScript.
             for m in raw_methods:
-                is_safe = True
-                for arg in m.get('arguments', []):
-                    arg_type = arg['type']
-                    if '*' in arg_type:
-                        # Check if it's a safe pointer (Godot Object subclass)
-                        clean_type = arg_type.replace('*', '').strip()
-                        if clean_type.startswith('const '):
-                            clean_type = clean_type[6:].strip()
-                        
-                        if clean_type not in all_class_names:
-                            is_safe = False
-                            break
-                if is_safe:
-                    methods.append(m)
+                skipped_reason = skipped_method_reason(m, all_class_names)
+                if skipped_reason:
+                    skipped_methods.append((m['name'], skipped_reason))
+                    continue
+                methods.append(m)
+            if skipped_methods:
+                print(f"  Skipped {len(skipped_methods)} unsafe methods for {class_name}")
             
             vararg_methods = []
             
@@ -208,6 +120,16 @@ class ClassGenerator(CodeGenerator):
             # Collect dependencies
             dependencies = set()
             def process_type(type_name):
+                if type_name.startswith('typedarray::'):
+                    dependencies.add("godot_cpp/variant/typed_array.hpp")
+                    for element_type in typed_collection_element_types(type_name):
+                        process_type(element_type)
+                    return
+                if type_name.startswith('typeddictionary::'):
+                    dependencies.add("godot_cpp/variant/typed_dictionary.hpp")
+                    for element_type in typed_collection_element_types(type_name):
+                        process_type(element_type)
+                    return
                 if type_name.startswith('enum::'):
                     type_name = type_name.split('::')[1]
                     if '.' in type_name: type_name = type_name.split('.')[0]
@@ -222,6 +144,11 @@ class ClassGenerator(CodeGenerator):
 
             for method in methods:
                 method['name_cpp'] = sanitize_method_name(method['name'])
+                out_argument_indices = tuple(method_bind_out_argument_indices(class_name, method))
+                method['out_argument_indices'] = out_argument_indices
+                method['has_out_arguments'] = bool(out_argument_indices)
+                method['out_argument_indices_cpp'] = ', '.join(str(index) for index in out_argument_indices)
+                method['argument_count'] = len(method.get('arguments', []))
                 if class_name == 'Node' and method['name'] == 'get_node':
                      method['name_cpp'] = 'get_node_internal'
                 
@@ -250,11 +177,11 @@ class ClassGenerator(CodeGenerator):
                     if 'return_value' in method and 'meta' in method['return_value']:
                         ret_meta = method['return_value']['meta']
                     
-                    ret_cpp = self.get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
+                    ret_cpp = get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
                     
                     args_cpp = []
                     for arg in method.get('arguments', []):
-                        args_cpp.append(self.get_cpp_type(arg['type'], arg.get('meta', ''), refcounted_classes, True))
+                        args_cpp.append(get_cpp_type(arg['type'], arg.get('meta', ''), refcounted_classes, True))
                     
                     const_qualifier = " const" if method.get('is_const', False) else ""
                     
@@ -270,7 +197,7 @@ class ClassGenerator(CodeGenerator):
                         if 'return_value' in method and 'meta' in method['return_value']:
                             ret_meta = method['return_value']['meta']
                         
-                        method['return_type_cpp'] = self.get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
+                        method['return_type_cpp'] = get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
                     else:
                         method['has_return_value'] = False
                     vararg_methods.append(method)
@@ -301,6 +228,7 @@ class ClassGenerator(CodeGenerator):
             for prop in class_def.get('properties', []):
                  prop_name = prop['name']
                  prop_type = prop['type']
+                 process_type(prop_type)
                  
                  # Only handle non-grouped properties for now
                  if '/' in prop_name:
@@ -319,7 +247,7 @@ class ClassGenerator(CodeGenerator):
                          'getter': sanitize_method_name(resolved_getter),
                          'setter': sanitize_method_name(resolved_setter) if resolved_setter else None
                      })
-                     if resolved_setter and prop_type in BUILTIN_TYPES:
+                     if resolved_setter and prop_type in GODOT_BUILTIN_TYPES:
                          live_property_getters[sanitize_method_name(resolved_getter)] = prop_name
 
             for method in methods:

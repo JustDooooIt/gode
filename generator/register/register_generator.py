@@ -41,11 +41,8 @@ class RegisterGenerator(CodeGenerator):
 
         # Process Classes
         if 'classes' in api_data:
-            ignored_classes = {'WebRTCDataChannelExtension', 'AudioStreamPlaybackResampled'}
             for class_def in api_data['classes']:
                 class_name = class_def['name']
-                if class_name in ignored_classes:
-                    continue
                 snake_name = to_snake_case(class_name)
                 
                 classes.append({
@@ -64,15 +61,6 @@ class RegisterGenerator(CodeGenerator):
         
         # Generate Source
         self.render('register_builtin.cpp.jinja2', context, 'register_builtin.gen.cpp', 'src_dir')
-
-        # Generate per-class registration files for classes
-        for item in classes:
-            context = {
-                'class_name': item['class_name'],
-                'snake_name': item['snake_name'],
-                'include': item['include']
-            }
-            pass
 
         # Process Singletons
         singletons = []

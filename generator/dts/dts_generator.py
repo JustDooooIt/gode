@@ -1,7 +1,18 @@
 import os
 import json
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.base_generator import CodeGenerator
 from utils.api_path import find_extension_api_json
+from utils.binding_policy import skipped_method_reason
+from utils.type_mappings import (
+    JS_CLASS_RENAME_MAP,
+    PACKED_ARRAY_ELEMENT_TYPES,
+    parse_typedarray_element_type,
+    parse_typeddictionary_types,
+)
 
 # Godot primitive → TypeScript type
 PRIMITIVE_MAP = {
@@ -19,49 +30,8 @@ PRIMITIVE_MAP = {
 # JS-facing collection types used for return values.
 JS_ARRAY_TYPE = 'VariantArgument[]'
 JS_OBJECT_TYPE = '{ [key: string]: VariantArgument }'
-
-# Variant.Type id -> Godot type name, used by typedarray encoded forms like "typedarray::27/0:"
-VARIANT_TYPE_ID_MAP = {
-    '0': 'Nil',
-    '1': 'bool',
-    '2': 'int',
-    '3': 'float',
-    '4': 'String',
-    '5': 'Vector2',
-    '6': 'Vector2i',
-    '7': 'Rect2',
-    '8': 'Rect2i',
-    '9': 'Vector3',
-    '10': 'Vector3i',
-    '11': 'Transform2D',
-    '12': 'Vector4',
-    '13': 'Vector4i',
-    '14': 'Plane',
-    '15': 'Quaternion',
-    '16': 'AABB',
-    '17': 'Basis',
-    '18': 'Transform3D',
-    '19': 'Projection',
-    '20': 'Color',
-    '21': 'StringName',
-    '22': 'NodePath',
-    '23': 'RID',
-    '24': 'Object',
-    '25': 'Callable',
-    '26': 'Signal',
-    '27': 'Dictionary',
-    '28': 'Array',
-    '29': 'PackedByteArray',
-    '30': 'PackedInt32Array',
-    '31': 'PackedInt64Array',
-    '32': 'PackedFloat32Array',
-    '33': 'PackedFloat64Array',
-    '34': 'PackedStringArray',
-    '35': 'PackedVector2Array',
-    '36': 'PackedVector3Array',
-    '37': 'PackedColorArray',
-    '38': 'PackedVector4Array',
-}
+JS_MAP_TYPE = 'Map<VariantArgument, VariantArgument>'
+JS_DICTIONARY_TYPE = f'{JS_OBJECT_TYPE} | {JS_MAP_TYPE}'
 
 # Builtin classes that map directly to JS primitives — skip class generation
 SKIP_BUILTINS = frozenset(['Nil', 'void', 'bool', 'int', 'float'])
@@ -69,13 +39,8 @@ SKIP_BUILTINS = frozenset(['Nil', 'void', 'bool', 'int', 'float'])
 # Global enums to skip — already represented in the hand-crafted Variant class
 SKIP_GLOBAL_ENUMS = frozenset(['Variant.Type', 'Variant.Operator'])
 
-# Rename map: Godot name → TS name (avoids conflicts with JS built-ins)
-RENAME_MAP = {
-    'Object':     'GodotObject',
-    'String':     'GDString',
-    'Dictionary': 'GDDictionary',
-    'Array':      'GDArray',
-}
+# Rename map: Godot name → JS/TS API name (avoids conflicts with JS built-ins)
+RENAME_MAP = JS_CLASS_RENAME_MAP
 
 # Method/param names that are reserved in TypeScript/JS
 TS_RESERVED = frozenset([
@@ -96,63 +61,17 @@ def sanitize_name(name: str) -> str:
     return name
 
 
-def parse_typedarray_element_type(type_str: str) -> str:
-    """
-    Parse typedarray forms from extension_api.json:
-      - typedarray::Node
-      - typedarray::int
-      - typedarray::24/17:CompositorEffect
-      - typedarray::27/0:
-    Returns a Godot type token for the element.
-    """
-    payload = type_str[len('typedarray::'):]
-    if not payload:
-        return 'Variant'
-
-    if ':' in payload:
-        meta, explicit = payload.split(':', 1)
-        if explicit:
-            payload = explicit
-        else:
-            payload = meta
-
-    if '/' in payload:
-        maybe_variant_id = payload.split('/', 1)[0]
-        payload = VARIANT_TYPE_ID_MAP.get(maybe_variant_id, payload)
-
-    payload = payload.strip().lstrip('-')
-    return payload or 'Variant'
-
-
-def parse_typeddictionary_types(type_str: str) -> tuple[str, str]:
-    """
-    Parse typeddictionary forms from extension_api.json:
-      - typeddictionary::int;String
-      - typeddictionary::Color;Color
-    Returns a pair of Godot type tokens: (key_type, value_type).
-    """
-    payload = type_str[len('typeddictionary::'):].strip()
-    if not payload:
-        return 'Variant', 'Variant'
-
-    if ';' not in payload:
-        t = payload.lstrip('-') or 'Variant'
-        return t, 'Variant'
-
-    key_type, value_type = payload.split(';', 1)
-    key_type = key_type.strip().lstrip('-') or 'Variant'
-    value_type = value_type.strip().lstrip('-') or 'Variant'
-    return key_type, value_type
-
-
-def godot_type_to_ts(type_str: str, is_input: bool = False) -> str:
+def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_names: frozenset = frozenset()) -> str:
     if not type_str:
         return 'void'
 
     # Comma-separated multi-type → TypeScript union
     # Strip leading '-' (Godot exclusion syntax, e.g. "-AnimatedTexture")
     if ',' in type_str:
-        return ' | '.join(godot_type_to_ts(t.strip().lstrip('-'), is_input) for t in type_str.split(','))
+        return ' | '.join(
+            godot_type_to_ts(t.strip().lstrip('-'), is_input, singleton_class_names)
+            for t in type_str.split(',')
+        )
 
     if type_str == 'Variant':
         return 'VariantArgument'  # Treat Variant as any type since we removed the binding
@@ -167,6 +86,9 @@ def godot_type_to_ts(type_str: str, is_input: bool = False) -> str:
 
     if type_str == 'Callable' and is_input:
         return 'Callable | Function'
+
+    if type_str == 'int' and is_input:
+        return 'number | bigint'
 
     if is_input and type_str in ('String', 'GDString', 'StringName'):
         return 'GDString | StringName | string'
@@ -183,6 +105,8 @@ def godot_type_to_ts(type_str: str, is_input: bool = False) -> str:
                 return 'VariantType'
             if cls == 'Variant' and enum == 'Operator':
                 return 'VariantOperator'
+            if cls in singleton_class_names:
+                return f'{RENAME_MAP.get(cls, cls)}_{enum}'
             return f'{RENAME_MAP.get(cls, cls)}.{enum}'
         return inner  # global enum name
 
@@ -190,43 +114,52 @@ def godot_type_to_ts(type_str: str, is_input: bool = False) -> str:
         inner = type_str[10:]
         if '.' in inner:
             cls, enum = inner.split('.', 1)
+            if cls in singleton_class_names:
+                return f'{RENAME_MAP.get(cls, cls)}_{enum}'
             return f'{RENAME_MAP.get(cls, cls)}.{enum}'
         return 'number'
 
     if type_str.startswith('typedarray::'):
         element_type = parse_typedarray_element_type(type_str)
         # typedarray is always represented as a JS generic array on the TypeScript side.
-        element_ts = godot_type_to_ts(element_type, is_input=False)
+        element_ts = godot_type_to_ts(element_type, is_input=False, singleton_class_names=singleton_class_names)
         typed_array = f'Array<{element_ts}>'
         return f'GDArray | {typed_array}' if is_input else typed_array
 
     if type_str.startswith('typeddictionary::'):
         key_type, value_type = parse_typeddictionary_types(type_str)
-        key_ts = godot_type_to_ts(key_type, is_input=False)
-        value_ts = godot_type_to_ts(value_type, is_input=False)
+        key_ts = godot_type_to_ts(key_type, is_input=False, singleton_class_names=singleton_class_names)
+        value_ts = godot_type_to_ts(value_type, is_input=False, singleton_class_names=singleton_class_names)
 
-        # JS object literals can only model PropertyKey keys precisely.
-        if key_ts in ('string', 'number', 'symbol'):
+        # JS object literals preserve Godot dictionary keys only for string-like keys.
+        if key_ts == 'string':
             typed_container = f'Record<{key_ts}, {value_ts}>'
         else:
-            typed_container = f'Map<{godot_type_to_ts(key_type, is_input=True)}, {value_ts}>'
+            typed_container = f'Map<{godot_type_to_ts(key_type, is_input=True, singleton_class_names=singleton_class_names)}, {value_ts}>'
 
+        if is_input and key_ts == 'string':
+            return f'GDDictionary | {typed_container} | Map<{key_ts}, {value_ts}>'
         return f'GDDictionary | {typed_container}' if is_input else typed_container
 
     if type_str.endswith('*'):
-        return godot_type_to_ts(type_str[:-1], is_input)
+        return godot_type_to_ts(type_str[:-1], is_input, singleton_class_names)
 
     if is_input and type_str in ('Dictionary', 'GDDictionary'):
-        return f'GDDictionary | {JS_OBJECT_TYPE}'
+        return f'GDDictionary | {JS_DICTIONARY_TYPE}'
 
     if is_input and type_str in ('Array', 'GDArray'):
         return f'GDArray | {JS_ARRAY_TYPE}'
+
+    if is_input and type_str in PACKED_ARRAY_ELEMENT_TYPES:
+        element_type = PACKED_ARRAY_ELEMENT_TYPES[type_str]
+        element_ts = godot_type_to_ts(element_type, is_input=True, singleton_class_names=singleton_class_names)
+        return f'{type_str} | Array<{element_ts}>'
 
     if not is_input and type_str == 'Array':
         return JS_ARRAY_TYPE
 
     if not is_input and type_str in ('Dictionary', 'GDDictionary'):
-        return JS_OBJECT_TYPE
+        return JS_DICTIONARY_TYPE
 
     return RENAME_MAP.get(type_str, type_str)
 
@@ -251,33 +184,31 @@ class DtsGenerator(CodeGenerator):
         godot_lines = self._generate(api)
         globals_lines = self._generate_globals(api)
 
-        with open(godot_output_path, 'w', encoding='utf-8', newline='\n') as f:
-            f.write('\n'.join(godot_lines))
-            f.write('\n')
-
-        with open(globals_output_path, 'w', encoding='utf-8', newline='\n') as f:
-            f.write('\n'.join(globals_lines))
-            f.write('\n')
-
-        print(f'Generated: {godot_output_path}')
-        print(f'Generated: {globals_output_path}')
+        self.write_file_if_changed(godot_output_path, '\n'.join(godot_lines) + '\n')
+        self.write_file_if_changed(globals_output_path, '\n'.join(globals_lines) + '\n')
 
     def _has_raw_pointer(self, method: dict) -> bool:
-        """Return True if any argument or the return value contains a raw pointer type."""
-        for arg in method.get('arguments', []):
-            if '*' in arg.get('type', ''):
-                return True
-        ret = method.get('return_value') or method.get('return_type')
-        if ret:
-            t = ret if isinstance(ret, str) else ret.get('type', '')
-            if '*' in t:
-                return True
-        return False
+        return skipped_method_reason(method, getattr(self, '_object_class_names', set())) is not None
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _ind(self, n: int) -> str:
         return '    ' * n
+
+    def _type_to_ts(self, type_str: str, is_input: bool = False) -> str:
+        return godot_type_to_ts(type_str, is_input, getattr(self, '_singleton_class_names', frozenset()))
+
+    def _enum_type_ref(self, owner_name: str, enum_name: str) -> str:
+        enum_name = sanitize_name(enum_name)
+        if owner_name in getattr(self, '_singleton_ts_names', frozenset()):
+            return f'{owner_name}_{enum_name}'
+        return f'{owner_name}.{enum_name}'
+
+    def _extends_type_to_ts(self, type_str: str) -> str:
+        ts_type = self._type_to_ts(type_str)
+        if type_str in getattr(self, '_singleton_class_names', frozenset()):
+            return f'__GodotSingletonBases.{ts_type}'
+        return ts_type
 
     def _format_params(self, arguments: list) -> str:
         parts = []
@@ -295,23 +226,29 @@ class DtsGenerator(CodeGenerator):
 
         for arg, is_optional in zip(arguments, optional_flags):
             name = sanitize_name(arg['name'])
-            ts_type = godot_type_to_ts(arg['type'], is_input=True)
+            ts_type = self._type_to_ts(arg['type'], is_input=True)
             opt = '?' if is_optional else ''
             parts.append(f'{name}{opt}: {ts_type}')
         return ', '.join(parts)
 
     # ── Enum ──────────────────────────────────────────────────────────────────
 
-    def _gen_enum(self, enum_data: dict, indent: int) -> list:
+    def _gen_enum(self, enum_data: dict, indent: int, export: bool = False, const: bool = False, name: str = None) -> list:
         ind  = self._ind(indent)
         ind2 = self._ind(indent + 1)
-        lines = [f'{ind}const enum {enum_data["name"]} {{']
+        prefix = ''
+        if export:
+            prefix += 'export '
+        if const:
+            prefix += 'const '
+        enum_name = sanitize_name(name or enum_data['name'])
+        lines = [f'{ind}{prefix}enum {enum_name} {{']
         for val in enum_data.get('values', []):
             lines.append(f'{ind2}{val["name"]} = {val["value"]},')
         lines.append(f'{ind}}}')
         return lines
 
-    def _gen_enum_static_constants(self, enums: list, indent: int) -> list:
+    def _gen_enum_static_constants(self, enums: list, indent: int, owner_name: str, static: bool = True) -> list:
         """Godot exposes class enum values directly on constructors at runtime.
 
         The nested namespace enum keeps enum types available as `Viewport.MSAA`,
@@ -321,14 +258,18 @@ class DtsGenerator(CodeGenerator):
         ind = self._ind(indent)
         lines = []
         seen = set()
+        modifier = 'static readonly' if static else 'readonly'
         for enum in enums:
             enum_name = sanitize_name(enum['name'])
+            enum_type = self._enum_type_ref(owner_name, enum_name)
+            if not static:
+                lines.append(f'{ind}readonly {enum_name}: typeof {enum_type};')
             for val in enum.get('values', []):
                 name = sanitize_name(val['name'])
                 if name in seen:
                     continue
                 seen.add(name)
-                lines.append(f'{ind}static readonly {name}: {enum_name};')
+                lines.append(f'{ind}{modifier} {name}: {enum_type};')
         return lines
 
     # ── Builtin class ─────────────────────────────────────────────────────────
@@ -336,7 +277,7 @@ class DtsGenerator(CodeGenerator):
     def _gen_builtin(self, cls_data: dict, ts_name: str, indent: int) -> list:
         ind  = self._ind(indent)
         ind2 = self._ind(indent + 1)
-        lines = [f'{ind}class {ts_name} {{']
+        lines = [f'{ind}export class {ts_name} {{']
 
         # Constructors
         for ctor in cls_data.get('constructors', []):
@@ -346,22 +287,22 @@ class DtsGenerator(CodeGenerator):
 
         # Members (instance properties)
         for member in cls_data.get('members', []):
-            ts_type = godot_type_to_ts(member['type'])
+            ts_type = self._type_to_ts(member['type'])
             lines.append(f'{ind2}{member["name"]}: {ts_type};')
 
         # Constants
         for const in cls_data.get('constants', []):
-            ts_type = godot_type_to_ts(const['type'])
+            ts_type = self._type_to_ts(const['type'])
             lines.append(f'{ind2}static readonly {const["name"]}: {ts_type};')
 
-        lines += self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1)
+        lines += self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1, ts_name, static=True)
 
         # Methods
         for method in cls_data.get('methods', []):
             if self._has_raw_pointer(method):
                 continue
             name   = sanitize_name(method['name'])
-            ret    = godot_type_to_ts(method.get('return_type', 'void'))
+            ret    = self._type_to_ts(method.get('return_type', 'void'))
             params = self._format_params(method.get('arguments', []))
             static = 'static ' if method.get('is_static') else ''
             if method.get('is_vararg'):
@@ -371,37 +312,57 @@ class DtsGenerator(CodeGenerator):
         # Index signature
         idx_type = cls_data.get('indexing_return_type')
         if idx_type:
-            lines.append(f'{ind2}[index: number]: {godot_type_to_ts(idx_type)};')
+            lines.append(f'{ind2}[index: number]: {self._type_to_ts(idx_type)};')
 
         lines.append(f'{ind}}}')
 
         # Declaration merging: namespace for nested enums
         enums = cls_data.get('enums', [])
         if enums:
-            lines.append(f'{ind}namespace {ts_name} {{')
+            lines.append(f'{ind}export namespace {ts_name} {{')
             for enum in enums:
-                lines += self._gen_enum(enum, indent + 1)
+                lines += self._gen_enum(enum, indent + 1, export=True)
             lines.append(f'{ind}}}')
 
         return lines
 
     # ── Object-derived class ──────────────────────────────────────────────────
 
-    def _gen_class(self, cls_data: dict, indent: int) -> list:
-        ind  = self._ind(indent)
-        ind2 = self._ind(indent + 1)
+    def _gen_class(self, cls_data: dict, indent: int, is_singleton: bool = False) -> list:
+        ind = self._ind(indent)
+        class_indent = indent + 1 if is_singleton else indent
+        body_indent = class_indent + 1
+        class_ind = self._ind(class_indent)
+        body_ind = self._ind(body_indent)
         lines = []
 
-        name     = godot_type_to_ts(cls_data['name'])
+        name = self._type_to_ts(cls_data['name'])
         inherits = cls_data.get('inherits', '')
-        extends  = f' extends {godot_type_to_ts(inherits)}' if inherits else ' extends _GodotObject'
-        lines.append(f'{ind}class {name}{extends} {{')
+        extends = f' extends {self._extends_type_to_ts(inherits)}' if inherits else ' extends _GodotObject'
+
+        singleton_enums = cls_data.get('enums', []) if is_singleton else []
+        for enum in singleton_enums:
+            lines += self._gen_enum(
+                enum,
+                indent,
+                export=True,
+                const=True,
+                name=f'{name}_{sanitize_name(enum["name"])}',
+            )
+            lines.append('')
+
+        if is_singleton:
+            lines.append(f'{ind}namespace __GodotSingletonBases {{')
+            lines.append(f'{class_ind}export class {name}{extends} {{')
+        else:
+            lines.append(f'{ind}export class {name}{extends} {{')
 
         # Constants
         for const in cls_data.get('constants', []):
-            lines.append(f'{ind2}static readonly {const["name"]}: number;')
+            modifier = 'readonly' if is_singleton else 'static readonly'
+            lines.append(f'{body_ind}{modifier} {const["name"]}: number;')
 
-        lines += self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1)
+        lines += self._gen_enum_static_constants(cls_data.get('enums', []), body_indent, name, static=not is_singleton)
 
         # Properties
         # Track which method names the methods loop will declare (to avoid duplicates)
@@ -415,34 +376,33 @@ class DtsGenerator(CodeGenerator):
         for prop in cls_data.get('properties', []):
             if '/' in prop['name']:  # skip grouped sub-properties
                 continue
-            ts_type = godot_type_to_ts(prop['type'])
-            ts_type_input = godot_type_to_ts(prop['type'], is_input=True)
-            getter  = prop.get('getter', '')
-            setter  = prop.get('setter', '')
-            lines.append(f'{ind2}get {prop["name"]}(): {ts_type};')
+            ts_type = self._type_to_ts(prop['type'])
+            ts_type_input = self._type_to_ts(prop['type'], is_input=True)
+            getter = prop.get('getter', '')
+            setter = prop.get('setter', '')
+            lines.append(f'{body_ind}get {prop["name"]}(): {ts_type};')
             if setter:
-                lines.append(f'{ind2}set {prop["name"]}(value: {ts_type_input});')
+                lines.append(f'{body_ind}set {prop["name"]}(value: {ts_type_input});')
                 property_method_overrides[setter] = {'first_arg_type': ts_type_input}
             # Emit getter/setter as explicit methods when not already in the methods section
             if getter and getter not in declared_methods:
-                lines.append(f'{ind2}{sanitize_name(getter)}(): {ts_type};')
+                lines.append(f'{body_ind}{sanitize_name(getter)}(): {ts_type};')
             if getter:
                 property_method_overrides[getter] = {'return_type': ts_type}
             if setter and setter not in declared_methods:
-                lines.append(f'{ind2}{sanitize_name(setter)}(value: {ts_type_input}): void;')
+                lines.append(f'{body_ind}{sanitize_name(setter)}(value: {ts_type_input}): void;')
 
         # Signals (as comments — no runtime type)
         for sig in cls_data.get('signals', []):
-            params = self._format_params(sig.get('arguments', []))
-            lines.append(f'{ind2}{sig["name"]}: Signal')
+            lines.append(f'{body_ind}{sig["name"]}: Signal;')
 
         # Methods
         for method in cls_data.get('methods', []):
             if self._has_raw_pointer(method):
                 continue
-            mname  = sanitize_name(method['name'])
-            ret_v  = method.get('return_value') or {}
-            ret    = godot_type_to_ts(ret_v.get('type', 'void'))
+            mname = sanitize_name(method['name'])
+            ret_v = method.get('return_value') or {}
+            ret = self._type_to_ts(ret_v.get('type', 'void'))
             params = self._format_params(method.get('arguments', []))
             override = property_method_overrides.get(method['name'])
             if override:
@@ -458,19 +418,23 @@ class DtsGenerator(CodeGenerator):
                             params = f'{first_param}, {rest_params}' if rest_params else first_param
                         else:
                             params = first_param
-            static = 'static ' if method.get('is_static') else ''
+            static = 'static ' if method.get('is_static') and not is_singleton else ''
             if method.get('is_vararg'):
                 params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
-            lines.append(f'{ind2}{static}{mname}({params}): {ret};')
+            lines.append(f'{body_ind}{static}{mname}({params}): {ret};')
 
-        lines.append(f'{ind}}}')
+        lines.append(f'{class_ind}}}')
+
+        if is_singleton:
+            lines.append(f'{ind}}}')
+            lines.append(f'{ind}export type {name} = __GodotSingletonBases.{name};')
 
         # Namespace for nested enums
         enums = cls_data.get('enums', [])
-        if enums:
-            lines.append(f'{ind}namespace {name} {{')
+        if enums and not is_singleton:
+            lines.append(f'{ind}export namespace {name} {{')
             for enum in enums:
-                lines += self._gen_enum(enum, indent + 1)
+                lines += self._gen_enum(enum, indent + 1, export=True)
             lines.append(f'{ind}}}')
 
         return lines
@@ -480,7 +444,7 @@ class DtsGenerator(CodeGenerator):
         lines = []
         for func in api.get('utility_functions', []):
             name = sanitize_name(func['name'])
-            ret = godot_type_to_ts(func.get('return_type', 'void'))
+            ret = self._type_to_ts(func.get('return_type', 'void'))
             params = self._format_params(func.get('arguments', []))
             if func.get('is_vararg'):
                 params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
@@ -490,7 +454,7 @@ class DtsGenerator(CodeGenerator):
     def _gen_variant_type_enum(self) -> list:
         """Generate Variant.Type enum definition"""
         lines = []
-        lines.append('    const enum VariantType {')
+        lines.append('    export const enum VariantType {')
         lines.append('        TYPE_NIL = 0,')
         lines.append('        TYPE_BOOL = 1,')
         lines.append('        TYPE_INT = 2,')
@@ -532,14 +496,12 @@ class DtsGenerator(CodeGenerator):
         lines.append('        TYPE_PACKED_VECTOR4_ARRAY = 38,')
         lines.append('        TYPE_MAX = 39,')
         lines.append('    }')
-        lines.append('')
-        lines.append('    export const VariantType: typeof VariantType;')
         return lines
 
     def _gen_variant_operator_enum(self) -> list:
         """Generate Variant.Operator enum definition"""
         lines = []
-        lines.append('    const enum VariantOperator {')
+        lines.append('    export const enum VariantOperator {')
         lines.append('        OP_EQUAL = 0,')
         lines.append('        OP_NOT_EQUAL = 1,')
         lines.append('        OP_LESS = 2,')
@@ -567,48 +529,22 @@ class DtsGenerator(CodeGenerator):
         lines.append('        OP_IN = 24,')
         lines.append('        OP_MAX = 25,')
         lines.append('    }')
-        lines.append('')
-        lines.append('    export const VariantOperator: typeof VariantOperator;')
         return lines
 
-    def _collect_global_symbols(self, api: dict) -> list:
-        symbols = []
-
-        for cls in api.get('builtin_classes', []):
-            name = cls['name']
-            if name in SKIP_BUILTINS:
-                continue
-            symbols.append(RENAME_MAP.get(name, name))
+    def _collect_global_singleton_symbols(self, api: dict) -> dict:
+        singletons = {}
 
         for singleton in api.get('singletons', []):
-            symbols.append(singleton['name'])
+            name = singleton['name']
+            singletons[name] = RENAME_MAP.get(singleton['type'], singleton['type'])
 
-        symbols.append('GD')
-
-        # Preserve order while removing duplicates.
-        return list(dict.fromkeys(symbols))
+        return singletons
 
     def _generate_globals(self, api: dict) -> list:
-        symbols = self._collect_global_symbols(api)
-        symbols.append('VariantArgument')
-
-        import_items = ', '.join(f'{name} as Godot{name}' for name in symbols)
-
         lines = []
         lines.append('// Auto-generated by generator/dts — do not edit manually.')
         lines.append('')
-        lines.append(f'import {{ {import_items} }} from "godot";')
-        lines.append('')
         lines.append('declare global {')
-        for name in symbols:
-            if name == 'Signal':
-                # Signal 支持泛型类型注解：fieldName!: Signal<() => void>，由 tree-sitter 静态解析参数
-                lines.append(f'  type {name}<T extends (...args: any[]) => void = (...args: any[]) => void> = Godot{name};')
-                lines.append(f'  const {name}: typeof Godot{name};')
-            else:
-                lines.append(f'  type {name} = Godot{name};')
-                lines.append(f'  const {name}: typeof Godot{name};')
-
         lines.append('  interface ExportOptions {')
         lines.append('    hint?: number;')
         lines.append('    hintString?: string;')
@@ -617,7 +553,8 @@ class DtsGenerator(CodeGenerator):
         lines.append('  function Export(hint: number, hintString?: string): any;')
         lines.append('  function Export(options?: ExportOptions): any;')
         lines.append('')
-        lines.append('  function Tool(target: Function): void;')
+        lines.append('  function Signal(...args: any[]): any;')
+        lines.append('  function Tool(...args: any[]): any;')
         lines.append('')
         lines.append('  interface ExportEntry {')
         lines.append('    type: string;')
@@ -634,6 +571,14 @@ class DtsGenerator(CodeGenerator):
     # ── Top-level ─────────────────────────────────────────────────────────────
 
     def _generate(self, api: dict) -> list:
+        self._object_class_names = {cls['name'] for cls in api.get('classes', [])}
+        self._singleton_class_names = frozenset(
+            name
+            for singleton in api.get('singletons', [])
+            for name in (singleton['name'], singleton['type'])
+        )
+        self._singleton_ts_names = frozenset(RENAME_MAP.get(name, name) for name in self._singleton_class_names)
+
         # Collect all builtin classes that are generated
         builtin_types = []
         for cls in api.get('builtin_classes', []):
@@ -642,8 +587,8 @@ class DtsGenerator(CodeGenerator):
                 continue
             builtin_types.append(RENAME_MAP.get(name, name))
         
-        variant_arg_types = ['null', 'undefined', 'boolean', 'number', 'string', 'Function', 'Object'] + builtin_types
-        variant_arg_types.extend([JS_OBJECT_TYPE, JS_ARRAY_TYPE])
+        variant_arg_types = ['null', 'undefined', 'boolean', 'number', 'bigint', 'string', 'Function', 'Object'] + builtin_types
+        variant_arg_types.extend([JS_OBJECT_TYPE, JS_MAP_TYPE, JS_ARRAY_TYPE])
         variant_arg_types = list(dict.fromkeys(variant_arg_types))
         variant_arg_str = ' | '.join(variant_arg_types)
 
@@ -652,7 +597,7 @@ class DtsGenerator(CodeGenerator):
         lines.append('')
         lines.append('declare module "godot" {')
         lines.append('')
-        lines.append(f'    type VariantArgument = {variant_arg_str};')
+        lines.append(f'    export type VariantArgument = {variant_arg_str};')
         lines.append('')
 
         # GodotObject base (every Object without an explicit parent inherits this)
@@ -671,7 +616,7 @@ class DtsGenerator(CodeGenerator):
         for enum in api.get('global_enums', []):
             if enum['name'] in SKIP_GLOBAL_ENUMS:
                 continue
-            lines += self._gen_enum(enum, indent=1)
+            lines += self._gen_enum(enum, indent=1, export=True, const=True)
             lines.append('')
 
         # Variant.Type enum (manually added since we removed VariantBinding)
@@ -692,60 +637,19 @@ class DtsGenerator(CodeGenerator):
             lines.append('')
 
         # Object-derived classes (Node, Sprite2D, …)
+        singletons = self._collect_global_singleton_symbols(api)
         for cls in api.get('classes', []):
-            lines += self._gen_class(cls, indent=1)
+            lines += self._gen_class(cls, indent=1, is_singleton=cls['name'] in singletons)
             lines.append('')
 
-        lines.append('    class GD {')
+        lines.append('    export interface GD {')
         # Utility functions (sin, cos, print, ...)
         lines += self._gen_utility_functions(api, indent=1)
         lines.append('    }')
 
-        # GodotNamespace — what `import godot from "godot"` returns
-        singletons = {s['name']: s['type'] for s in api.get('singletons', [])}
-
-        for cls in api.get('builtin_classes', []):
-            name = cls['name']
-            if name in SKIP_BUILTINS:
-                continue
-            ts_name = RENAME_MAP.get(name, name)
-            lines.append(f'    export const {ts_name}: typeof {ts_name};')
-            lines.append(f'    export type {ts_name} = {ts_name};')
-
-        for cls in api.get('classes', []):
-            name = cls['name']
-            ts_name = RENAME_MAP.get(name, name)
-            lines.append(f'    export const {ts_name}: typeof {ts_name};')
-            lines.append(f'    export type {ts_name} = {ts_name};')
-
         for s_name, s_type in singletons.items():
             lines.append(f'    export const {s_name}: {s_type};')
         lines.append('    export const GD: GD;')
-        lines.append('')
-        
-
-        lines.append('    interface GodotNamespace {')
-        
-        for cls in api.get('builtin_classes', []):
-            name = cls['name']
-            if name in SKIP_BUILTINS:
-                continue
-            ts_name = RENAME_MAP.get(name, name)
-            lines.append(f'        {ts_name}: typeof {ts_name};')
-
-        for cls in api.get('classes', []):
-            name = cls['name']
-            ts_name = RENAME_MAP.get(name, name)
-            lines.append(f'        {ts_name}: typeof {ts_name};')
-
-        for s_name, s_type in singletons.items():
-            lines.append(f'        {s_name}: {s_type};')
-        lines.append('        GD: GD;')
-
-        lines.append('    }')
-        lines.append('')
-        lines.append('    const _godot: GodotNamespace;')
-        lines.append('    export default _godot;')
         lines.append('}')
 
         return lines

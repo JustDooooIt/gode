@@ -57,12 +57,19 @@ inline godot::Variant m_name(const godot::Variant &arg, const std::vector<godot:
 	return m_name##_internal(const_cast<const godot::Variant **>(variant_args_ptr.data()), (GDExtensionInt)variant_args_ptr.size()); \
 }
 
-// Combined macros
-#define DEFINE_VARARG_FUNC_VOID(m_name, m_hash) \
+// Combined utility macros. Vararg utility functions and godot-cpp-omitted fixed
+// utility functions both use the same GDExtension utility-function table.
+#define DEFINE_UTILITY_FUNC_VOID(m_name, m_hash) \
     DEFINE_UTILITY_INTERNAL_VOID(m_name, m_hash) \
 
-#define DEFINE_VARARG_FUNC_RET(m_name, m_hash, m_type) \
+#define DEFINE_UTILITY_FUNC_RET(m_name, m_hash, m_type) \
     DEFINE_UTILITY_INTERNAL_RET(m_name, m_hash, m_type) \
+
+#define DEFINE_VARARG_FUNC_VOID(m_name, m_hash) \
+    DEFINE_UTILITY_FUNC_VOID(m_name, m_hash) \
+
+#define DEFINE_VARARG_FUNC_RET(m_name, m_hash, m_type) \
+    DEFINE_UTILITY_FUNC_RET(m_name, m_hash, m_type) \
 
 #define DEFINE_BUILTIN_VARARG_METHOD_VOID(m_class, m_name, m_hash, m_type_constant) \
 inline void m_name##_internal(godot::m_class *p_instance, const godot::Variant **p_args, GDExtensionInt p_arg_count) { \
@@ -81,11 +88,11 @@ inline m_ret_type m_name##_internal(godot::m_class *p_instance, const godot::Var
 }
 
 #define DEFINE_CLASS_VARARG_METHOD_VOID(m_cpp_type, m_godot_class, m_name, m_hash) \
-inline void m_name##_internal(godot::m_cpp_type *p_instance, const godot::Variant **p_args, GDExtensionInt p_arg_count) { \
+inline void m_name##_internal(godot::m_cpp_type *p_instance, const godot::Variant **p_args, GDExtensionInt p_arg_count, GDExtensionCallError *r_error) { \
 	static GDExtensionMethodBindPtr _gde_method_bind = ::godot::gdextension_interface::classdb_get_method_bind(godot::StringName(#m_godot_class)._native_ptr(), godot::StringName(#m_name)._native_ptr(), m_hash); \
 	CHECK_METHOD_BIND(_gde_method_bind); \
-	GDExtensionCallError error; \
-	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, p_instance->_owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, nullptr, &error); \
+	GDExtensionCallError local_error = { GDEXTENSION_CALL_OK, 0, 0 }; \
+	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, p_instance->_owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, nullptr, r_error ? r_error : &local_error); \
 }
 
 // Helper templates for return value casting
@@ -101,31 +108,39 @@ inline godot::Error variant_cast<godot::Error>(const godot::Variant& v) {
 }
 
 #define DEFINE_CLASS_VARARG_METHOD_RET(m_cpp_type, m_godot_class, m_name, m_hash, m_ret_type) \
-inline m_ret_type m_name##_internal(godot::m_cpp_type *p_instance, const godot::Variant **p_args, GDExtensionInt p_arg_count) { \
+inline m_ret_type m_name##_internal(godot::m_cpp_type *p_instance, const godot::Variant **p_args, GDExtensionInt p_arg_count, GDExtensionCallError *r_error) { \
 	static GDExtensionMethodBindPtr _gde_method_bind = ::godot::gdextension_interface::classdb_get_method_bind(godot::StringName(#m_godot_class)._native_ptr(), godot::StringName(#m_name)._native_ptr(), m_hash); \
 	CHECK_METHOD_BIND_RET(_gde_method_bind, m_ret_type()); \
-	GDExtensionCallError error; \
+	GDExtensionCallError local_error = { GDEXTENSION_CALL_OK, 0, 0 }; \
 	godot::Variant ret_variant; \
-	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, p_instance->_owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret_variant, &error); \
+	GDExtensionCallError *error = r_error ? r_error : &local_error; \
+	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, p_instance->_owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret_variant, error); \
+	if (error->error != GDEXTENSION_CALL_OK) { \
+		return m_ret_type(); \
+	} \
 	return variant_cast<m_ret_type>(ret_variant); \
 }
 
 #define DEFINE_CLASS_STATIC_VARARG_METHOD_VOID(m_cpp_type, m_godot_class, m_name, m_hash) \
-inline void m_name##_internal(const godot::Variant **p_args, GDExtensionInt p_arg_count) { \
+inline void m_name##_internal(const godot::Variant **p_args, GDExtensionInt p_arg_count, GDExtensionCallError *r_error) { \
 	static GDExtensionMethodBindPtr _gde_method_bind = ::godot::gdextension_interface::classdb_get_method_bind(godot::StringName(#m_godot_class)._native_ptr(), godot::StringName(#m_name)._native_ptr(), m_hash); \
 	CHECK_METHOD_BIND(_gde_method_bind); \
-	GDExtensionCallError error; \
-	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, nullptr, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, nullptr, &error); \
+	GDExtensionCallError local_error = { GDEXTENSION_CALL_OK, 0, 0 }; \
+	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, nullptr, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, nullptr, r_error ? r_error : &local_error); \
 }
 
 #define DEFINE_CLASS_STATIC_VARARG_METHOD_RET(m_cpp_type, m_godot_class, m_name, m_hash, m_ret_type) \
-inline m_ret_type m_name##_internal(const godot::Variant **p_args, GDExtensionInt p_arg_count) { \
+inline m_ret_type m_name##_internal(const godot::Variant **p_args, GDExtensionInt p_arg_count, GDExtensionCallError *r_error) { \
 	static GDExtensionMethodBindPtr _gde_method_bind = ::godot::gdextension_interface::classdb_get_method_bind(godot::StringName(#m_godot_class)._native_ptr(), godot::StringName(#m_name)._native_ptr(), m_hash); \
 	CHECK_METHOD_BIND_RET(_gde_method_bind, m_ret_type()); \
-	GDExtensionCallError error; \
-	m_ret_type ret; \
-	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, nullptr, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret, &error); \
-	return ret; \
+	GDExtensionCallError local_error = { GDEXTENSION_CALL_OK, 0, 0 }; \
+	godot::Variant ret_variant; \
+	GDExtensionCallError *error = r_error ? r_error : &local_error; \
+	::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, nullptr, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret_variant, error); \
+	if (error->error != GDEXTENSION_CALL_OK) { \
+		return m_ret_type(); \
+	} \
+	return variant_cast<m_ret_type>(ret_variant); \
 }
 
 #endif // GODE_VARARG_MACROS_H

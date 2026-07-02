@@ -7,30 +7,22 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_generator import CodeGenerator
 from utils.api_path import find_extension_api_json
+from utils.builtin_compat import builtin_member_compat, builtin_method_compat
 from utils.string_utils import to_snake_case, sanitize_method_name
-
-
-def constant_cpp_value(constant):
-    value = constant.get('value')
-    type_name = constant.get('type')
-    if isinstance(value, str) and type_name and value.startswith(f"{type_name}("):
-        return value.replace(f"{type_name}(", f"godot::{type_name}(", 1).replace("inf", "INFINITY")
-    return value
-
-
-BUILTIN_TYPES = {
-    'String', 'StringName', 'NodePath', 'Vector2', 'Vector2i', 'Rect2', 'Rect2i',
-    'Vector3', 'Vector3i', 'Transform2D', 'Vector4', 'Vector4i', 'Plane',
-    'Quaternion', 'AABB', 'Basis', 'Transform3D', 'Projection', 'Color',
-    'Callable', 'Signal', 'Dictionary', 'Array', 'PackedByteArray',
-    'PackedInt32Array', 'PackedInt64Array', 'PackedFloat32Array',
-    'PackedFloat64Array', 'PackedStringArray', 'PackedVector2Array',
-    'PackedVector3Array', 'PackedColorArray', 'PackedVector4Array', 'RID',
-}
+from utils.type_mappings import (
+    GENERATED_BUILTIN_TYPES,
+    PACKED_ARRAY_TYPES,
+    constant_cpp_value,
+    default_arg_napi_expr,
+    get_cpp_type,
+    js_class_name as get_js_class_name,
+)
 
 def napi_match_expr(type_name, index):
     value = f"info[{index}]"
-    if type_name in ('int', 'float'):
+    if type_name == 'int':
+        return f"({value}.IsNumber() || {value}.IsBigInt())"
+    if type_name == 'float':
         return f"{value}.IsNumber()"
     if type_name == 'bool':
         return f"{value}.IsBoolean()"
@@ -47,7 +39,19 @@ def napi_match_expr(type_name, index):
         )
     if type_name == 'Variant':
         return 'true'
-    if type_name in BUILTIN_TYPES:
+    if type_name == 'Array':
+        return (
+            f"{value}.IsArray() || "
+            f"({value}.IsObject() && {value}.As<Napi::Object>().InstanceOf(ArrayBinding::constructor.Value()))"
+        )
+    if type_name in PACKED_ARRAY_TYPES:
+        return (
+            f"{value}.IsArray() || "
+            f"({value}.IsObject() && {value}.As<Napi::Object>().InstanceOf({type_name}Binding::constructor.Value()))"
+        )
+    if type_name.startswith('typedarray::'):
+        return f"{value}.IsArray() || {value}.IsObject()"
+    if type_name in GENERATED_BUILTIN_TYPES:
         return f"{value}.IsObject() && {value}.As<Napi::Object>().InstanceOf({type_name}Binding::constructor.Value())"
     return f"{value}.IsObject()"
 
@@ -80,33 +84,6 @@ def variant_operator_enum(op_symbol):
         'not': 'OP_NOT',
         'in': 'OP_IN',
     }.get(op_symbol)
-
-
-def default_arg_napi_expr(arg, env_expr='info.Env()'):
-    value = arg.get('default_value')
-    arg_type = arg.get('type')
-    if value is None:
-        return f"{env_expr}.Undefined()"
-    if isinstance(value, str) and value in ('true', 'false'):
-        return f"Napi::Boolean::New({env_expr}, {value})"
-    if arg_type in ('int', 'float') or isinstance(value, (int, float)):
-        return f"Napi::Number::New({env_expr}, static_cast<double>({value}))"
-    if isinstance(value, str) and arg_type in BUILTIN_TYPES:
-        if value == '[]':
-            return f"gode::godot_to_napi({env_expr}, godot::{arg_type}())"
-        if value in ('null', 'nullptr'):
-            return f"{env_expr}.Null()"
-        cpp_value = value
-        if value.startswith(f"{arg_type}("):
-            cpp_value = value.replace(f"{arg_type}(", f"godot::{arg_type}(", 1).replace("inf", "INFINITY")
-        elif arg_type == 'RID' and value == 'RID()':
-            cpp_value = 'godot::RID()'
-        elif arg_type in ('String', 'StringName', 'NodePath') and value.startswith('"'):
-            cpp_value = f"godot::{arg_type}({value})"
-        return f"gode::godot_to_napi({env_expr}, {cpp_value})"
-    if isinstance(value, str) and value.startswith('"'):
-        return f"Napi::String::New({env_expr}, {value})"
-    return f"{env_expr}.Undefined()"
 
 
 # Map of classes and their direct fields (vs properties accessed via methods)
@@ -155,59 +132,6 @@ FIELD_MAPPING = {
 }
 
 class BuiltinClassGenerator(CodeGenerator):
-    def get_cpp_type(self, type_name, meta, refcounted_classes, is_arg=False):
-        if type_name == 'void': return 'void'
-        
-        # Primitives
-        if type_name == 'int':
-            if 'int64' in meta: return 'int64_t'
-            if 'uint64' in meta: return 'uint64_t'
-            if 'int32' in meta: return 'int32_t'
-            if 'uint32' in meta: return 'uint32_t'
-            if 'int16' in meta: return 'int16_t'
-            if 'uint16' in meta: return 'uint16_t'
-            if 'int8' in meta: return 'int8_t'
-            if 'uint8' in meta: return 'uint8_t'
-            return 'int64_t'
-        
-        if type_name == 'float':
-            return 'godot::real_t'
-            
-        if type_name == 'bool': return 'bool'
-        
-        # Enums
-        if type_name.startswith('enum::'):
-            return f"godot::{type_name.replace('enum::', '').replace('.', '::')}"
-        if type_name.startswith('bitfield::'):
-            return f"godot::BitField<godot::{type_name.replace('bitfield::', '').replace('.', '::')}>"
-            
-        # Builtins
-        builtins = [
-            'String', 'StringName', 'NodePath', 'Variant', 
-            'Vector2', 'Vector2i', 'Rect2', 'Rect2i', 'Vector3', 'Vector3i', 'Transform2D',
-            'Vector4', 'Vector4i', 'Plane', 'Quaternion', 'AABB', 'Basis', 'Transform3D', 
-            'Projection', 'Color', 'Callable', 'Signal', 'Dictionary', 'Array', 
-            'PackedByteArray', 'PackedInt32Array', 'PackedInt64Array', 'PackedFloat32Array', 
-            'PackedFloat64Array', 'PackedStringArray', 'PackedVector2Array', 'PackedVector3Array', 
-            'PackedColorArray', 'PackedVector4Array', 'RID'
-        ]
-        
-        if type_name in builtins:
-            if is_arg:
-                return f"const godot::{type_name} &"
-            else:
-                return f"godot::{type_name}"
-                
-        # Objects
-        if type_name in refcounted_classes:
-            if is_arg:
-                return f"const godot::Ref<godot::{type_name}> &"
-            else:
-                return f"godot::Ref<godot::{type_name}>"
-        
-        # Other Classes (pointers)
-        return f"godot::{type_name} *"
-
     def run(self):
         # Path to extension_api.json
         # We need to find where extension_api.json is relative to this script
@@ -249,20 +173,15 @@ class BuiltinClassGenerator(CodeGenerator):
                 
             print(f"Generating bindings for builtin class: {class_name}")
             
-            # Rename classes that collide with JS builtins
-            js_class_renames = {
-                'String': 'GDString',
-                'Dictionary': 'GDDictionary',
-                'Array': 'GDArray'
-            }
-            js_class_name = js_class_renames.get(class_name, class_name)
+            js_class_name = get_js_class_name(class_name)
             
             # Prepare context for the template
             methods = builtin_class.get('methods', [])
             vararg_methods = []
+            dependencies = set()
             
             # Filter ignored methods
-            ignored_methods = {'from_ok_hsl'}
+            ignored_methods = set()
             methods = [m for m in methods if m['name'] not in ignored_methods]
             
             # Detect overloads
@@ -300,6 +219,11 @@ class BuiltinClassGenerator(CodeGenerator):
                 method['name_cpp'] = sanitize_method_name(method['name'])
                 if class_name in ['AABB', 'Plane'] and method['name'] in ['intersects_segment', 'intersects_ray', 'intersect_3']:
                     method['name_cpp'] = method['name'] + '_bind'
+
+                compat = builtin_method_compat(class_name, method['name'])
+                if compat:
+                    method['custom_function'] = compat['function']
+                    dependencies.add(compat['include'])
                 
                 # Extract return type from return_value if present
                 if 'return_value' in method:
@@ -317,11 +241,11 @@ class BuiltinClassGenerator(CodeGenerator):
                     if 'return_value' in method and 'meta' in method['return_value']:
                         ret_meta = method['return_value']['meta']
                     
-                    ret_cpp = self.get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
+                    ret_cpp = get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
                     
                     args_cpp = []
                     for arg in method.get('arguments', []):
-                        args_cpp.append(self.get_cpp_type(arg['type'], arg.get('meta', ''), refcounted_classes, True))
+                        args_cpp.append(get_cpp_type(arg['type'], arg.get('meta', ''), refcounted_classes, True))
                     
                     const_qualifier = " const" if method.get('is_const', False) else ""
                     
@@ -337,7 +261,7 @@ class BuiltinClassGenerator(CodeGenerator):
                         if 'return_value' in method and 'meta' in method['return_value']:
                             ret_meta = method['return_value']['meta']
                         
-                        method['return_type_cpp'] = self.get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
+                        method['return_type_cpp'] = get_cpp_type(ret_type, ret_meta, refcounted_classes, False)
                     else:
                         method['has_return_value'] = False
                     vararg_methods.append(method)
@@ -354,14 +278,13 @@ class BuiltinClassGenerator(CodeGenerator):
             if 'members' in builtin_class:
                 for member in builtin_class['members']:
                     member_name = member['name']
-
-                    # Skip problematic members in Color class
-                    if class_name == 'Color' and member_name in ['ok_hsl_h', 'ok_hsl_s', 'ok_hsl_l']:
-                        continue
                     
                     # Determine if it's a direct field or property access
                     is_field = False
                     mapped_name = member_name
+                    compat = builtin_member_compat(class_name, member_name)
+                    if compat:
+                        dependencies.add(compat['include'])
                     
                     if class_name in DIRECT_FIELDS:
                         if member_name in DIRECT_FIELDS[class_name]:
@@ -387,10 +310,12 @@ class BuiltinClassGenerator(CodeGenerator):
                         'get_expr': get_expr,
                         'set_expr': set_expr,
                         'type': member['type'],
-                        'type_cpp': self.get_cpp_type(member['type'], '', refcounted_classes, False),
+                        'type_cpp': get_cpp_type(member['type'], '', refcounted_classes, False),
                         'getter': f"get_{member_name}",
                         'setter': f"set_{member_name}",
-                        'is_field': is_field
+                        'is_field': is_field,
+                        'custom_getter': compat['getter'] if compat else None,
+                        'custom_setter': compat['setter'] if compat else None,
                     }
                     members.append(member_data)
 
@@ -403,7 +328,7 @@ class BuiltinClassGenerator(CodeGenerator):
                          args.append({
                              'name': arg['name'],
                              'type': arg['type'],
-                             'type_cpp': self.get_cpp_type(arg['type'], '', refcounted_classes, True),
+                             'type_cpp': get_cpp_type(arg['type'], '', refcounted_classes, True),
                              'match_expr': napi_match_expr(arg['type'], len(args)),
                          })
                     constructors.append({
@@ -414,11 +339,10 @@ class BuiltinClassGenerator(CodeGenerator):
             # Process operators
             operators = []
             operator_groups = {}
-            dependencies = set()
             for constructor in constructors:
                 for arg in constructor['arguments']:
                     arg_type = arg['type']
-                    if arg_type in BUILTIN_TYPES and arg_type != class_name:
+                    if arg_type in GENERATED_BUILTIN_TYPES and arg_type != class_name:
                         dependencies.add(f"builtin/{to_snake_case(arg_type)}_binding.gen.h")
                     if arg_type == 'Basis' and class_name != 'Quaternion':
                         dependencies.add("builtin/quaternion_binding.gen.h")
@@ -484,11 +408,11 @@ class BuiltinClassGenerator(CodeGenerator):
                         args.append({
                             'name': 'right',
                             'type': right_type,
-                            'type_cpp': self.get_cpp_type(right_type, '', refcounted_classes, True),
+                            'type_cpp': get_cpp_type(right_type, '', refcounted_classes, True),
                             'match_expr': napi_match_expr(right_type, 0),
                         })
                         
-                        if right_type in BUILTIN_TYPES and right_type != class_name:
+                        if right_type in GENERATED_BUILTIN_TYPES and right_type != class_name:
                              dependencies.add(f"builtin/{to_snake_case(right_type)}_binding.gen.h")
                         elif right_type == 'Object':
                              dependencies.add(f"classes/object_binding.gen.h")
@@ -509,7 +433,7 @@ class BuiltinClassGenerator(CodeGenerator):
                         'name': op_name, # JS method name (e.g. 'add')
                         'cpp_op': cpp_op, # C++ symbol (e.g. '+')
                         'return_type': return_type,
-                        'return_type_cpp': self.get_cpp_type(return_type, '', refcounted_classes, False),
+                        'return_type_cpp': get_cpp_type(return_type, '', refcounted_classes, False),
                         'arguments': args,
                         'is_unary': is_unary,
                         'variant_op': variant_op,
@@ -531,7 +455,9 @@ class BuiltinClassGenerator(CodeGenerator):
             for name, overloads in operator_groups.items():
                 grouped_operators.append({
                     'name': name,
-                    'overloads': overloads
+                    'overloads': overloads,
+                    'has_unary': any(overload['is_unary'] for overload in overloads),
+                    'has_binary': any(not overload['is_unary'] for overload in overloads),
                 })
 
             constants = []

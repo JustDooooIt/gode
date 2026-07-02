@@ -1,4 +1,5 @@
 #include "register_classes.gen.h"
+#include "utils/value_convert.h"
 #include <node.h>
 #include <node_api.h>
 #include <godot_cpp/classes/engine.hpp>
@@ -23,21 +24,10 @@ void register_classes(Napi::Env env, Napi::Object exports) {
     {% endif %}
     {
         auto getter_{{ singleton.name }} = [](const Napi::CallbackInfo &info) -> Napi::Value {
-            static Napi::ObjectReference ref;
-            if (ref.IsEmpty()) {
-                godot::{{ singleton.type }}* instance = godot::{{ singleton.type }}::get_singleton();
-                if (!instance) return info.Env().Null();
-                Napi::Object obj = {{ singleton.binding_type }}Binding::create_singleton(info.Env(), instance);
-                ref = Napi::Persistent(obj);
-                ref.SuppressDestruct();
-            }
-            return ref.Value();
+            godot::{{ singleton.type }}* instance = godot::{{ singleton.type }}::get_singleton();
+            if (!instance) return info.Env().Null();
+            return gode::wrap_godot_object(info.Env(), instance, "{{ singleton.binding_type }}");
         };
-        if (!env.Global().Has("{{ singleton.name }}")) {
-            env.Global().DefineProperty(Napi::PropertyDescriptor::Accessor(
-                env, env.Global(), "{{ singleton.name }}", getter_{{ singleton.name }}, napi_enumerable, nullptr
-            ));
-        }
         if (!exports.Has("{{ singleton.name }}")) {
             exports.DefineProperty(Napi::PropertyDescriptor::Accessor(
                 env, exports, "{{ singleton.name }}", getter_{{ singleton.name }}, napi_enumerable, nullptr
@@ -47,6 +37,14 @@ void register_classes(Napi::Env env, Napi::Object exports) {
     {% if singleton.name == "EditorInterface" %}
     }
     {% endif %}
+    {% endfor %}
+}
+
+void reset_class_references() {
+    {% for item in classes %}
+    if (!{{ item.class_name }}Binding::constructor.IsEmpty()) {
+        {{ item.class_name }}Binding::constructor.Reset();
+    }
     {% endfor %}
 }
 

@@ -46,9 +46,6 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
     func.Get("prototype").As<Napi::Object>().Set("{{ constant.name }}", gode::godot_to_napi(env, {{ constant.cpp_value }}));
     {% endfor %}
 
-    Napi::Object global = env.Global();
-	global.Set("{{ js_class_name }}", func);
-
     exports.Set("{{ js_class_name }}", func);
     return exports;
 }
@@ -58,17 +55,25 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
     if (info.Length() == 0) {
         return;
     }
+    std::vector<Napi::Value> args = gode::to_args_array(info);
 
     {% for constructor in constructors %}
     if (info.Length() == {{ constructor.arguments|length }}{% for arg in constructor.arguments %} && ({{ arg.match_expr }}){% endfor %}) {
+        {% if constructor.arguments %}
+        gode::ConvertedArgTuple<{% for arg in constructor.arguments %}{{ arg.type_cpp }}{% if not loop.last %}, {% endif %}{% endfor %}> converted_args;
+        if (!gode::convert_args<0, {% for arg in constructor.arguments %}{{ arg.type_cpp }}{% if not loop.last %}, {% endif %}{% endfor %}>(env, args, converted_args)) {
+            return;
+        }
+        {% endif %}
         instance = godot::{{ class_name }}(
         {% for arg in constructor.arguments %}
-            gode::napi_to_godot<{{ arg.type_cpp }}>(info[{{ loop.index0 }}]){% if not loop.last %}, {% endif %}
+            (*std::get<{{ loop.index0 }}>(converted_args)){% if not loop.last %}, {% endif %}
         {% endfor %}
         );
         return;
     }
     {% endfor %}
+    Napi::TypeError::New(env, "No matching constructor overload for {{ js_class_name }}").ThrowAsJavaScriptException();
 }
 
 void {{ class_name }}Binding::bind_owner_property(godot::Object *owner, const godot::StringName &property) {
@@ -125,6 +130,9 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
         {% endfor %}
     };
     {% endif %}
+    {% if method.custom_function %}
+    return call_builtin_method(&{{ method.custom_function }}, info{% if method.has_default_args %}, default_args{% endif %});
+    {% else %}
     {% if method.is_static %}
         {% if method.is_vararg %}
             {% if method.return_type %}
@@ -194,12 +202,15 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
             {% endif %}
         {% endif %}
     {% endif %}
+    {% endif %}
 }
 {% endfor %}
 
 {% for member in members %}
 Napi::Value {{ class_name }}Binding::{{ member.getter }}(const Napi::CallbackInfo& info) {
-    {% if member.is_field %}
+    {% if member.custom_getter %}
+    Napi::Value result = gode::godot_to_napi(info.Env(), {{ member.custom_getter }}(instance));
+    {% elif member.is_field %}
     Napi::Value result = gode::godot_to_napi(info.Env(), {{ member.get_expr }});
     {% else %}
     Napi::Value result = gode::call_builtin_method(&godot::{{ class_name }}::{{ member.getter }}, &instance, info);
@@ -209,8 +220,18 @@ Napi::Value {{ class_name }}Binding::{{ member.getter }}(const Napi::CallbackInf
 }
 
 void {{ class_name }}Binding::{{ member.setter }}(const Napi::CallbackInfo& info, const Napi::Value& value) {
-    {% if member.is_field %}
-    {{ member.set_expr | replace('{value}', 'gode::napi_to_godot<' ~ member.type_cpp ~ '>(value)') }};
+    {% if member.custom_setter %}
+    auto converted_value = gode::napi_to_godot<{{ member.type_cpp }}>(value);
+    if (info.Env().IsExceptionPending()) {
+        return;
+    }
+    {{ member.custom_setter }}(instance, converted_value);
+    {% elif member.is_field %}
+    auto converted_value = gode::napi_to_godot<{{ member.type_cpp }}>(value);
+    if (info.Env().IsExceptionPending()) {
+        return;
+    }
+    {{ member.set_expr | replace('{value}', 'converted_value') }};
     {% else %}
     gode::call_builtin_method(&godot::{{ class_name }}::{{ member.setter }}, &instance, info, value);
     {% endif %}
@@ -224,6 +245,23 @@ Napi::Value {{ class_name }}Binding::operator_{{ op_group.name }}(const Napi::Ca
     Napi::Object js_this = info.This().As<Napi::Object>();
     {{ class_name }}Binding* binding = {{ class_name }}Binding::Unwrap(js_this);
     godot::{{ class_name }}& instance = binding->instance;
+
+    {% if op_group.has_unary and not op_group.has_binary %}
+    if (info.Length() != 0) {
+        gode::throw_arg_count_error(info.Env(), info.Length(), 0, 0);
+        return info.Env().Undefined();
+    }
+    {% elif op_group.has_binary and not op_group.has_unary %}
+    if (info.Length() != 1) {
+        gode::throw_arg_count_error(info.Env(), info.Length(), 1, 1);
+        return info.Env().Undefined();
+    }
+    {% else %}
+    if (info.Length() > 1) {
+        gode::throw_arg_count_error(info.Env(), info.Length(), 0, 1);
+        return info.Env().Undefined();
+    }
+    {% endif %}
 
     if (info.Length() < 1) {
         {% for overload in op_group.overloads %}
@@ -255,6 +293,9 @@ Napi::Value {{ class_name }}Binding::operator_{{ op_group.name }}(const Napi::Ca
         if (match) {
              {% for arg in overload.arguments %}
              {{ arg.type_cpp }} {{ arg.name }} = gode::napi_to_godot<{{ arg.type_cpp }}>(info[0]);
+             if (info.Env().IsExceptionPending()) {
+                 return info.Env().Undefined();
+             }
              {% endfor %}
              
              godot::Variant res;

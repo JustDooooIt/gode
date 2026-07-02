@@ -17,11 +17,6 @@ Napi::Object GD::init(Napi::Env env, Napi::Object exports) {
 	// Create an instance of the class
 	Napi::Object gd_instance = func.New({});
 
-	// Register it as a global object named "GD"
-	Napi::Object global = env.Global();
-	global.Set("GD", gd_instance);
-	
-	// Also export it just in case
 	exports.Set("GD", gd_instance);
 	
 	return exports;
@@ -34,7 +29,7 @@ GD::GD(const Napi::CallbackInfo &info) :
 
 {% for func in utility_functions %}
 Napi::Value GD::{{ func.name }}(const Napi::CallbackInfo &info) {
-    {% if func.is_vararg %}
+    {% if func.uses_low_level %}
     return call_builtin_method(&gode::utility::{{ func.name }}_internal, info);
     {% else %}
     return call_builtin_method(&godot::UtilityFunctions::{{ func.cpp_name }}, info);

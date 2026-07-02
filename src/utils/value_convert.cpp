@@ -1,13 +1,16 @@
 #include "utils/value_convert.h"
 
 #include <climits>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
 #include "godot_cpp/variant/utility_functions.hpp"
+#include <godot_cpp/classes/class_db_singleton.hpp>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/core/object.hpp>
-#include <godot_cpp/classes/class_db_singleton.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 
 #include "builtin/aabb_binding.gen.h"
@@ -44,7 +47,7 @@
 #include "builtin/vector3i_binding.gen.h"
 #include "builtin/vector4_binding.gen.h"
 #include "builtin/vector4i_binding.gen.h"
-#include "support/javascript/javascript_callable.h"
+#include "support/javascript_callable.h"
 #include "utils/node_runtime.h"
 
 // Helper macros for creating N-API objects from Godot variants
@@ -61,11 +64,72 @@ using namespace godot;
 namespace gode {
 
 static std::unordered_map<std::string, ClassInfo> class_registry;
-static std::vector<ClassInfo> class_list;
+static std::vector<std::string> class_order;
 static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
 
 constexpr const char *GODOT_OBJECT_ID_SYMBOL = "__gode.godot_object_id__";
 constexpr const char *GODOT_OBJECT_PTR_SYMBOL = "__gode.godot_object_ptr__";
+constexpr double JS_MAX_SAFE_INTEGER = 9007199254740991.0;
+
+static bool is_safe_js_integer(double number) {
+	return std::isfinite(number) && std::trunc(number) == number && std::fabs(number) <= JS_MAX_SAFE_INTEGER;
+}
+
+static void throw_integer_type_error(Napi::Env env) {
+	Napi::TypeError::New(env, "Expected a finite safe integer number or bigint").ThrowAsJavaScriptException();
+}
+
+static void throw_integer_range_error(Napi::Env env) {
+	Napi::RangeError::New(env, "Integer value is outside the Godot 64-bit integer range").ThrowAsJavaScriptException();
+}
+
+int64_t napi_to_godot_int64(Napi::Value value) {
+	if (value.IsBigInt()) {
+		bool lossless = false;
+		const int64_t integer = value.As<Napi::BigInt>().Int64Value(&lossless);
+		if (!lossless) {
+			throw_integer_range_error(value.Env());
+			return 0;
+		}
+		return integer;
+	}
+
+	if (!value.IsNumber()) {
+		throw_integer_type_error(value.Env());
+		return 0;
+	}
+
+	const double number = value.ToNumber().DoubleValue();
+	if (!is_safe_js_integer(number)) {
+		throw_integer_type_error(value.Env());
+		return 0;
+	}
+	return static_cast<int64_t>(number);
+}
+
+uint64_t napi_to_godot_uint64(Napi::Value value) {
+	if (value.IsBigInt()) {
+		bool lossless = false;
+		const uint64_t integer = value.As<Napi::BigInt>().Uint64Value(&lossless);
+		if (!lossless) {
+			throw_integer_range_error(value.Env());
+			return 0;
+		}
+		return integer;
+	}
+
+	if (!value.IsNumber()) {
+		throw_integer_type_error(value.Env());
+		return 0;
+	}
+
+	const double number = value.ToNumber().DoubleValue();
+	if (!is_safe_js_integer(number) || number < 0.0) {
+		throw_integer_type_error(value.Env());
+		return 0;
+	}
+	return static_cast<uint64_t>(number);
+}
 
 static godot::Dictionary object_to_dictionary(const Napi::Object &obj) {
 	godot::Dictionary dict;
@@ -75,25 +139,245 @@ static godot::Dictionary object_to_dictionary(const Napi::Object &obj) {
 	for (uint32_t i = 0; i < property_count; i++) {
 		Napi::Value key = property_names.Get(i);
 		Napi::Value val = obj.Get(key);
-		dict[napi_to_godot(key)] = napi_to_godot(val);
+		godot::Variant godot_key = napi_to_godot(key);
+		if (obj.Env().IsExceptionPending()) {
+			return dict;
+		}
+		godot::Variant godot_value = napi_to_godot(val);
+		if (obj.Env().IsExceptionPending()) {
+			return dict;
+		}
+		dict[godot_key] = godot_value;
 	}
 
 	return dict;
 }
 
-static godot::Array js_array_to_godot_array(const Napi::Array &js_array) {
+godot::Array js_array_to_godot_array(const Napi::Array &js_array) {
 	godot::Array array;
 	const uint32_t length = js_array.Length();
 	for (uint32_t i = 0; i < length; i++) {
 		array.append(napi_to_godot(js_array.Get(i)));
+		if (js_array.Env().IsExceptionPending()) {
+			return array;
+		}
 	}
 	return array;
 }
 
-void register_class(const std::string &name, const std::string &godot_class_name, Napi::FunctionReference *ref, UnwrapFunc unwrapper, WrapFunc wrapper) {
-	ClassInfo info = { godot_class_name, ref, unwrapper, wrapper };
+void sync_godot_array_to_js_array(Napi::Env env, const Napi::Value &target, const godot::Array &array) {
+	if (!target.IsArray()) {
+		return;
+	}
+
+	const int64_t length = array.size();
+	if (length < 0 || length > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+		Napi::RangeError::New(env, "Godot out array is too large to synchronize to a JavaScript Array").ThrowAsJavaScriptException();
+		return;
+	}
+
+	Napi::Array js_array = target.As<Napi::Array>();
+	const uint32_t js_length = static_cast<uint32_t>(length);
+	js_array.Set("length", Napi::Number::New(env, js_length));
+	if (env.IsExceptionPending()) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < js_length; i++) {
+		js_array.Set(i, godot_to_napi(env, array[i]));
+		if (env.IsExceptionPending()) {
+			return;
+		}
+	}
+}
+
+void sync_godot_variant_out_argument(Napi::Env env, const Napi::Value &target, const godot::Variant &variant) {
+	if (!target.IsArray()) {
+		return;
+	}
+
+	switch (variant.get_type()) {
+		case godot::Variant::Type::ARRAY:
+			sync_godot_array_to_js_array(env, target, variant.operator godot::Array());
+			return;
+		case godot::Variant::Type::PACKED_BYTE_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedByteArray());
+			return;
+		case godot::Variant::Type::PACKED_INT32_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedInt32Array());
+			return;
+		case godot::Variant::Type::PACKED_INT64_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedInt64Array());
+			return;
+		case godot::Variant::Type::PACKED_FLOAT32_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedFloat32Array());
+			return;
+		case godot::Variant::Type::PACKED_FLOAT64_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedFloat64Array());
+			return;
+		case godot::Variant::Type::PACKED_STRING_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedStringArray());
+			return;
+		case godot::Variant::Type::PACKED_VECTOR2_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedVector2Array());
+			return;
+		case godot::Variant::Type::PACKED_VECTOR3_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedVector3Array());
+			return;
+		case godot::Variant::Type::PACKED_VECTOR4_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedVector4Array());
+			return;
+		case godot::Variant::Type::PACKED_COLOR_ARRAY:
+			sync_godot_packed_array_to_js_array(env, target, variant.operator godot::PackedColorArray());
+			return;
+		default:
+			return;
+	}
+}
+
+static bool is_js_map(const Napi::Object &obj) {
+	Napi::Value map_constructor = obj.Env().Global().Get("Map");
+	return map_constructor.IsFunction() && obj.InstanceOf(map_constructor.As<Napi::Function>());
+}
+
+static godot::Dictionary js_map_to_godot_dictionary(const Napi::Object &map) {
+	godot::Dictionary dict;
+	Napi::Value entries_value = map.Get("entries");
+	if (!entries_value.IsFunction()) {
+		return dict;
+	}
+
+	Napi::Value iterator_value = entries_value.As<Napi::Function>().Call(map, {});
+	if (!iterator_value.IsObject()) {
+		return dict;
+	}
+
+	Napi::Object iterator = iterator_value.As<Napi::Object>();
+	Napi::Value next_value = iterator.Get("next");
+	if (!next_value.IsFunction()) {
+		return dict;
+	}
+
+	Napi::Function next = next_value.As<Napi::Function>();
+	while (true) {
+		Napi::Value step_value = next.Call(iterator, {});
+		if (!step_value.IsObject()) {
+			break;
+		}
+
+		Napi::Object step = step_value.As<Napi::Object>();
+		if (step.Get("done").ToBoolean().Value()) {
+			break;
+		}
+
+		Napi::Value entry_value = step.Get("value");
+		if (!entry_value.IsArray()) {
+			continue;
+		}
+
+		Napi::Array entry = entry_value.As<Napi::Array>();
+		if (entry.Length() < 2) {
+			continue;
+		}
+
+		godot::Variant godot_key = napi_to_godot(entry.Get(static_cast<uint32_t>(0)));
+		if (map.Env().IsExceptionPending()) {
+			return dict;
+		}
+		godot::Variant godot_value = napi_to_godot(entry.Get(static_cast<uint32_t>(1)));
+		if (map.Env().IsExceptionPending()) {
+			return dict;
+		}
+		dict[godot_key] = godot_value;
+	}
+
+	return dict;
+}
+
+static bool dictionary_key_fits_js_object(const godot::Variant &key) {
+	const godot::Variant::Type type = key.get_type();
+	return type == godot::Variant::Type::STRING || type == godot::Variant::Type::STRING_NAME;
+}
+
+static Napi::Value dictionary_to_map(Napi::Env env, const godot::Dictionary &godot_dictionary, const godot::Array &keys) {
+	Napi::Value map_constructor_value = env.Global().Get("Map");
+	if (!map_constructor_value.IsFunction()) {
+		Napi::Object fallback = Napi::Object::New(env);
+		const int64_t key_count = keys.size();
+		for (int64_t i = 0; i < key_count; i++) {
+			const godot::Variant key = keys[i];
+			const godot::String key_string = key.operator godot::String();
+			fallback.Set(
+					Napi::String::New(env, key_string.utf8().get_data()),
+					godot_to_napi(env, godot_dictionary.get(key, Variant())));
+		}
+		return fallback;
+	}
+
+	Napi::Object map = map_constructor_value.As<Napi::Function>().New({});
+	Napi::Value set_value = map.Get("set");
+	if (!set_value.IsFunction()) {
+		return map;
+	}
+
+	Napi::Function set = set_value.As<Napi::Function>();
+	const int64_t key_count = keys.size();
+	for (int64_t i = 0; i < key_count; i++) {
+		const godot::Variant key = keys[i];
+		set.Call(map, {
+							  godot_to_napi(env, key),
+							  godot_to_napi(env, godot_dictionary.get(key, Variant())),
+					  });
+	}
+
+	return map;
+}
+
+static Napi::Value godot_dictionary_to_napi(Napi::Env env, const godot::Dictionary &godot_dictionary) {
+	const godot::Array keys = godot_dictionary.keys();
+	const int64_t key_count = keys.size();
+	bool object_safe = true;
+	for (int64_t i = 0; i < key_count; i++) {
+		if (!dictionary_key_fits_js_object(keys[i])) {
+			object_safe = false;
+			break;
+		}
+	}
+
+	if (!object_safe) {
+		return dictionary_to_map(env, godot_dictionary, keys);
+	}
+
+	Napi::Object js_object = Napi::Object::New(env);
+	for (int64_t i = 0; i < key_count; i++) {
+		const godot::Variant key = keys[i];
+		const godot::String key_string = key.operator godot::String();
+		js_object.Set(
+				Napi::String::New(env, key_string.utf8().get_data()),
+				godot_to_napi(env, godot_dictionary.get(key, Variant())));
+	}
+	return js_object;
+}
+
+void register_class(const std::string &name, const std::string &godot_class_name, Napi::FunctionReference *ref, UnwrapFunc unwrapper, WrapFunc wrapper, CreateFunc creator) {
+	const bool is_new_class = class_registry.find(name) == class_registry.end();
+	ClassInfo info = { godot_class_name, ref, unwrapper, wrapper, creator };
 	class_registry[name] = info;
-	class_list.push_back(info);
+	if (is_new_class) {
+		class_order.push_back(name);
+	}
+}
+
+static void release_object_reference(Napi::ObjectReference &ref) {
+	if (ref.IsEmpty()) {
+		return;
+	}
+
+	if (NodeRuntime::is_running()) {
+		ref.Reset();
+	} else {
+		ref.SuppressDestruct();
+	}
 }
 
 void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
@@ -105,6 +389,18 @@ void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_ID_SYMBOL), Napi::BigInt::New(env, id));
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_PTR_SYMBOL), Napi::External<godot::Object>::New(env, obj));
 	object_cache[id] = Napi::Persistent(js_obj);
+}
+
+void clear_godot_instance_cache() {
+	for (auto &entry : object_cache) {
+		release_object_reference(entry.second);
+	}
+	object_cache.clear();
+}
+
+void clear_registered_godot_classes() {
+	class_registry.clear();
+	class_order.clear();
 }
 
 godot::Object *unwrap_godot_object(const Napi::Object &obj) {
@@ -136,7 +432,12 @@ godot::Object *unwrap_godot_object(const Napi::Object &obj) {
 		}
 	}
 
-	for (const auto &info : class_list) {
+	for (const std::string &registered_name : class_order) {
+		auto registered = class_registry.find(registered_name);
+		if (registered == class_registry.end()) {
+			continue;
+		}
+		const ClassInfo &info = registered->second;
 		if (!info.constructor || info.constructor->IsEmpty()) {
 			continue;
 		}
@@ -147,18 +448,18 @@ godot::Object *unwrap_godot_object(const Napi::Object &obj) {
 	return nullptr;
 }
 
-#define BIND_OWNER_TO_BUILTIN(BindingClass)                   \
-	if (obj.InstanceOf(BindingClass::constructor.Value())) {  \
-		BindingClass *binding = BindingClass::Unwrap(obj);    \
-		binding->bind_owner_property(owner, property);        \
-		return;                                               \
+#define BIND_OWNER_TO_BUILTIN(BindingClass)                  \
+	if (obj.InstanceOf(BindingClass::constructor.Value())) { \
+		BindingClass *binding = BindingClass::Unwrap(obj);   \
+		binding->bind_owner_property(owner, property);       \
+		return;                                              \
 	}
 
-#define BIND_PARENT_TO_BUILTIN(BindingClass)                  \
-	if (obj.InstanceOf(BindingClass::constructor.Value())) {  \
-		BindingClass *binding = BindingClass::Unwrap(obj);    \
-		binding->bind_parent_property(parent, property);      \
-		return;                                               \
+#define BIND_PARENT_TO_BUILTIN(BindingClass)                 \
+	if (obj.InstanceOf(BindingClass::constructor.Value())) { \
+		BindingClass *binding = BindingClass::Unwrap(obj);   \
+		binding->bind_parent_property(parent, property);     \
+		return;                                              \
 	}
 
 void bind_builtin_owner_property(const Napi::Value &value, godot::Object *owner, const godot::StringName &property) {
@@ -228,7 +529,12 @@ static ClassInfo *find_class_info_for_object(godot::Object *obj) {
 	godot::ClassDBSingleton *class_db = godot::ClassDBSingleton::get_singleton();
 	ClassInfo *best = nullptr;
 	int best_distance = INT32_MAX;
-	for (ClassInfo &info : class_list) {
+	for (const std::string &registered_name : class_order) {
+		auto registered = class_registry.find(registered_name);
+		if (registered == class_registry.end()) {
+			continue;
+		}
+		ClassInfo &info = registered->second;
 		if (info.godot_class_name.empty()) {
 			continue;
 		}
@@ -249,6 +555,62 @@ static ClassInfo *find_class_info_for_object(godot::Object *obj) {
 		}
 	}
 	return best;
+}
+
+Napi::Value wrap_godot_object(Napi::Env env, godot::Object *obj, const std::string &registered_class_name) {
+	if (!obj) {
+		return env.Null();
+	}
+
+	uint64_t id = obj->get_instance_id();
+	auto cached_it = object_cache.find(id);
+	if (cached_it != object_cache.end()) {
+		if (godot::ObjectDB::get_instance(id) && !cached_it->second.IsEmpty()) {
+			if (cached_it->second.Env() == env) {
+				Napi::Object cached = cached_it->second.Value();
+				if (!cached.IsEmpty()) {
+					return cached;
+				}
+			}
+			release_object_reference(cached_it->second);
+		}
+		object_cache.erase(cached_it);
+	}
+
+	ClassInfo *class_info = nullptr;
+	if (!registered_class_name.empty()) {
+		auto registered = class_registry.find(registered_class_name);
+		if (registered != class_registry.end()) {
+			class_info = &registered->second;
+		}
+	}
+	if (!class_info) {
+		class_info = find_class_info_for_object(obj);
+	}
+
+	if (!class_info || !class_info->constructor || class_info->constructor->IsEmpty()) {
+		return env.Null();
+	}
+
+	if (class_info->constructor->Env() != env) {
+		return env.Null();
+	}
+
+	Napi::Object js_obj;
+	if (class_info->creator) {
+		js_obj = class_info->creator(env, obj);
+	} else {
+		js_obj = class_info->constructor->Value().New({});
+	}
+	if (js_obj.IsEmpty()) {
+		return env.Null();
+	}
+	if (!class_info->creator && class_info->wrapper) {
+		class_info->wrapper(js_obj, obj);
+	}
+
+	register_godot_instance(obj, js_obj);
+	return js_obj;
 }
 
 Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
@@ -275,18 +637,7 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 		}
 		case godot::Variant::Type::DICTIONARY: {
 			const godot::Dictionary godot_dictionary = variant.operator godot::Dictionary();
-			Napi::Object js_object = Napi::Object::New(env);
-
-			const godot::Array keys = godot_dictionary.keys();
-			const int64_t key_count = keys.size();
-			for (int64_t i = 0; i < key_count; i++) {
-				const godot::Variant key = keys[i];
-				const godot::String key_string = key.operator godot::String();
-				js_object.Set(
-					Napi::String::New(env, key_string.utf8().get_data()),
-					godot_to_napi(env, godot_dictionary.get(key, Variant())));
-			}
-			return js_object;
+			return godot_dictionary_to_napi(env, godot_dictionary);
 		}
 
 			BIND_BUILTIN_TO_NAPI(VECTOR2, Vector2Binding)
@@ -341,37 +692,7 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 
 		case godot::Variant::Type::OBJECT: {
 			godot::Object *obj = variant.operator godot::Object *();
-			if (!obj) {
-				return env.Null();
-			}
-
-			uint64_t id = obj->get_instance_id();
-			auto it = object_cache.find(id);
-			if (it != object_cache.end()) {
-				if (godot::ObjectDB::get_instance(id) && !it->second.IsEmpty()) {
-					Napi::Object cached = it->second.Value();
-					if (!cached.IsEmpty()) {
-						return cached;
-					}
-				}
-				object_cache.erase(it);
-			}
-
-			ClassInfo *class_info = find_class_info_for_object(obj);
-			if (class_info) {
-				ClassInfo &info = *class_info;
-				if (info.constructor && !info.constructor->IsEmpty()) {
-					Napi::Object js_obj = info.constructor->Value().New({});
-					if (info.wrapper) {
-						info.wrapper(js_obj, obj);
-					}
-
-					register_godot_instance(obj, js_obj);
-
-					return js_obj;
-				}
-			}
-			return env.Null();
+			return wrap_godot_object(env, obj);
 		}
 		default:
 			return env.Undefined();
@@ -386,7 +707,13 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 
 godot::Variant napi_to_godot(Napi::Value value) {
 	if (value.IsNumber()) {
-		return value.ToNumber().DoubleValue();
+		const double number = value.ToNumber().DoubleValue();
+		if (is_safe_js_integer(number)) {
+			return static_cast<int64_t>(number);
+		}
+		return number;
+	} else if (value.IsBigInt()) {
+		return napi_to_godot_int64(value);
 	} else if (value.IsBoolean()) {
 		return value.ToBoolean().Value();
 	} else if (value.IsString()) {
@@ -399,6 +726,9 @@ godot::Variant napi_to_godot(Napi::Value value) {
 	} else if (value.IsObject()) {
 		Napi::Object obj = value.As<Napi::Object>();
 
+		BIND_NAPI_TO_BUILTIN(StringBinding)
+		BIND_NAPI_TO_BUILTIN(StringNameBinding)
+		BIND_NAPI_TO_BUILTIN(NodePathBinding)
 		BIND_NAPI_TO_BUILTIN(Vector2Binding)
 		BIND_NAPI_TO_BUILTIN(Vector2iBinding)
 		BIND_NAPI_TO_BUILTIN(Rect2Binding)
@@ -436,7 +766,11 @@ godot::Variant napi_to_godot(Napi::Value value) {
 		if (obj_inst) {
 			return godot::Variant(obj_inst);
 		}
-		
+
+		if (is_js_map(obj)) {
+			return js_map_to_godot_dictionary(obj);
+		}
+
 		return object_to_dictionary(obj);
 	} else {
 		return godot::Variant();

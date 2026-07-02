@@ -24,6 +24,14 @@ Napi::Object {{ class_name }}Binding::create_singleton(Napi::Env env, godot::{{ 
     return constructor.New({external});
 }
 
+Napi::Object {{ class_name }}Binding_create(Napi::Env env, godot::Object *instance) {
+    godot::{{ godot_class_name }} *typed_instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(instance);
+    if (!typed_instance) {
+        return Napi::Object();
+    }
+    return {{ class_name }}Binding::create_singleton(env, typed_instance);
+}
+
 godot::Object *{{ class_name }}Binding_unwrap(const Napi::Object &obj) {
     return {{ class_name }}Binding::Unwrap(obj)->instance;
 }
@@ -166,30 +174,59 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     exports.Set("{{ js_class_name }}", func);
     {% endif %}
     
-    register_class("{{ js_class_name }}", "{{ godot_class_name }}", &constructor, &{{ class_name }}Binding_unwrap, &{{ class_name }}Binding_wrap);
+    register_class("{{ js_class_name }}", "{{ godot_class_name }}", &constructor, &{{ class_name }}Binding_unwrap, &{{ class_name }}Binding_wrap, &{{ class_name }}Binding_create);
     
     return exports;
 }
 
-{{ class_name }}Binding::{{ class_name }}Binding(const Napi::CallbackInfo& info) : Napi::ObjectWrap<{{ class_name }}Binding>(info) {
-    if (info.Length() == 1 && info[0].IsExternal()) {
-        instance = info[0].As<Napi::External<godot::{{ godot_class_name }}>>().Data();
-        owns_instance = false;
-    } else if (info.Length() == 1 && info[0].IsObject()) {
-        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(gode::unwrap_godot_object(info[0].As<Napi::Object>()));
-        owns_instance = false;
-    } else {
-        {% if is_instantiable %}
-        instance = memnew(godot::{{ godot_class_name }});
-        owns_instance = true;
-        {% else %}
-        instance = nullptr;
-        owns_instance = false;
-        {% endif %}
-    }
+	{{ class_name }}Binding::{{ class_name }}Binding(const Napi::CallbackInfo& info) : Napi::ObjectWrap<{{ class_name }}Binding>(info) {
+	    if (info.Length() == 1 && info[0].IsExternal()) {
+	        instance = info[0].As<Napi::External<godot::{{ godot_class_name }}>>().Data();
+	        owns_instance = false;
+	    } else if (info.Length() == 1 && info[0].IsObject()) {
+	        godot::Object *source_object = gode::unwrap_godot_object(info[0].As<Napi::Object>());
+	        if (!source_object) {
+	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} constructor expected a Godot object wrapper").ThrowAsJavaScriptException();
+	            instance = nullptr;
+	            owns_instance = false;
+	            return;
+	        }
+	        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(source_object);
+	        if (!instance) {
+	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} constructor expected an object compatible with {{ js_class_name }}").ThrowAsJavaScriptException();
+	            owns_instance = false;
+	            return;
+	        }
+	        owns_instance = false;
+	    } else {
+	        if (info.Length() != 0) {
+	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} constructor expected no arguments").ThrowAsJavaScriptException();
+	            instance = nullptr;
+	            owns_instance = false;
+	            return;
+	        }
+	        {% if is_instantiable %}
+	        instance = memnew(godot::{{ godot_class_name }});
+	        owns_instance = true;
+	        {% else %}
+	        Napi::TypeError::New(info.Env(), "{{ js_class_name }} cannot be constructed directly").ThrowAsJavaScriptException();
+	        instance = nullptr;
+	        owns_instance = false;
+	        return;
+	        {% endif %}
+	    }
     
     if (instance) {
         internal_object_id = instance->get_instance_id();
+        {% if is_ref_counted %}
+        if (!owns_instance) {
+            godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(instance);
+            if (ref) {
+                ref->reference();
+                referenced_instance = true;
+            }
+        }
+        {% endif %}
         register_godot_instance(instance, info.This().As<Napi::Object>());
     }
 }
@@ -201,10 +238,9 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
         if (obj) {
             godot::RefCounted* ref = godot::Object::cast_to<godot::RefCounted>(obj);
             if (ref && (owns_instance || referenced_instance)) {
-                ref->unreference();
-                if (ref->get_reference_count() == 0) {
-            		godot::memdelete(ref);
-            	}
+                if (ref->unreference()) {
+                    godot::memdelete(ref);
+                }
             }
         }
     }
@@ -259,7 +295,18 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
         {% endfor %}
     };
     {% endif %}
-    {% if method.live_property_name and not method.is_static and not method.is_vararg %}
+    {% if method.has_out_arguments %}
+    return call_class_method_bind(
+            {{ "nullptr" if method.is_static else "instance" }},
+            "{{ godot_class_name }}",
+            "{{ method.name }}",
+            {{ method.hash }},
+            {{ "true" if method.return_type else "false" }},
+            info,
+            {{ method.argument_count }},
+            {{ "default_args" if method.has_default_args else "std::vector<Napi::Value>{}" }},
+            { {{ method.out_argument_indices_cpp }} });
+    {% elif method.live_property_name and not method.is_static and not method.is_vararg %}
         {% if method.cast_signature %}
     Napi::Value result = call_builtin_method({{ method.cast_signature }}(&godot::{{ godot_class_name }}::{{ method.name_cpp }}), instance, info{% if method.has_default_args %}, default_args{% endif %});
         {% else %}
