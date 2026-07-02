@@ -2,13 +2,20 @@ param(
 	[ValidateSet("x64", "arm64")]
 	[string] $Architecture = "x64",
 
+	[ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
+	[string] $Configuration = "Debug",
+
 	[string] $Generator = "",
 
 	[int] $Jobs = 0,
 
 	[switch] $Fresh,
 
-	[switch] $SkipCodegen
+	[switch] $Clean,
+
+	[switch] $SkipCodegen,
+
+	[string] $Python = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -172,6 +179,21 @@ function Get-DefaultJobCount {
 }
 
 function Get-PythonExecutable {
+	param([string] $RequestedPython)
+
+	if ($RequestedPython) {
+		if (Test-Path $RequestedPython) {
+			return (Resolve-Path $RequestedPython).Path
+		}
+
+		$requestedCommand = Get-Command $RequestedPython -ErrorAction SilentlyContinue
+		if ($requestedCommand) {
+			return $requestedCommand.Source
+		}
+
+		throw "Python executable was not found: $RequestedPython"
+	}
+
 	if ($env:PYTHON3_EXECUTABLE) {
 		if (Test-Path $env:PYTHON3_EXECUTABLE) {
 			return (Resolve-Path $env:PYTHON3_EXECUTABLE).Path
@@ -193,6 +215,16 @@ function Get-PythonExecutable {
 	}
 
 	throw "Python was not found. Install Python or set PYTHON3_EXECUTABLE."
+}
+
+function Get-GodotCppTarget {
+	param([string] $BuildConfiguration)
+
+	if ($BuildConfiguration -eq "Debug") {
+		return "template_debug"
+	}
+
+	return "template_release"
 }
 
 function Assert-PathInside {
@@ -241,15 +273,17 @@ function Get-CachedGenerator {
 }
 
 $repoRoot = Get-RepoRoot
+$buildRoot = Join-Path $repoRoot "build"
 $visualStudioInstance = Get-VisualStudioCppTools
 $selectedGenerator = Select-CMakeGenerator -RequestedGenerator $Generator -VisualStudioInstance $visualStudioInstance
-$buildDir = Join-Path $repoRoot "build/windows/$Architecture"
+$configDir = $Configuration.ToLowerInvariant()
+$buildDir = Join-Path $buildRoot "windows/$Architecture/$configDir"
 $binDir = Join-Path $repoRoot "example/addons/gode/binary/windows/$Architecture"
 $expectedLibrary = Join-Path $binDir "libgode.dll"
 $libnodeLibrary = Join-Path $repoRoot "libnode/windows/$Architecture/libnode.lib"
 $jobCount = if ($Jobs -gt 0) { $Jobs } else { Get-DefaultJobCount }
-$configuration = "Release"
-$pythonExecutable = Get-PythonExecutable
+$godotCppTarget = Get-GodotCppTarget -BuildConfiguration $Configuration
+$pythonExecutable = Get-PythonExecutable -RequestedPython $Python
 
 if (-not (Test-Path $libnodeLibrary)) {
 	throw "Missing libnode import library: $libnodeLibrary"
@@ -270,6 +304,13 @@ if ($selectedGenerator.NinjaPath) {
 }
 $env:PATH = (($pathPrefix | Select-Object -Unique) -join ";") + ";$env:PATH"
 
+New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
+if ($Clean) {
+	Assert-PathInside -ChildPath $buildDir -ParentPath $buildRoot
+	if (Test-Path $buildDir) {
+		Remove-Item -LiteralPath $buildDir -Recurse -Force
+	}
+}
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 if ($Fresh) {
 	Clear-CMakeConfigureState -BuildDirectory $buildDir
@@ -285,26 +326,27 @@ $configureArgs = @(
 	"-S", $repoRoot,
 	"-B", $buildDir,
 	"-G", $selectedGenerator.Name,
-	"-DCMAKE_BUILD_TYPE=$configuration",
+	"-DCMAKE_BUILD_TYPE=$Configuration",
 	"-DCMAKE_C_COMPILER=$(Join-Path $visualStudioToolPath 'cl.exe')",
 	"-DCMAKE_CXX_COMPILER=$(Join-Path $visualStudioToolPath 'cl.exe')",
 	"-DPython3_EXECUTABLE=$pythonExecutable",
 	"-DGODE_RUN_CODEGEN=$((-not $SkipCodegen).ToString().ToUpperInvariant())",
-	"-DGODE_TARGET_ARCH=$Architecture"
+	"-DGODE_TARGET_ARCH=$Architecture",
+	"-DGODOTCPP_TARGET=$godotCppTarget"
 )
 
-Write-Host "Configuring gode ($configuration, windows/$Architecture) with $($selectedGenerator.Name)..."
+Write-Host "Configuring gode ($Configuration, windows/$Architecture) with $($selectedGenerator.Name)..."
 & cmake @configureArgs
 if ($LASTEXITCODE -ne 0) {
 	throw "CMake configure failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "Building gode ($configuration, windows/$Architecture)..."
+Write-Host "Building gode ($Configuration, windows/$Architecture)..."
 if ($selectedGenerator.SupportsParallel) {
-	& cmake --build $buildDir --target gode --parallel $jobCount
+	& cmake --build $buildDir --target gode --config $Configuration --parallel $jobCount
 } else {
 	Write-Host "NMake does not support parallel builds; install/use Ninja for multi-threaded builds."
-	& cmake --build $buildDir --target gode
+	& cmake --build $buildDir --target gode --config $Configuration
 }
 if ($LASTEXITCODE -ne 0) {
 	throw "CMake build failed with exit code $LASTEXITCODE."
