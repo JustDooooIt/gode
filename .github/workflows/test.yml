@@ -1,0 +1,119 @@
+name: Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      libnode_url:
+        description: Download URL for libnode.zip
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      libnode_url:
+        description: Download URL for libnode.zip
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+  GODOT_VERSION: "4.7-stable"
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: python -m pip install -r generator/requirements.txt
+
+      - name: Run generator
+        run: python generator/generator.py
+
+      - name: Verify generator idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python generator/generator.py > "$RUNNER_TEMP/generator-second-run.log"
+          if grep -q "^Generated:" "$RUNNER_TEMP/generator-second-run.log"; then
+            cat "$RUNNER_TEMP/generator-second-run.log"
+            echo "Generator produced changes on a second run." >&2
+            exit 1
+          fi
+
+      - name: Run repository integrity tests
+        run: python -m unittest discover -s test
+
+  smoke:
+    name: Linux Godot smoke
+    runs-on: ubuntu-22.04
+    needs: static
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: python -m pip install -r generator/requirements.txt
+
+      - name: Mask libnode URL
+        shell: bash
+        env:
+          LIBNODE_URL: ${{ inputs.libnode_url || secrets.LIBNODE_URL }}
+        run: |
+          if [ -n "$LIBNODE_URL" ]; then
+            echo "::add-mask::$LIBNODE_URL"
+          fi
+
+      - name: Prepare libnode
+        shell: bash
+        env:
+          LIBNODE_URL: ${{ inputs.libnode_url || secrets.LIBNODE_URL }}
+        run: >
+          ./.github/shell/prepare-libnode.sh
+          --url "$LIBNODE_URL"
+
+      - name: Build Linux
+        shell: bash
+        run: ./shell/build-linux.sh --arch x64 --fresh
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot"
+          curl -fsSL \
+            -o "$RUNNER_TEMP/godot.zip" \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          GODOT_BIN="$(find "$RUNNER_TEMP/godot" -maxdepth 1 -type f -name 'Godot*' | head -n 1)"
+          if [ -z "$GODOT_BIN" ]; then
+            echo "Godot executable was not found in downloaded archive" >&2
+            exit 1
+          fi
+          chmod +x "$GODOT_BIN"
+          echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
+
+      - name: Run Godot smoke tests
+        run: python test/run_godot_smoke.py --godot "$GODOT_BIN" --strict-exit-leaks
