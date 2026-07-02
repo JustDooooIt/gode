@@ -51,6 +51,30 @@ function Get-DefaultJobCount {
 	return [Math]::Max(1, $cpuCount - 1)
 }
 
+function Get-PythonExecutable {
+	if ($env:PYTHON3_EXECUTABLE) {
+		if (Test-Path $env:PYTHON3_EXECUTABLE) {
+			return (Resolve-Path $env:PYTHON3_EXECUTABLE).Path
+		}
+
+		$envPython = Get-Command $env:PYTHON3_EXECUTABLE -ErrorAction SilentlyContinue
+		if ($envPython) {
+			return $envPython.Source
+		}
+
+		throw "PYTHON3_EXECUTABLE was set but was not found: $env:PYTHON3_EXECUTABLE"
+	}
+
+	foreach ($commandName in @("python", "python3")) {
+		$python = Get-Command $commandName -ErrorAction SilentlyContinue
+		if ($python) {
+			return $python.Source
+		}
+	}
+
+	throw "Python was not found. Install Python or set PYTHON3_EXECUTABLE."
+}
+
 function Get-AndroidAbi {
 	param([string] $Arch)
 
@@ -258,6 +282,7 @@ $toolchainFile = Join-Path $ndkDir "build/cmake/android.toolchain.cmake"
 $selectedGenerator = Select-CMakeGenerator -RequestedGenerator $Generator
 $jobCount = if ($Jobs -gt 0) { $Jobs } else { Get-DefaultJobCount }
 $configuration = "Release"
+$pythonExecutable = Get-PythonExecutable
 
 if (-not (Test-Path $libnodeLibrary)) {
 	throw "Missing libnode static library: $libnodeLibrary"
@@ -290,6 +315,7 @@ $configureArgs = @(
 	"-DANDROID_ABI=$androidAbi",
 	"-DANDROID_PLATFORM=android-$ApiLevel",
 	"-DANDROID_STL=c++_shared",
+	"-DPython3_EXECUTABLE=$pythonExecutable",
 	"-DGODE_RUN_CODEGEN=$((-not $SkipCodegen).ToString().ToUpperInvariant())",
 	"-DGODE_TARGET_ARCH=$Architecture"
 )

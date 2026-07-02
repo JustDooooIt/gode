@@ -88,7 +88,7 @@ Gode resolves npm packages from the project root `node_modules` (`res://node_mod
 
 ### 4. Use TypeScript
 
-TypeScript scripts are compiled to matching JavaScript files under `res://dist`. It is recommended to create `tsconfig.json` in the project root:
+Godot scenes and autoloads can attach `.ts` / `.tsx` scripts. Gode loads the matching compiled JavaScript files from `res://dist`. It is recommended to create `tsconfig.json` in the project root:
 
 ```json
 {
@@ -212,11 +212,7 @@ export default class Demo extends Node3D {
 }
 ```
 
-For compatibility with older scripts, singletons are also available on `globalThis`:
-
-```js
-const scene = globalThis.ResourceLoader.load("res://level/level.tscn");
-```
+Gode 2.0 only exposes Godot APIs through the `godot` module. Import the classes and singletons you use explicitly. The generated `globals.d.ts` file only declares script decorator helpers and export metadata types; it no longer declares Godot APIs such as `Node`, `ResourceLoader`, and `Engine` as globally available names.
 
 ### JavaScript Autoloads
 
@@ -359,8 +355,6 @@ export default class SceneSpawner extends Node {
 }
 ```
 
-You can also read `ResourceLoader` from `globalThis` when maintaining older scripts.
-
 Keep a reference to resources that you plan to reuse, just as you would in GDScript:
 
 ```js
@@ -382,7 +376,7 @@ When a JavaScript exception crosses into Godot, Gode reports it as a Godot scrip
 
 ### TypeScript Workflow
 
-Gode only loads JavaScript at runtime, so treat TypeScript as a source language and attach the compiled JavaScript files in Godot scenes:
+Gode executes JavaScript at runtime, so TypeScript is a source language: attach `.ts` / `.tsx` scripts in Godot scenes, and compile them to matching JavaScript files under `res://dist` before running:
 
 ```text
 res://scripts/player.ts        -> res://dist/scripts/player.js
@@ -431,9 +425,10 @@ Gode resolves npm packages from the project root `node_modules`. Export presets 
 
 Dependency trimming, bundling, native npm addon handling, and production-only installs should stay in your project build pipeline. This keeps Gode compatible with npm, pnpm, yarn, bun, and custom build setups.
 
-## Showcase
+## Featured Demos
 
-- [Gode TPS Demo](https://github.com/godothub/gode-tps-demo): JavaScript version of the official 3D demo
+- [tps-demo-js](https://github.com/godothub/tps-demo-js): JavaScript version of the official tps-demo sample
+- [tps-demo-ts](https://github.com/godothub/tps-demo-ts): TypeScript version of the official tps-demo sample
 
 ## FAQ
 

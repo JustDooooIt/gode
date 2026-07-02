@@ -88,7 +88,7 @@ Gode 会从项目根目录的 `node_modules`（即 `res://node_modules`）中解
 
 ### 4. 使用 TypeScript
 
-TypeScript 脚本会编译为 `res://dist` 下对应的 JavaScript 文件。建议在项目根目录创建 `tsconfig.json`：
+Godot 场景和 autoload 可以挂载 `.ts` / `.tsx` 脚本。Gode 会从 `res://dist` 加载对应的编译后 JavaScript 文件。建议在项目根目录创建 `tsconfig.json`：
 
 ```json
 {
@@ -212,11 +212,7 @@ export default class Demo extends Node3D {
 }
 ```
 
-为了兼容旧脚本，也可以从 `globalThis` 读取 singleton：
-
-```js
-const scene = globalThis.ResourceLoader.load("res://level/level.tscn");
-```
+Gode 2.0 只通过 `godot` 模块暴露 Godot API。需要什么类和 singleton，就显式 import 什么。生成的 `globals.d.ts` 只声明脚本装饰器辅助函数和导出元数据类型，不会再把 `Node`、`ResourceLoader`、`Engine` 这类 Godot API 自动声明成全局可用的名称。
 
 ### JavaScript Autoload
 
@@ -359,8 +355,6 @@ export default class SceneSpawner extends Node {
 }
 ```
 
-维护旧脚本时，也可以从 `globalThis` 读取 `ResourceLoader`。
-
 如果资源后续还会复用，像 GDScript 中一样保留引用即可：
 
 ```js
@@ -382,7 +376,7 @@ export default class LevelLoader extends Node {
 
 ### TypeScript 工作流
 
-Gode 运行时只加载 JavaScript，所以可以把 TypeScript 当作源码语言，在 Godot 场景中挂载编译后的 JavaScript 文件：
+Gode 运行时执行 JavaScript，所以 TypeScript 是源码语言：Godot 场景中挂载 `.ts` / `.tsx` 脚本，运行前把它们编译到 `res://dist` 下对应的 JavaScript 文件：
 
 ```text
 res://scripts/player.ts        -> res://dist/scripts/player.js
@@ -431,9 +425,10 @@ Gode 会从项目根目录的 `node_modules` 中解析 npm 包。导出预设应
 
 依赖裁剪、打包、npm 原生插件处理、生产依赖安装等应放在项目自己的构建流程里。这样 Gode 可以兼容 npm、pnpm、yarn、bun 和自定义构建方式。
 
-## 案例展示
+## 精选案例
 
-- [Gode TPS Demo](https://github.com/godothub/gode-tps-demo)：官方3D案例的JavaScript版本
+- [tps-demo-js](https://github.com/godothub/tps-demo-js)：官方 tps-demo 示例的 JavaScript 版本
+- [tps-demo-ts](https://github.com/godothub/tps-demo-ts)：官方 tps-demo 示例的 TypeScript 版本
 
 ## 常见问题
 

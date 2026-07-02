@@ -6,6 +6,8 @@ nodejs/
 build/
 build-*/
 dist/
+FORME/
+gallery/
 *.import
 
 # Python cache files

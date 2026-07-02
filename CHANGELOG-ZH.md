@@ -1,9 +1,19 @@
-## 1.7.0
+## 2.0.0
 
 - 为 TypeScript 增加静态 `signals` 和 `rpc_config` 元数据解析，使其与 JavaScript 脚本元数据工作流一致。
 - 扩展 TypeScript 元数据中的 Variant 类型解析，支持 `Object`、`Vector4` 和 boxed primitive 名称等写法。
 - 更新生成的 TypeScript 声明，将 Godot 类枚举值暴露到构造器上，对齐 `Window.MODE_FULLSCREEN`、`Viewport.MSAA_DISABLED` 等运行时用法。
 - 修正生成的 TypeScript 声明中 `Object.set()` 和 `Object.get()` 的方法名，使其与 JavaScript 运行时 API 一致。
+- 通过 GDExtension utility-function 表暴露 godot-cpp 省略的 `GD.is_instance_valid()`，用于验证 JavaScript 包装的 Godot 对象和 singleton。
+- 将生成的 class vararg MethodBind 调用错误转换成 JavaScript 异常，避免 `emit_signal()`、`Object.call()` 等低层调用在参数错误时静默返回默认值。
+- 为 NodeRuntime 的公开 V8 入口统一补充 locker/isolate scope，降低 TypeScript 编译、默认值求值和事件循环在嵌入式运行时中的 isolate 进入风险。
+- 加固扩展关闭流程：用模块级 `Ref` 持有资源 loader/saver 单例，在 NodeRuntime 关闭前清理脚本 loader 缓存，并对 runtime 关闭后的 N-API 引用析构启用 suppress 保护。
+- 在 NodeRuntime 关闭期间重置生成的静态 N-API constructor 引用，并去重 Godot class registry，使同进程 runtime 重新初始化更安全。
+- 修正生成的 RefCounted wrapper 析构逻辑，使用 `unreference()` 返回值决定是否删除对象，避免递减引用计数后再查询同一对象。
+- 允许生成绑定的 `Array`、`TypedArray<T>` 和 `Packed*Array` 输入直接接收普通 JavaScript 数组，覆盖 packed array 构造器、方法、运算符和 TypeScript 声明。
+- 修复 `String`、`StringName` 和 `NodePath` wrapper 对象的模板转换，避免生成绑定把 wrapper 参数错误转换为空值。
+- 移除旧式 `globalThis` Godot API 注入和默认 `godot` 命名空间导出。Gode 2.0 要求从 `godot` 模块显式具名导入所需 API。
+- 从 `globals.d.ts` 移除 ambient Godot API 声明；该文件现在只声明脚本装饰器辅助函数和导出元数据类型。
 
 ## 1.6.3
 

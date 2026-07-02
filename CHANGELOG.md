@@ -1,9 +1,19 @@
-## 1.7.0
+## 2.0.0
 
 - Added TypeScript metadata parsing for static `signals` and `rpc_config`, matching the JavaScript script metadata workflow.
 - Expanded TypeScript Variant type parsing for metadata fields such as `Object`, `Vector4`, and boxed primitive names.
 - Updated generated TypeScript declarations to expose Godot class enum values on constructors, matching runtime usage such as `Window.MODE_FULLSCREEN` and `Viewport.MSAA_DISABLED`.
 - Corrected generated TypeScript declarations for `Object.set()` and `Object.get()` so they match the JavaScript runtime API names.
+- Exposed godot-cpp's omitted `GD.is_instance_valid()` through the GDExtension utility-function table for validating JavaScript-wrapped Godot objects and singletons.
+- Converted generated class vararg MethodBind call errors into JavaScript exceptions, preventing calls such as `emit_signal()` and `Object.call()` from silently returning defaults on bad arguments.
+- Added locker/isolate-scope guards to NodeRuntime's public V8 entry points, reducing isolate-entry risk during TypeScript compilation, default-value evaluation, and event-loop pumping.
+- Hardened extension shutdown by owning resource loader/saver singletons with module-level `Ref`s, clearing script loader caches before NodeRuntime teardown, and suppressing late N-API reference destruction after runtime shutdown.
+- Reset generated static N-API constructor references during NodeRuntime shutdown and deduplicate the Godot class registry, making same-process runtime reinitialization safer.
+- Fixed generated RefCounted wrapper destruction to delete from `unreference()`'s return value instead of querying reference count after decrementing.
+- Accepted plain JavaScript arrays for generated `Array`, `TypedArray<T>`, and `Packed*Array` inputs, including packed-array constructors, methods, operators, and TypeScript declarations.
+- Fixed template conversion of `String`, `StringName`, and `NodePath` wrapper objects so generated bindings no longer collapse wrapper arguments to empty values.
+- Removed legacy global `globalThis` Godot API injection and the default `godot` namespace export. Gode 2.0 requires explicit named imports from the `godot` module.
+- Removed ambient Godot API declarations from `globals.d.ts`; it now only declares script decorator helpers and export metadata types.
 
 ## 1.6.3
 

@@ -6,7 +6,9 @@ param(
 
 	[int] $Jobs = 0,
 
-	[switch] $Fresh
+	[switch] $Fresh,
+
+	[switch] $SkipCodegen
 )
 
 $ErrorActionPreference = "Stop"
@@ -169,6 +171,30 @@ function Get-DefaultJobCount {
 	return [Math]::Max(1, $cpuCount - 1)
 }
 
+function Get-PythonExecutable {
+	if ($env:PYTHON3_EXECUTABLE) {
+		if (Test-Path $env:PYTHON3_EXECUTABLE) {
+			return (Resolve-Path $env:PYTHON3_EXECUTABLE).Path
+		}
+
+		$envPython = Get-Command $env:PYTHON3_EXECUTABLE -ErrorAction SilentlyContinue
+		if ($envPython) {
+			return $envPython.Source
+		}
+
+		throw "PYTHON3_EXECUTABLE was set but was not found: $env:PYTHON3_EXECUTABLE"
+	}
+
+	foreach ($commandName in @("python", "python3")) {
+		$python = Get-Command $commandName -ErrorAction SilentlyContinue
+		if ($python) {
+			return $python.Source
+		}
+	}
+
+	throw "Python was not found. Install Python or set PYTHON3_EXECUTABLE."
+}
+
 function Assert-PathInside {
 	param(
 		[string] $ChildPath,
@@ -223,6 +249,7 @@ $expectedLibrary = Join-Path $binDir "libgode.dll"
 $libnodeLibrary = Join-Path $repoRoot "libnode/windows/$Architecture/libnode.lib"
 $jobCount = if ($Jobs -gt 0) { $Jobs } else { Get-DefaultJobCount }
 $configuration = "Release"
+$pythonExecutable = Get-PythonExecutable
 
 if (-not (Test-Path $libnodeLibrary)) {
 	throw "Missing libnode import library: $libnodeLibrary"
@@ -261,6 +288,8 @@ $configureArgs = @(
 	"-DCMAKE_BUILD_TYPE=$configuration",
 	"-DCMAKE_C_COMPILER=$(Join-Path $visualStudioToolPath 'cl.exe')",
 	"-DCMAKE_CXX_COMPILER=$(Join-Path $visualStudioToolPath 'cl.exe')",
+	"-DPython3_EXECUTABLE=$pythonExecutable",
+	"-DGODE_RUN_CODEGEN=$((-not $SkipCodegen).ToString().ToUpperInvariant())",
 	"-DGODE_TARGET_ARCH=$Architecture"
 )
 
