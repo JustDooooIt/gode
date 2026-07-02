@@ -5,6 +5,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STR
 
 project(gode VERSION 2.0.0 LANGUAGES C CXX)
 
+if(NOT CMAKE_CONFIGURATION_TYPES)
+	if(NOT CMAKE_BUILD_TYPE)
+		set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build configuration." FORCE)
+	endif()
+	set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release;RelWithDebInfo;MinSizeRel")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -18,7 +25,20 @@ set(TREE_SITTER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter" CACHE PATH "
 set(TREE_SITTER_JAVASCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter-javascript" CACHE PATH "Path to tree-sitter-javascript")
 set(TREE_SITTER_TYPESCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter-typescript" CACHE PATH "Path to tree-sitter-typescript")
 set(GODE_TARGET_ARCH "" CACHE STRING "Target architecture override: x64, arm64")
-set(GODOTCPP_TARGET "template_release" CACHE STRING "Which godot-cpp target to generate" FORCE)
+
+if(NOT DEFINED GODOTCPP_TARGET OR GODOTCPP_TARGET STREQUAL "")
+	set(_GODE_EFFECTIVE_CONFIG "${CMAKE_BUILD_TYPE}")
+	if(NOT _GODE_EFFECTIVE_CONFIG)
+		set(_GODE_EFFECTIVE_CONFIG "Debug")
+	endif()
+	if(_GODE_EFFECTIVE_CONFIG STREQUAL "Debug")
+		set(_GODE_DEFAULT_GODOTCPP_TARGET "template_debug")
+	else()
+		set(_GODE_DEFAULT_GODOTCPP_TARGET "template_release")
+	endif()
+	set(GODOTCPP_TARGET "${_GODE_DEFAULT_GODOTCPP_TARGET}" CACHE STRING "Which godot-cpp target to generate")
+endif()
+set_property(CACHE GODOTCPP_TARGET PROPERTY STRINGS "template_debug;template_release;editor")
 
 if(NOT EXISTS "${GODOT_CPP_DIR}/CMakeLists.txt")
 	message(FATAL_ERROR "godot-cpp was not found at ${GODOT_CPP_DIR}. Initialize submodules with: git submodule update --init --recursive")
@@ -137,6 +157,14 @@ set_target_properties(gode PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${GODE_OUTPUT_DIR}"
 	ARCHIVE_OUTPUT_DIRECTORY "${GODE_OUTPUT_DIR}"
 )
+foreach(_GODE_CONFIG Debug Release RelWithDebInfo MinSizeRel)
+	string(TOUPPER "${_GODE_CONFIG}" _GODE_CONFIG_UPPER)
+	set_target_properties(gode PROPERTIES
+		"RUNTIME_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
+		"LIBRARY_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
+		"ARCHIVE_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
+	)
+endforeach()
 target_include_directories(gode PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/include/generated"
