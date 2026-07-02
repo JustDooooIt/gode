@@ -2,6 +2,9 @@ param(
 	[ValidateSet("arm64")]
 	[string] $Architecture = "arm64",
 
+	[ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
+	[string] $Configuration = "Debug",
+
 	[int] $ApiLevel = 28,
 
 	[string] $Generator = "",
@@ -10,7 +13,13 @@ param(
 
 	[switch] $Fresh,
 
+	[switch] $Clean,
+
 	[switch] $SkipCodegen,
+
+	[string] $Python = "",
+
+	[string] $NdkDir = "",
 
 	[switch] $SkipNdkDownload
 )
@@ -52,6 +61,21 @@ function Get-DefaultJobCount {
 }
 
 function Get-PythonExecutable {
+	param([string] $RequestedPython)
+
+	if ($RequestedPython) {
+		if (Test-Path $RequestedPython) {
+			return (Resolve-Path $RequestedPython).Path
+		}
+
+		$requestedCommand = Get-Command $RequestedPython -ErrorAction SilentlyContinue
+		if ($requestedCommand) {
+			return $requestedCommand.Source
+		}
+
+		throw "Python executable was not found: $RequestedPython"
+	}
+
 	if ($env:PYTHON3_EXECUTABLE) {
 		if (Test-Path $env:PYTHON3_EXECUTABLE) {
 			return (Resolve-Path $env:PYTHON3_EXECUTABLE).Path
@@ -73,6 +97,16 @@ function Get-PythonExecutable {
 	}
 
 	throw "Python was not found. Install Python or set PYTHON3_EXECUTABLE."
+}
+
+function Get-GodotCppTarget {
+	param([string] $BuildConfiguration)
+
+	if ($BuildConfiguration -eq "Debug") {
+		return "template_debug"
+	}
+
+	return "template_release"
 }
 
 function Get-AndroidAbi {
@@ -150,8 +184,23 @@ function Invoke-NdkDownload {
 function Ensure-AndroidNdk {
 	param(
 		[string] $BuildRoot,
+		[string] $RequestedNdkDir,
 		[bool] $SkipDownload
 	)
+
+	if ($RequestedNdkDir) {
+		if (-not (Test-Path $RequestedNdkDir)) {
+			throw "Android NDK directory was not found: $RequestedNdkDir"
+		}
+
+		$resolvedNdkDir = (Resolve-Path $RequestedNdkDir).Path
+		if (-not (Test-AndroidNdk -NdkDirectory $resolvedNdkDir)) {
+			$actualRevision = Get-NdkRevision -NdkDirectory $resolvedNdkDir
+			throw "Android NDK revision '$actualRevision' does not match expected revision '$ndkRevision': $resolvedNdkDir"
+		}
+
+		return $resolvedNdkDir
+	}
 
 	$ndkDirectory = Join-Path $BuildRoot "android-ndk-$ndkVersion"
 	$archivePath = Join-Path $BuildRoot $ndkArchiveName
@@ -272,17 +321,18 @@ function Get-CachedGenerator {
 
 $repoRoot = Get-RepoRoot
 $buildRoot = Join-Path $repoRoot "build"
-$ndkDir = Ensure-AndroidNdk -BuildRoot $buildRoot -SkipDownload:$SkipNdkDownload
+$ndkDir = Ensure-AndroidNdk -BuildRoot $buildRoot -RequestedNdkDir $NdkDir -SkipDownload:$SkipNdkDownload
 $androidAbi = Get-AndroidAbi -Arch $Architecture
-$buildDir = Join-Path $repoRoot "build/android/$Architecture"
+$configDir = $Configuration.ToLowerInvariant()
+$buildDir = Join-Path $buildRoot "android/$Architecture/$configDir"
 $binDir = Join-Path $repoRoot "example/addons/gode/binary/android/$Architecture"
 $expectedLibrary = Join-Path $binDir "libgode.so"
 $libnodeLibrary = Join-Path $repoRoot "libnode/android/$Architecture/libnode.a"
 $toolchainFile = Join-Path $ndkDir "build/cmake/android.toolchain.cmake"
 $selectedGenerator = Select-CMakeGenerator -RequestedGenerator $Generator
 $jobCount = if ($Jobs -gt 0) { $Jobs } else { Get-DefaultJobCount }
-$configuration = "Release"
-$pythonExecutable = Get-PythonExecutable
+$godotCppTarget = Get-GodotCppTarget -BuildConfiguration $Configuration
+$pythonExecutable = Get-PythonExecutable -RequestedPython $Python
 
 if (-not (Test-Path $libnodeLibrary)) {
 	throw "Missing libnode static library: $libnodeLibrary"
@@ -294,6 +344,12 @@ if ($selectedGenerator.NinjaPath) {
 }
 
 New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
+if ($Clean) {
+	Assert-PathInside -ChildPath $buildDir -ParentPath $buildRoot
+	if (Test-Path $buildDir) {
+		Remove-Item -LiteralPath $buildDir -Recurse -Force
+	}
+}
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 if ($Fresh) {
 	Clear-CMakeConfigureState -BuildDirectory $buildDir -BuildRoot $buildRoot
@@ -309,7 +365,7 @@ $configureArgs = @(
 	"-S", $repoRoot,
 	"-B", $buildDir,
 	"-G", $selectedGenerator.Name,
-	"-DCMAKE_BUILD_TYPE=$configuration",
+	"-DCMAKE_BUILD_TYPE=$Configuration",
 	"-DCMAKE_SUPPRESS_REGENERATION=ON",
 	"-DCMAKE_TOOLCHAIN_FILE=$toolchainFile",
 	"-DANDROID_ABI=$androidAbi",
@@ -317,14 +373,15 @@ $configureArgs = @(
 	"-DANDROID_STL=c++_shared",
 	"-DPython3_EXECUTABLE=$pythonExecutable",
 	"-DGODE_RUN_CODEGEN=$((-not $SkipCodegen).ToString().ToUpperInvariant())",
-	"-DGODE_TARGET_ARCH=$Architecture"
+	"-DGODE_TARGET_ARCH=$Architecture",
+	"-DGODOTCPP_TARGET=$godotCppTarget"
 )
 
 if ($selectedGenerator.NinjaPath -and $selectedGenerator.Name -like "Ninja*") {
 	$configureArgs += "-DCMAKE_MAKE_PROGRAM=$($selectedGenerator.NinjaPath)"
 }
 
-Write-Host "Configuring gode ($configuration, android/$Architecture, API $ApiLevel) with $($selectedGenerator.Name)..."
+Write-Host "Configuring gode ($Configuration, android/$Architecture, API $ApiLevel) with $($selectedGenerator.Name)..."
 Write-Host "Using Android NDK:"
 Write-Host "  $ndkDir"
 & cmake @configureArgs
@@ -332,11 +389,11 @@ if ($LASTEXITCODE -ne 0) {
 	throw "CMake configure failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "Building gode ($configuration, android/$Architecture)..."
+Write-Host "Building gode ($Configuration, android/$Architecture)..."
 if ($selectedGenerator.SupportsParallel) {
-	& cmake --build $buildDir --target gode --parallel $jobCount
+	& cmake --build $buildDir --target gode --config $Configuration --parallel $jobCount
 } else {
-	& cmake --build $buildDir --target gode
+	& cmake --build $buildDir --target gode --config $Configuration
 }
 if ($LASTEXITCODE -ne 0) {
 	throw "CMake build failed with exit code $LASTEXITCODE."
