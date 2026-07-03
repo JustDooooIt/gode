@@ -133,12 +133,6 @@ FIELD_MAPPING = {
 
 class BuiltinClassGenerator(CodeGenerator):
     def run(self):
-        # Path to extension_api.json
-        # We need to find where extension_api.json is relative to this script
-        # Script is at d:\Godot\gode\generator\builtin\builtin_classes_generator.py
-        # Root is d:\Godot\gode
-        # Json is at d:\Godot\gode\godot-cpp\gdextension\extension_api.json
-        
         api_path = find_extension_api_json()
         
         try:
