@@ -53,11 +53,41 @@ TS_RESERVED = frozenset([
     'yield', 'debugger', 'with', 'enum',
 ])
 
+OPERATOR_METHOD_NAMES = {
+    '==': 'equal',
+    '!=': 'not_equal',
+    '<': 'less',
+    '<=': 'less_equal',
+    '>': 'greater',
+    '>=': 'greater_equal',
+    '+': 'add',
+    '-': 'subtract',
+    'unary-': 'negate',
+    'unary+': 'positive',
+    '*': 'multiply',
+    '/': 'divide',
+    '%': 'module',
+    '**': 'power',
+    '~': 'bit_not',
+    '&': 'bit_and',
+    '|': 'bit_or',
+    '^': 'bit_xor',
+    '<<': 'bit_shift_left',
+    '>>': 'bit_shift_right',
+}
+
 
 def sanitize_name(name: str) -> str:
     name = name.replace('-', '_')
     if name in TS_RESERVED:
         return name + '_gd'
+    return name
+
+
+def member_name(name: str) -> str:
+    name = name.replace('-', '_')
+    if name in TS_RESERVED:
+        return json.dumps(name)
     return name
 
 
@@ -301,13 +331,22 @@ class DtsGenerator(CodeGenerator):
         for method in cls_data.get('methods', []):
             if self._has_raw_pointer(method):
                 continue
-            name   = sanitize_name(method['name'])
+            name   = member_name(method['name'])
             ret    = self._type_to_ts(method.get('return_type', 'void'))
             params = self._format_params(method.get('arguments', []))
             static = 'static ' if method.get('is_static') else ''
             if method.get('is_vararg'):
                 params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
             lines.append(f'{ind2}{static}{name}({params}): {ret};')
+
+        for operator in cls_data.get('operators', []):
+            op_name = OPERATOR_METHOD_NAMES.get(operator['name'])
+            if not op_name:
+                continue
+            right_type = operator.get('right_type')
+            params = f'right: {self._type_to_ts(right_type, is_input=True)}' if right_type else ''
+            ret = self._type_to_ts(operator.get('return_type', 'void'))
+            lines.append(f'{ind2}{member_name(op_name)}({params}): {ret};')
 
         # Index signature
         idx_type = cls_data.get('indexing_return_type')
@@ -400,7 +439,7 @@ class DtsGenerator(CodeGenerator):
         for method in cls_data.get('methods', []):
             if self._has_raw_pointer(method):
                 continue
-            mname = sanitize_name(method['name'])
+            mname = member_name(method['name'])
             ret_v = method.get('return_value') or {}
             ret = self._type_to_ts(ret_v.get('type', 'void'))
             params = self._format_params(method.get('arguments', []))
@@ -443,7 +482,7 @@ class DtsGenerator(CodeGenerator):
         ind = self._ind(indent)
         lines = []
         for func in api.get('utility_functions', []):
-            name = sanitize_name(func['name'])
+            name = member_name(func['name'])
             ret = self._type_to_ts(func.get('return_type', 'void'))
             params = self._format_params(func.get('arguments', []))
             if func.get('is_vararg'):
