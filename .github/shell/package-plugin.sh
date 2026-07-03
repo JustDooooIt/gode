@@ -47,6 +47,15 @@ required_files=(
 	"plugin.cfg"
 	"gode.gd"
 	"binary/gode.gdextension"
+	"config/gode.json"
+	"config/tsconfig.json"
+	"icons/typescript.svg"
+	"icons/typescript.svg.import"
+	"runtime/event_loop.gd"
+	"runtime/export_plugin.gd"
+	"runtime/typescript_compiler.js"
+	"types/globals.d.ts"
+	"types/godot.d.ts"
 )
 required_binaries=(
 	"binary/windows/x64/libgode.dll"
