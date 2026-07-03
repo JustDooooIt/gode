@@ -142,14 +142,14 @@ assert("json contains formatted lines", json.includes("\\n  \\"report\\""));
 		code: trim(`
 const path = modules.path;
 const scriptPath = "res://scripts/capability_catalog.ts";
-const normalized = path.join("res://", "scripts", "..", "scripts", "tests", "demo.ts").replace(/\\\\/g, "/");
+const normalized = path.join("res://", "scripts", "..", "scripts", "demos", "player.ts").replace(/\\\\/g, "/");
 const parsed = path.parse(scriptPath);
 const relative = path.relative("res://scripts", "res://addons/gode/types/godot.d.ts").replace(/\\\\/g, "/");
 
 log("path analysis", { scriptPath, parsed, normalized, relative });
 assert("basename", path.basename(scriptPath) === "capability_catalog.ts");
 assert("extension", parsed.ext === ".ts");
-assert("normalized project path", normalized.endsWith("scripts/tests/demo.ts"));
+assert("normalized project path", normalized.endsWith("scripts/demos/player.ts"));
 assert("relative path crosses addon folder", relative.includes("addons/gode/types"));
 `),
 	},
@@ -468,7 +468,7 @@ const nodeAssert = modules.assert;
 const actual = {
 	name: "gode",
 	capabilities: ["godot", "node", "typescript"],
-	metrics: { tests: 20, editable: true },
+	metrics: { demos: 20, editable: true },
 };
 const expected = JSON.parse(JSON.stringify(actual));
 
@@ -479,7 +479,7 @@ nodeAssert.ok(actual.metrics.editable);
 log("asserted object", actual);
 assert("deepStrictEqual passed", true);
 assert("match passed", true);
-assert("ok passed", actual.metrics.tests === 20);
+assert("ok passed", actual.metrics.demos === 20);
 `),
 	},
 	{
