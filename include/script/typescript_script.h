@@ -1,22 +1,27 @@
-#ifndef GODOT_GODE_JAVASCRIPT_H
-#define GODOT_GODE_JAVASCRIPT_H
-
-#include "javascript_instance.h"
+#ifndef GODE_TYPESCRIPT_SCRIPT_H
+#define GODE_TYPESCRIPT_SCRIPT_H
 
 #include <napi.h>
+#include <godot_cpp/core/object.hpp>
+#include <godot_cpp/classes/script.hpp>
 #include <godot_cpp/classes/script_extension.hpp>
 #include <godot_cpp/classes/script_language.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/string_name.hpp>
+#include <godot_cpp/variant/typed_array.hpp>
+#include <godot_cpp/variant/variant.hpp>
 
 namespace gode {
 
-class JavascriptInstance;
+class ScriptInstance;
 
-class Javascript : public godot::ScriptExtension {
-	GDCLASS(Javascript, godot::ScriptExtension)
+class TypeScriptScript : public godot::ScriptExtension {
+	GDCLASS(TypeScriptScript, godot::ScriptExtension)
 
-	friend JavascriptInstance;
+	friend ScriptInstance;
 
 protected:
 	mutable bool is_dirty = false;
@@ -27,24 +32,27 @@ protected:
 	mutable godot::StringName class_name;
 	mutable godot::StringName base_class_name;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> methods;
-	mutable godot::HashMap<godot::StringName, godot::MethodInfo> signals;
 	mutable godot::HashMap<godot::StringName, godot::Dictionary> rpc_configs;
+	mutable godot::HashMap<godot::StringName, godot::MethodInfo> signals;
 	mutable godot::HashMap<godot::StringName, godot::PropertyInfo> properties;
-	mutable godot::Vector<godot::PropertyInfo> property_list; // ordered, may include GROUP entries
+	mutable godot::Vector<godot::PropertyInfo> property_list;
 	mutable godot::HashMap<godot::StringName, godot::Variant> property_defaults;
 	mutable godot::HashMap<godot::StringName, godot::Variant> constants;
 	mutable godot::HashMap<godot::StringName, int> member_lines;
 
 	mutable Napi::FunctionReference default_class;
 
-	mutable godot::HashSet<JavascriptInstance *> instances;
-	mutable godot::HashSet<JavascriptInstance *> placeholder_instances;
+	mutable godot::HashSet<ScriptInstance *> instances;
+	mutable godot::HashSet<ScriptInstance *> placeholder_instances;
 	mutable godot::HashSet<godot::Object *> instance_objects;
 
+protected:
+	static void _bind_methods();
+
 public:
-	~Javascript();
-	virtual bool compile() const;
-	virtual Napi::Function get_default_class() const;
+	~TypeScriptScript();
+	bool compile() const;
+	Napi::Function get_default_class() const;
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }
 	const godot::HashMap<godot::StringName, godot::Variant> &get_property_defaults() const { return property_defaults; }
@@ -53,10 +61,6 @@ public:
 		return base_class_name;
 	}
 
-protected:
-	static void _bind_methods();
-
-public:
 	bool _editor_can_reload_from_file() override;
 	void _placeholder_erased(void *p_placeholder) override;
 	bool _can_instantiate() const override;
@@ -97,6 +101,7 @@ public:
 	bool _is_placeholder_fallback_enabled() const override;
 	godot::Variant _get_rpc_config() const override;
 };
-} //namespace gode
 
-#endif // GODE_JAVASCRIPT_H
+} // namespace gode
+
+#endif // GODE_TYPESCRIPT_SCRIPT_H

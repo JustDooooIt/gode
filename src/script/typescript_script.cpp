@@ -1,8 +1,8 @@
-#include "support/typescript.h"
-#include "support/typescript_language.h"
-#include "utils/node_runtime.h"
-#include "utils/typescript_compiler.h"
-#include "utils/value_convert.h"
+#include "script/typescript_script.h"
+#include "compiler/typescript_compiler.h"
+#include "runtime/node_runtime.h"
+#include "runtime/value_convert.h"
+#include "script/typescript_language.h"
 
 #include <tree_sitter/api.h>
 #include <v8-isolate.h>
@@ -224,7 +224,7 @@ static void collect_parent_properties(const StringName &parent_name, const std::
 				String ts_path = file_path.get_base_dir().path_join(String(import_path.c_str()) + ".ts");
 				Ref<Script> parent_script = ResourceLoader::get_singleton()->load(ts_path);
 				if (parent_script.is_valid()) {
-					Ref<Typescript> parent_ts = parent_script;
+					Ref<TypeScriptScript> parent_ts = parent_script;
 					if (parent_ts.is_valid() && parent_ts->_is_valid()) {
 						for (const KeyValue<StringName, PropertyInfo> &E : parent_ts->get_exported_properties()) {
 							if (!properties.has(E.key)) {
@@ -246,7 +246,7 @@ static void collect_parent_properties(const StringName &parent_name, const std::
 
 static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count, const std::string &source, HashMap<StringName, Vector<PropertyInfo>> &interfaces);
 
-// 递归解析 object 字面量，将 prefix::key 写入 property_defaults
+// Recursively parse object literals and store values as prefix::key entries in property_defaults.
 static void parse_object_defaults(TSNode obj_node, const std::string &source, const std::string &prefix, HashMap<StringName, Variant> &property_defaults) {
 	for (uint32_t i = 0; i < ts_node_child_count(obj_node); i++) {
 		TSNode pair = ts_node_child(obj_node, i);
@@ -286,10 +286,10 @@ static void parse_object_defaults(TSNode obj_node, const std::string &source, co
 static HashMap<StringName, Vector<PropertyInfo>> parse_interfaces(TSNode root_node, uint32_t child_count, const std::string &source, const String &file_path) {
 	HashMap<StringName, Vector<PropertyInfo>> interfaces;
 
-	// 解析当前文件的 interface
+	// Parse interfaces declared in the current file.
 	collect_interfaces_from_node(root_node, child_count, source, interfaces);
 
-	// 扫描 import 语句，从外部文件加载 interface
+	// Scan imports and load interfaces from external files.
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
 		if (strcmp(ts_node_type(child), "import_statement") != 0) {
@@ -393,7 +393,7 @@ static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count,
 					uint32_t te = ts_node_end_byte(inner);
 					std::string type_str = source.substr(ts, te - ts);
 					pi.type = parse_type_string(type_str);
-					// 若 type 未能解析为已知 Variant 类型，保存原始类型名供嵌套检测
+					// Preserve the raw type name so nested object detection can use it when the type is not a known Variant.
 					if (pi.type == Variant::NIL) {
 						pi.class_name = StringName(type_str.c_str());
 					}
@@ -407,7 +407,7 @@ static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count,
 	}
 }
 
-// 检查默认导出类是否带有 @Tool 装饰器（大小写均支持），运行时为空操作，由 tree-sitter 静态解析
+// Check whether the default export class has an @Tool decorator. Runtime decorators are no-ops, so this is parsed statically with tree-sitter.
 static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const std::string &source) {
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
@@ -415,7 +415,7 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 			continue;
 		}
 
-		// 确认是 export default ... class
+		// Confirm this is an export default class declaration.
 		bool is_default_export = false;
 		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 			if (strcmp(ts_node_type(ts_node_child(child, j)), "default") == 0) {
@@ -430,7 +430,7 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 			TSNode en = ts_node_child(child, j);
 			const char *en_type = ts_node_type(en);
-			// 装饰器在 export_statement 上
+			// The decorator is attached to the export_statement.
 			if (strcmp(en_type, "decorator") == 0) {
 				uint32_t ds = ts_node_start_byte(en);
 				uint32_t de = ts_node_end_byte(en);
@@ -439,7 +439,7 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 					return true;
 				}
 			}
-			// 装饰器在 class_declaration 内部
+			// The decorator is attached inside the class_declaration.
 			if (strcmp(en_type, "class_declaration") == 0) {
 				for (uint32_t k = 0; k < ts_node_child_count(en); k++) {
 					TSNode cn = ts_node_child(en, k);
@@ -539,12 +539,12 @@ static void expand_interface_fields(
 }
 
 static void parse_signal_params(TSNode func_type_node, const std::string &source, MethodInfo &mi) {
-	// func_type_node 即为 function_type 节点：(params) => void
+	// func_type_node is the function_type node: (params) => void.
 	if (strcmp(ts_node_type(func_type_node), "function_type") != 0) {
 		return;
 	}
 
-	// 找 formal_parameters 子节点
+	// Find the formal_parameters child.
 	TSNode params = { 0 };
 	for (uint32_t i = 0; i < ts_node_child_count(func_type_node); i++) {
 		TSNode c = ts_node_child(func_type_node, i);
@@ -577,7 +577,7 @@ static void parse_signal_params(TSNode func_type_node, const std::string &source
 		arg_pi.hint = PROPERTY_HINT_NONE;
 		arg_pi.type = Variant::NIL;
 
-		// 遍历子节点找 type_annotation（不依赖 field name）
+		// Find type_annotation by walking children instead of relying on field names.
 		for (uint32_t j = 0; j < ts_node_child_count(param); j++) {
 			TSNode pc = ts_node_child(param, j);
 			if (strcmp(ts_node_type(pc), "type_annotation") == 0) {
@@ -797,7 +797,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 				}
 			}
 
-			// 扫描装饰器，检测 @Export 并解析其参数
+			// Scan decorators, detect @Export, and parse its arguments.
 			bool has_export_decorator = false;
 			PropertyHint export_hint = PROPERTY_HINT_NONE;
 			String export_hint_string;
@@ -813,7 +813,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 					continue;
 				}
 				has_export_decorator = true;
-				// 解析 @Export(...) 的参数：找 call_expression / decorator_call_expression
+				// Parse @Export(...) arguments by locating call_expression or decorator_call_expression.
 				for (uint32_t di = 0; di < ts_node_named_child_count(child); di++) {
 					TSNode expr = ts_node_named_child(child, di);
 					TSNode args = ts_node_child_by_field_name(expr, "arguments", 9);
@@ -854,7 +854,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 							}
 						}
 					} else {
-						// @Export(hint) 或 @Export(hint, "hintString")
+						// @Export(hint) or @Export(hint, "hintString").
 						uint32_t vs_b = ts_node_start_byte(first_arg);
 						uint32_t ve_b = ts_node_end_byte(first_arg);
 						Variant v = NodeRuntime::eval_expression(source.substr(vs_b, ve_b - vs_b));
@@ -877,7 +877,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 				}
 			}
 
-			// Signal<T> 类型注解：检测 fieldName!: Signal<(...) => void> 形式
+			// Signal<T> annotation: fieldName!: Signal<(...) => void>.
 			TSNode type_anno = ts_node_child_by_field_name(member, "type", 4);
 			if (!ts_node_is_null(type_anno)) {
 				TSNode type_inner = ts_node_named_child(type_anno, 0);
@@ -895,7 +895,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 								StringName signal_name(source.substr(ns, ne - ns).c_str());
 								MethodInfo mi;
 								mi.name = signal_name;
-								// 从 Signal<T> 的类型参数中取出 function_type 解析参数列表
+								// Extract function_type from Signal<T> type arguments and parse its parameters.
 								TSNode type_args = ts_node_child_by_field_name(type_inner, "type_arguments", 14);
 								if (!ts_node_is_null(type_args)) {
 									for (uint32_t ti = 0; ti < ts_node_named_child_count(type_args); ti++) {
@@ -953,7 +953,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 				std::string prefix = String(field_name).utf8().get_data() + std::string("::");
 				HashSet<StringName> visited;
 				expand_interface_fields(iface_key, prefix, 0, visited, interfaces, properties, property_list);
-				// 解析字段初始化器中的默认值
+				// Parse default values from field initializers.
 				if (!ts_node_is_null(field_value_node) && strcmp(ts_node_type(field_value_node), "object") == 0) {
 					parse_object_defaults(field_value_node, source, prefix, property_defaults);
 				}
@@ -1067,7 +1067,7 @@ static bool parse_default_value(TSNode value_node, const std::string &source, Va
 }
 
 static void parse_exports_object(TSNode obj_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
-	// obj_node 是外层 object，每个 pair 的 key 是属性名，value 是描述对象 { type, default, ... }
+	// obj_node is the outer object. Each pair key is a property name and each value is a descriptor object: { type, default, ... }.
 	for (uint32_t j = 0; j < ts_node_child_count(obj_node); j++) {
 		TSNode pair = ts_node_child(obj_node, j);
 		if (strcmp(ts_node_type(pair), "pair") != 0) {
@@ -1179,7 +1179,7 @@ static void parse_exported_field_defaults(TSNode class_node, const std::string &
 	}
 }
 
-// static exports = {...} 在 TS 中是 class body 内的 public_field_definition（带 static 修饰）
+// static exports = {...} appears in the TypeScript class body as a public_field_definition with a static modifier.
 static void parse_static_exports(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
 	TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body)) {
@@ -1192,7 +1192,7 @@ static void parse_static_exports(TSNode class_node, const std::string &source, H
 			continue;
 		}
 
-		// 检查是否有 static 修饰
+		// Check for a static modifier.
 		bool is_static = false;
 		for (uint32_t j = 0; j < ts_node_child_count(member); j++) {
 			if (strcmp(ts_node_type(ts_node_child(member, j)), "static") == 0) {
@@ -1204,7 +1204,7 @@ static void parse_static_exports(TSNode class_node, const std::string &source, H
 			continue;
 		}
 
-		// 检查字段名是否为 "exports"
+		// Check whether the field name is "exports".
 		TSNode name = ts_node_child_by_field_name(member, "name", 4);
 		if (ts_node_is_null(name)) {
 			continue;
@@ -1215,7 +1215,7 @@ static void parse_static_exports(TSNode class_node, const std::string &source, H
 			continue;
 		}
 
-		// 解析 value（object 字面量）
+		// Parse the value object literal.
 		TSNode value = ts_node_child_by_field_name(member, "value", 5);
 		if (ts_node_is_null(value) || strcmp(ts_node_type(value), "object") != 0) {
 			continue;
@@ -1226,7 +1226,7 @@ static void parse_static_exports(TSNode class_node, const std::string &source, H
 	}
 }
 
-bool Typescript::compile() const {
+bool TypeScriptScript::compile() const {
 	if (!is_dirty) {
 		return true;
 	}
@@ -1290,7 +1290,7 @@ bool Typescript::compile() const {
 	return true;
 }
 
-Napi::Function Typescript::get_default_class() const {
+Napi::Function TypeScriptScript::get_default_class() const {
 	if (!default_class.IsEmpty()) {
 		return default_class.Value();
 	}
@@ -1314,13 +1314,13 @@ Napi::Function Typescript::get_default_class() const {
 	Napi::Function cls = NodeRuntime::get_default_class(exports);
 
 	if (!cls.IsEmpty() && !cls.IsUndefined() && !cls.IsNull()) {
-		const_cast<Typescript *>(this)->default_class = Napi::Persistent(cls);
+		const_cast<TypeScriptScript *>(this)->default_class = Napi::Persistent(cls);
 		return cls;
 	}
 
 	return Napi::Function();
 }
 
-ScriptLanguage *Typescript::_get_language() const {
-	return TypescriptLanguage::get_singleton();
+ScriptLanguage *TypeScriptScript::_get_language() const {
+	return TypeScriptLanguage::get_singleton();
 }

@@ -1,22 +1,22 @@
-#ifndef GODOT_GODE_JAVASCRIPT_LANGUAGE_H
-#define GODOT_GODE_JAVASCRIPT_LANGUAGE_H
+#ifndef GODE_TYPESCRIPT_LANGUAGE_H
+#define GODE_TYPESCRIPT_LANGUAGE_H
 
 #include <godot_cpp/classes/script_language_extension.hpp>
 
 namespace gode {
 
-class JavascriptLanguage : public godot::ScriptLanguageExtension {
-	GDCLASS(JavascriptLanguage, godot::ScriptLanguageExtension);
+class TypeScriptLanguage : public godot::ScriptLanguageExtension {
+	GDCLASS(TypeScriptLanguage, godot::ScriptLanguageExtension);
 
 public:
-	~JavascriptLanguage();
-	static JavascriptLanguage *get_singleton();
+	~TypeScriptLanguage();
+	static TypeScriptLanguage *get_singleton();
 
 private:
-	static JavascriptLanguage *singleton;
+	static TypeScriptLanguage *singleton;
 
 protected:
-	static void _bind_methods();
+	static void _bind_methods() {}
 
 public:
 	godot::String _get_name() const override;
@@ -80,5 +80,7 @@ public:
 	bool _handles_global_class_type(const godot::String &p_type) const override;
 	godot::Dictionary _get_global_class_name(const godot::String &p_path) const override;
 };
-} //namespace gode
-#endif // GODOT_GODE_JAVASCRIPT_LANGUAGE_H
+
+} // namespace gode
+
+#endif // GODE_TYPESCRIPT_LANGUAGE_H

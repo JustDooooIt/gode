@@ -1,26 +1,26 @@
-#ifndef GODOT_GODE_TYPESCRIPT_LOADER_H
-#define GODOT_GODE_TYPESCRIPT_LOADER_H
+#ifndef GODE_TYPESCRIPT_LOADER_H
+#define GODE_TYPESCRIPT_LOADER_H
 
-#include "support/typescript.h"
+#include "script/typescript_script.h"
 #include <godot_cpp/classes/resource_format_loader.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 
 namespace gode {
 
-class TypescriptLoader : public godot::ResourceFormatLoader {
-	GDCLASS(TypescriptLoader, godot::ResourceFormatLoader);
+class TypeScriptLoader : public godot::ResourceFormatLoader {
+	GDCLASS(TypeScriptLoader, godot::ResourceFormatLoader);
 
 private:
-	TypescriptLoader() = default;
+	TypeScriptLoader() = default;
 
 public:
-	~TypescriptLoader();
-	static TypescriptLoader *get_singleton();
+	~TypeScriptLoader();
+	static TypeScriptLoader *get_singleton();
 	void clear_cache();
 
 private:
-	static TypescriptLoader *singleton;
-	mutable godot::HashMap<godot::StringName, godot::Ref<Typescript>> scripts;
+	static TypeScriptLoader *singleton;
+	mutable godot::HashMap<godot::StringName, godot::Ref<TypeScriptScript>> scripts;
 
 protected:
 	static void _bind_methods() {}
@@ -41,4 +41,4 @@ public:
 
 } // namespace gode
 
-#endif // GODOT_GODE_TYPESCRIPT_LOADER_H
+#endif // GODE_TYPESCRIPT_LOADER_H

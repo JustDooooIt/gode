@@ -1,8 +1,8 @@
-#include "support/javascript_instance.h"
-#include "support/javascript.h"
-#include "utils/napi_error_utils.h"
-#include "utils/node_runtime.h"
-#include "utils/value_convert.h"
+#include "script/script_instance.h"
+#include "runtime/napi_error_utils.h"
+#include "runtime/node_runtime.h"
+#include "runtime/value_convert.h"
+#include "script/typescript_script.h"
 #include <v8-isolate.h>
 #include <v8-locker.h>
 #include <exception>
@@ -77,21 +77,21 @@ void _attach_promise_rejection_handler(Napi::Value value, const std::string &met
 }
 
 } // namespace
-JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Object *p_owner, bool p_placeholder) :
-		javascript(p_javascript),
+ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_owner, bool p_placeholder) :
+		script(p_script),
 		owner(p_owner),
 		placeholder(p_placeholder) {
 	if (!placeholder) {
-		if (!javascript.is_valid()) {
+		if (!script.is_valid()) {
 			return;
 		}
 
-		if (!javascript->compile()) {
+		if (!script->compile()) {
 			return;
 		}
 
-		// 在 JS 实例化之前向 owner 注册信号（跳过已存在的，避免重复添加报错）
-		for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+		// Register signals before creating the runtime module instance.
+		for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
 			if (owner->has_user_signal(E.key)) {
 				continue;
 			}
@@ -109,42 +109,42 @@ JavascriptInstance::JavascriptInstance(const Ref<Javascript> &p_javascript, Obje
 		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 		v8::HandleScope handle_scope(NodeRuntime::isolate);
 
-		Napi::Function default_class = javascript->get_default_class();
+		Napi::Function default_class = script->get_default_class();
 		if (default_class.IsEmpty() || default_class.IsUndefined() || default_class.IsNull()) {
 			return;
 		}
 
-			Napi::Env env = default_class.Env();
-			Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
-			Napi::Object instance;
-			try {
-				instance = default_class.New({ external_owner });
-				if (log_and_clear_pending_js_exception(env, "JS script constructor")) {
-					return;
-				}
-			} catch (const Napi::Error &e) {
-				log_js_error("JS script constructor", js_error_to_string(e));
-				return;
-			} catch (const std::exception &e) {
-				UtilityFunctions::printerr("Native exception in JS script constructor: ", e.what());
-				return;
-			} catch (...) {
-				UtilityFunctions::printerr("Unknown exception in JS script constructor");
+		Napi::Env env = default_class.Env();
+		Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
+		Napi::Object instance;
+		try {
+			instance = default_class.New({ external_owner });
+			if (log_and_clear_pending_js_exception(env, "JS script constructor")) {
 				return;
 			}
-
-			js_instance = Napi::Persistent(instance);
+		} catch (const Napi::Error &e) {
+			log_js_error("JS script constructor", js_error_to_string(e));
+			return;
+		} catch (const std::exception &e) {
+			UtilityFunctions::printerr("Native exception in JS script constructor: ", e.what());
+			return;
+		} catch (...) {
+			UtilityFunctions::printerr("Unknown exception in JS script constructor");
+			return;
 		}
+
+		js_instance = Napi::Persistent(instance);
+	}
 }
 
-JavascriptInstance::~JavascriptInstance() {
-	if (javascript.is_valid()) {
+ScriptInstance::~ScriptInstance() {
+	if (script.is_valid()) {
 		if (placeholder) {
-			javascript->placeholder_instances.erase(this);
+			script->placeholder_instances.erase(this);
 		} else {
-			javascript->instances.erase(this);
+			script->instances.erase(this);
 			if (owner) {
-				javascript->instance_objects.erase(owner);
+				script->instance_objects.erase(owner);
 			}
 		}
 	}
@@ -159,25 +159,25 @@ JavascriptInstance::~JavascriptInstance() {
 	}
 }
 
-Object *JavascriptInstance::get_owner() const {
+Object *ScriptInstance::get_owner() const {
 	return owner;
 }
 
-bool JavascriptInstance::is_placeholder() const {
+bool ScriptInstance::is_placeholder() const {
 	return placeholder;
 }
 
-void JavascriptInstance::reload(bool p_keep_state) {
+void ScriptInstance::reload(bool p_keep_state) {
 	if (placeholder) {
 		return;
 	}
 
-	if (!javascript->compile()) {
+	if (!script->compile()) {
 		return;
 	}
 
-	// 重载时注册新增信号（跳过已存在的，避免重复添加报错）
-	for (const KeyValue<StringName, MethodInfo> &E : javascript->signals) {
+	// Register new signals during reload and skip existing ones to avoid duplicate registration errors.
+	for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
 		if (owner->has_user_signal(E.key)) {
 			continue;
 		}
@@ -199,7 +199,7 @@ void JavascriptInstance::reload(bool p_keep_state) {
 
 	HashMap<StringName, Variant> old_state;
 	if (p_keep_state && !js_instance.IsEmpty()) {
-		for (const KeyValue<StringName, PropertyInfo> &E : javascript->get_exported_properties()) {
+		for (const KeyValue<StringName, PropertyInfo> &E : script->get_exported_properties()) {
 			Variant value;
 			if (get(E.key, value)) {
 				old_state[E.key] = value;
@@ -209,7 +209,7 @@ void JavascriptInstance::reload(bool p_keep_state) {
 
 	js_instance.Reset();
 
-	Napi::Function default_class = javascript->get_default_class();
+	Napi::Function default_class = script->get_default_class();
 	if (default_class.IsEmpty()) {
 		return;
 	}
@@ -281,7 +281,7 @@ void JavascriptInstance::reload(bool p_keep_state) {
 	js_instance = Napi::Persistent(instance);
 }
 
-bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
+bool ScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	if (placeholder) {
 		placeholder_properties[p_name] = p_value;
 		return true;
@@ -293,7 +293,7 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	std::string property_name = String(p_name).utf8().get_data();
-	if (!javascript->properties.has(property_name.c_str())) {
+	if (!script->properties.has(property_name.c_str())) {
 		return false;
 	}
 	try {
@@ -347,14 +347,14 @@ bool JavascriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	}
 }
 
-bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
+bool ScriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	if (placeholder) {
 		if (placeholder_properties.has(p_name)) {
 			r_value = placeholder_properties[p_name];
 			return true;
 		}
-		if (javascript->_has_property_default_value(p_name)) {
-			r_value = javascript->_get_property_default_value(p_name);
+		if (script->_has_property_default_value(p_name)) {
+			r_value = script->_get_property_default_value(p_name);
 			return true;
 		}
 		return false;
@@ -364,7 +364,7 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	std::string prop_name = String(p_name).utf8().get_data();
-	if (!javascript->properties.has(prop_name.c_str())) {
+	if (!script->properties.has(prop_name.c_str())) {
 		return false;
 	}
 	if (js_instance.IsEmpty()) {
@@ -420,9 +420,9 @@ bool JavascriptInstance::get(const StringName &p_name, Variant &r_value) const {
 	}
 }
 
-bool JavascriptInstance::has_method(const StringName &p_method) const {
+bool ScriptInstance::has_method(const StringName &p_method) const {
 	if (placeholder) {
-		return javascript->_has_method(p_method);
+		return script->_has_method(p_method);
 	}
 	if (js_instance.IsEmpty()) {
 		return false;
@@ -432,25 +432,25 @@ bool JavascriptInstance::has_method(const StringName &p_method) const {
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	Napi::Object instance = js_instance.Value();
 	std::string method_name = String(p_method).utf8().get_data();
-	return javascript->_has_method(method_name.c_str());
+	return script->_has_method(method_name.c_str());
 }
 
-int32_t JavascriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
+int32_t ScriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
 	v8::Locker locker(NodeRuntime::isolate);
-	if (!javascript.is_valid()) {
+	if (!script.is_valid()) {
 		r_is_valid = false;
 		return 0;
 	}
-	javascript->compile();
-	if (!javascript->methods.has(p_method)) {
+	script->compile();
+	if (!script->methods.has(p_method)) {
 		r_is_valid = false;
 		return 0;
 	}
 	r_is_valid = true;
-	return javascript->methods[p_method].arguments.size();
+	return script->methods[p_method].arguments.size();
 }
 
-Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_args, int32_t p_argcount, GDExtensionCallError &r_error) {
+Variant ScriptInstance::call(const StringName &p_method, const Variant *p_args, int32_t p_argcount, GDExtensionCallError &r_error) {
 	if (placeholder) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
@@ -461,7 +461,7 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 		return Variant();
 	}
 
-	if (!javascript.is_valid() || (Engine::get_singleton()->is_editor_hint() && !javascript->_is_tool())) {
+	if (!script.is_valid() || (Engine::get_singleton()->is_editor_hint() && !script->_is_tool())) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
@@ -548,7 +548,7 @@ Variant JavascriptInstance::call(const StringName &p_method, const Variant *p_ar
 	}
 }
 
-void JavascriptInstance::notification_bind(Napi::Object instance, int32_t p_what, bool p_reversed) {
+void ScriptInstance::notification_bind(Napi::Object instance, int32_t p_what, bool p_reversed) {
 	static std::string notification_method_name = "_notification";
 	Napi::Value method_val;
 	if (!instance.IsUndefined() && instance.HasOwnProperty(notification_method_name)) {
@@ -583,7 +583,7 @@ void JavascriptInstance::notification_bind(Napi::Object instance, int32_t p_what
 	}
 }
 
-void JavascriptInstance::notification(int32_t p_what, bool p_reversed) {
+void ScriptInstance::notification(int32_t p_what, bool p_reversed) {
 	if (placeholder) {
 		return;
 	}
@@ -600,10 +600,10 @@ void JavascriptInstance::notification(int32_t p_what, bool p_reversed) {
 	notification_bind(instance, p_what, p_reversed);
 }
 
-String JavascriptInstance::to_string(bool &r_is_valid) const {
+String ScriptInstance::to_string(bool &r_is_valid) const {
 	if (placeholder) {
 		r_is_valid = true;
-		return "JavascriptInstance(Placeholder)";
+		return "ScriptInstance(Placeholder)";
 	}
 	if (js_instance.IsEmpty()) {
 		r_is_valid = false;
@@ -655,38 +655,38 @@ String JavascriptInstance::to_string(bool &r_is_valid) const {
 		return String();
 	}
 	r_is_valid = true;
-	String cls_name = String(javascript->_get_global_name());
+	String cls_name = String(script->_get_global_name());
 	if (cls_name.is_empty()) {
-		cls_name = "JavascriptInstance";
+		cls_name = "ScriptInstance";
 	}
 	return cls_name + ":" + String::num_int64(owner ? owner->get_instance_id() : 0);
 }
 
-bool JavascriptInstance::property_can_revert(const StringName &p_name) const {
-	return javascript.is_valid() && javascript->_has_property_default_value(p_name);
+bool ScriptInstance::property_can_revert(const StringName &p_name) const {
+	return script.is_valid() && script->_has_property_default_value(p_name);
 }
 
-bool JavascriptInstance::property_get_revert(const StringName &p_name, Variant &r_ret) const {
-	if (javascript.is_valid() && javascript->_has_property_default_value(p_name)) {
-		r_ret = javascript->_get_property_default_value(p_name);
+bool ScriptInstance::property_get_revert(const StringName &p_name, Variant &r_ret) const {
+	if (script.is_valid() && script->_has_property_default_value(p_name)) {
+		r_ret = script->_get_property_default_value(p_name);
 		return true;
 	}
 	return false;
 }
 
-void JavascriptInstance::get_property_list(const GDExtensionPropertyInfo *&r_list, uint32_t &r_count) const {
+void ScriptInstance::get_property_list(const GDExtensionPropertyInfo *&r_list, uint32_t &r_count) const {
 	prop_list_cache.clear();
 	prop_list_gde.clear();
 
-	if (javascript.is_valid()) {
-		const godot::Vector<godot::PropertyInfo> &ordered = javascript->get_property_list_ordered();
+	if (script.is_valid()) {
+		const godot::Vector<godot::PropertyInfo> &ordered = script->get_property_list_ordered();
 		if (!ordered.is_empty()) {
 			prop_list_cache.reserve(ordered.size());
 			for (const godot::PropertyInfo &pi : ordered) {
 				prop_list_cache.push_back(pi);
 			}
 		} else {
-			const godot::HashMap<godot::StringName, godot::PropertyInfo> &props = javascript->get_exported_properties();
+			const godot::HashMap<godot::StringName, godot::PropertyInfo> &props = script->get_exported_properties();
 			prop_list_cache.reserve(props.size());
 			for (const godot::KeyValue<godot::StringName, godot::PropertyInfo> &kv : props) {
 				prop_list_cache.push_back(kv.value);
@@ -710,11 +710,11 @@ void JavascriptInstance::get_property_list(const GDExtensionPropertyInfo *&r_lis
 	r_count = (uint32_t)prop_list_gde.size();
 }
 
-void JavascriptInstance::free_property_list(const GDExtensionPropertyInfo *p_list) const {
+void ScriptInstance::free_property_list(const GDExtensionPropertyInfo *p_list) const {
 	(void)p_list;
 }
 
-void JavascriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, uint32_t &r_count) const {
+void ScriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, uint32_t &r_count) const {
 	method_list_cache.clear();
 	method_list_gde.clear();
 	method_arg_cache.clear();
@@ -722,9 +722,9 @@ void JavascriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, u
 	method_return_cache.clear();
 	method_return_gde_cache.clear();
 
-	if (javascript.is_valid()) {
-		javascript->compile();
-		const godot::HashMap<godot::StringName, godot::MethodInfo> &methods = javascript->methods;
+	if (script.is_valid()) {
+		script->compile();
+		const godot::HashMap<godot::StringName, godot::MethodInfo> &methods = script->methods;
 		method_list_cache.reserve(methods.size());
 		for (const godot::KeyValue<godot::StringName, godot::MethodInfo> &kv : methods) {
 			method_list_cache.push_back(kv.value);
@@ -780,12 +780,12 @@ void JavascriptInstance::get_method_list(const GDExtensionMethodInfo *&r_list, u
 	r_count = (uint32_t)method_list_gde.size();
 }
 
-void JavascriptInstance::free_method_list(const GDExtensionMethodInfo *p_list) const {
+void ScriptInstance::free_method_list(const GDExtensionMethodInfo *p_list) const {
 	(void)p_list;
 }
 
-Ref<Javascript> JavascriptInstance::get_script() const {
-	return javascript;
+Ref<TypeScriptScript> ScriptInstance::get_script() const {
+	return script;
 }
 
 } // namespace gode

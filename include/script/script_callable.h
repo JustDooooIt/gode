@@ -1,17 +1,17 @@
-#ifndef GODE_JAVASCRIPT_CALLABLE_H
-#define GODE_JAVASCRIPT_CALLABLE_H
+#ifndef GODE_SCRIPT_CALLABLE_H
+#define GODE_SCRIPT_CALLABLE_H
 
-#include <godot_cpp/variant/callable_custom.hpp>
 #include <napi.h>
+#include <godot_cpp/variant/callable_custom.hpp>
 
 namespace gode {
 
-class JavascriptCallable : public godot::CallableCustom {
+class ScriptCallable : public godot::CallableCustom {
 	Napi::FunctionReference func_ref;
 
 public:
-	JavascriptCallable(Napi::Function p_function);
-	virtual ~JavascriptCallable();
+	ScriptCallable(Napi::Function p_function);
+	virtual ~ScriptCallable();
 
 	Napi::Function get_function() const;
 
@@ -26,4 +26,4 @@ public:
 
 } // namespace gode
 
-#endif // GODE_JAVASCRIPT_CALLABLE_H
+#endif // GODE_SCRIPT_CALLABLE_H

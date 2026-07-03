@@ -1,22 +1,22 @@
-#ifndef GODOT_GODE_TYPESCRIPT_SAVER_H
-#define GODOT_GODE_TYPESCRIPT_SAVER_H
+#ifndef GODE_TYPESCRIPT_SAVER_H
+#define GODE_TYPESCRIPT_SAVER_H
 
 #include <godot_cpp/classes/resource_format_saver.hpp>
 
 namespace gode {
 
-class TypescriptSaver : public godot::ResourceFormatSaver {
-	GDCLASS(TypescriptSaver, godot::ResourceFormatSaver);
+class TypeScriptSaver : public godot::ResourceFormatSaver {
+	GDCLASS(TypeScriptSaver, godot::ResourceFormatSaver);
 
 private:
-	TypescriptSaver() = default;
+	TypeScriptSaver() = default;
 
 public:
-	~TypescriptSaver();
-	static TypescriptSaver *get_singleton();
+	~TypeScriptSaver();
+	static TypeScriptSaver *get_singleton();
 
 private:
-	static TypescriptSaver *singleton;
+	static TypeScriptSaver *singleton;
 
 protected:
 	static void _bind_methods() {}
@@ -31,4 +31,4 @@ public:
 
 } // namespace gode
 
-#endif // GODOT_GODE_TYPESCRIPT_SAVER_H
+#endif // GODE_TYPESCRIPT_SAVER_H

@@ -1,14 +1,11 @@
-#include "register_types.h"
+#include "compiler/typescript_compiler.h"
 #include "napi.h"
-#include "support/javascript.h"
-#include "support/javascript_language.h"
-#include "support/typescript.h"
-#include "support/typescript_language.h"
-#include "support/typescript_loader.h"
-#include "support/typescript_saver.h"
-#include "utils/gode_event_loop.h"
-#include "utils/node_runtime.h"
-#include "utils/typescript_compiler.h"
+#include "runtime/gode_event_loop.h"
+#include "runtime/node_runtime.h"
+#include "script/typescript_language.h"
+#include "script/typescript_loader.h"
+#include "script/typescript_saver.h"
+#include "script/typescript_script.h"
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -20,26 +17,22 @@
 
 namespace {
 
-godot::Ref<gode::TypescriptSaver> typescript_saver;
-godot::Ref<gode::TypescriptLoader> typescript_loader;
-
-} // namespace
+godot::Ref<gode::TypeScriptSaver> typescript_saver;
+godot::Ref<gode::TypeScriptLoader> typescript_loader;
 
 void initialize_node_module(godot::ModuleInitializationLevel p_level) {
 	if (p_level != godot::MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
 	}
-	GDREGISTER_CLASS(gode::Javascript);
-	GDREGISTER_CLASS(gode::JavascriptLanguage);
-	GDREGISTER_CLASS(gode::Typescript);
-	GDREGISTER_CLASS(gode::TypescriptLanguage);
-	GDREGISTER_CLASS(gode::TypescriptSaver);
-	GDREGISTER_CLASS(gode::TypescriptLoader);
+	GDREGISTER_CLASS(gode::TypeScriptScript);
+	GDREGISTER_CLASS(gode::TypeScriptLanguage);
+	GDREGISTER_CLASS(gode::TypeScriptSaver);
+	GDREGISTER_CLASS(gode::TypeScriptLoader);
 	GDREGISTER_CLASS(gode::GodeEventLoop);
 	GDREGISTER_CLASS(gode::GodeTypeScriptCompiler);
-	godot::Engine::get_singleton()->register_script_language(gode::TypescriptLanguage::get_singleton());
-	typescript_saver = gode::TypescriptSaver::get_singleton();
-	typescript_loader = gode::TypescriptLoader::get_singleton();
+	godot::Engine::get_singleton()->register_script_language(gode::TypeScriptLanguage::get_singleton());
+	typescript_saver = gode::TypeScriptSaver::get_singleton();
+	typescript_loader = gode::TypeScriptLoader::get_singleton();
 
 	godot::ResourceSaver::get_singleton()->add_resource_format_saver(typescript_saver);
 	godot::ResourceLoader::get_singleton()->add_resource_format_loader(typescript_loader);
@@ -51,7 +44,7 @@ void uninitialize_node_module(godot::ModuleInitializationLevel p_level) {
 	if (p_level != godot::MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
 	}
-	gode::TypescriptLanguage *typescript_language = gode::TypescriptLanguage::get_singleton();
+	gode::TypeScriptLanguage *typescript_language = gode::TypeScriptLanguage::get_singleton();
 
 	godot::Engine::get_singleton()->unregister_script_language(typescript_language);
 
@@ -80,6 +73,8 @@ void uninitialize_node_module(godot::ModuleInitializationLevel p_level) {
 
 	gode::NodeRuntime::shutdown();
 }
+
+} // namespace
 
 extern "C" {
 // Initialization.
