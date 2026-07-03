@@ -1,13 +1,15 @@
-export type TestCase = {
-	id: string;
-	title: string;
-	summary: string;
-	code: string;
+// These snippets are editable demo source shown in the workspace.
+// Runtime smoke tests live separately under scripts/tests.
+export type CapabilityDemo = {
+	readonly id: string;
+	readonly title: string;
+	readonly summary: string;
+	readonly code: string;
 };
 
 const trim = (value: string): string => value.trim();
 
-export const TEST_CASES: TestCase[] = [
+export const CAPABILITY_DEMOS: readonly CapabilityDemo[] = [
 	{
 		id: "godot-signal",
 		title: "Godot signal bridge",
@@ -139,13 +141,13 @@ assert("json contains formatted lines", json.includes("\\n  \\"report\\""));
 		summary: "Normalize Godot project paths and Node-style paths without leaving TypeScript.",
 		code: trim(`
 const path = modules.path;
-const scriptPath = "res://scripts/test_catalog.ts";
+const scriptPath = "res://scripts/capability_catalog.ts";
 const normalized = path.join("res://", "scripts", "..", "scripts", "tests", "demo.ts").replace(/\\\\/g, "/");
 const parsed = path.parse(scriptPath);
 const relative = path.relative("res://scripts", "res://addons/gode/types/godot.d.ts").replace(/\\\\/g, "/");
 
 log("path analysis", { scriptPath, parsed, normalized, relative });
-assert("basename", path.basename(scriptPath) === "test_catalog.ts");
+assert("basename", path.basename(scriptPath) === "capability_catalog.ts");
 assert("extension", parsed.ext === ".ts");
 assert("normalized project path", normalized.endsWith("scripts/tests/demo.ts"));
 assert("relative path crosses addon folder", relative.includes("addons/gode/types"));
@@ -191,7 +193,7 @@ log("project file size", stats.size + " bytes");
 
 assert("cwd exists", fs.existsSync(cwd));
 assert("project file parsed", projectText.includes("config_version"));
-assert("script catalog visible", scripts.includes("test_catalog.ts"));
+assert("capability catalog visible", scripts.includes("capability_catalog.ts"));
 assert("project file has content", stats.size > 0);
 `),
 	},
@@ -506,6 +508,6 @@ assert("microtasks ran", events.includes("nextTick") && events.includes("microta
 	},
 ];
 
-export function getTestCase(id: string): TestCase {
-	return TEST_CASES.find(test => test.id === id) ?? TEST_CASES[0];
+export function getCapabilityDemo(id: string): CapabilityDemo {
+	return CAPABILITY_DEMOS.find(demo => demo.id === id) ?? CAPABILITY_DEMOS[0];
 }

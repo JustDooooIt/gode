@@ -12,8 +12,8 @@ import util from "node:util";
 import { pathToFileURL, URL } from "node:url";
 import vm from "node:vm";
 import zlib from "node:zlib";
-import { getTestCase, type TestCase } from "./test_catalog.js";
-import { getSelectedTestId } from "./test_selection.js";
+import { getCapabilityDemo, type CapabilityDemo } from "./capability_catalog.js";
+import { getSelectedCapabilityId } from "./capability_selection.js";
 
 const MODULES = {
 	assert: nodeAssert,
@@ -31,14 +31,14 @@ const MODULES = {
 	zlib,
 };
 
-export default class TestWorkspace extends Control {
+export default class CapabilityWorkspace extends Control {
 	titleLabel!: Label;
 	summaryLabel!: Label;
 	editor!: CodeEdit;
 	output!: TextEdit;
 	runButton!: Button;
 	backButton!: Button;
-	testCase!: TestCase;
+	demo!: CapabilityDemo;
 	passCount = 0;
 	failCount = 0;
 
@@ -50,12 +50,12 @@ export default class TestWorkspace extends Control {
 		this.runButton = this.get_node("Layout/Header/Actions/RunButton") as Button;
 		this.backButton = this.get_node("Layout/Header/Actions/BackButton") as Button;
 
-		this.testCase = getTestCase(getSelectedTestId());
+		this.demo = getCapabilityDemo(getSelectedCapabilityId());
 		this.passCount = 0;
 		this.failCount = 0;
-		this.titleLabel.text = this.testCase.title;
-		this.summaryLabel.text = this.testCase.summary;
-		this.editor.text = this.testCase.code;
+		this.titleLabel.text = this.demo.title;
+		this.summaryLabel.text = this.demo.summary;
+		this.editor.text = this.demo.code;
 		this.output.text = "";
 
 		this.runButton.connect("pressed", () => {
@@ -109,7 +109,7 @@ export default class TestWorkspace extends Control {
 		this.output.text = "";
 		this.runButton.disabled = true;
 		const startedAt = Date.now();
-		this.append("INFO", `Running ${this.testCase.title}`);
+		this.append("INFO", `Running demo: ${this.demo.title}`);
 
 		const originalLog = console.log;
 		const originalError = console.error;

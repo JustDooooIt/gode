@@ -1,8 +1,8 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/test_workspace.ts" id="1_workspace"]
+[ext_resource type="Script" path="res://scripts/capability_workspace.ts" id="1_workspace"]
 
-[node name="TestWorkspace" type="Control"]
+[node name="CapabilityWorkspace" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -36,7 +36,7 @@ theme_override_constants/separation = 3
 [node name="Title" type="Label" parent="Layout/Header/TitleBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Test"
+text = "Capability"
 
 [node name="Summary" type="Label" parent="Layout/Header/TitleBox"]
 layout_mode = 2
@@ -69,7 +69,7 @@ highlight_current_line = true
 draw_line_numbers = true
 wrap_mode = 1
 tab_input_mode = true
-placeholder_text = "Edit the test script here."
+placeholder_text = "Edit the demo script here."
 
 [node name="OutputPanel" type="TextEdit" parent="Layout/Body"]
 layout_mode = 2
