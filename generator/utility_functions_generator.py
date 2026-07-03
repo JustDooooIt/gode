@@ -1,8 +1,8 @@
 import json
 import os
-from core.base_generator import CodeGenerator
-from utils.api_path import find_extension_api_json
-from utils.type_mappings import get_cpp_type
+from .base_generator import CodeGenerator
+from .utils.api_path import find_extension_api_json
+from .utils.type_mappings import get_cpp_type
 
 # Utility functions that Godot exposes in extension_api.json but godot-cpp
 # deliberately omits from UtilityFunctions. Gode still exposes them through the

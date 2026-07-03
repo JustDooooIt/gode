@@ -4,14 +4,15 @@ This directory contains the Python + Jinja2 code generation framework for Gode.
 
 ## Structure
 
-- `builtin/`: Generates built-in Variant bindings.
-- `class/`: Generates Godot class bindings.
-- `register/`: Generates binding registration and utility-function wrappers.
-- `dts/`: Generates TypeScript declaration files.
-- `core/`: Contains the base generator class.
+- `generator.py`: Main entry point. It owns the explicit generator execution order.
+- `base_generator.py`: Shared Jinja2 rendering and write-if-changed support.
+- `builtin_classes_generator.py`: Generates built-in Variant bindings.
+- `class_generator.py`: Generates Godot class bindings.
+- `register_generator.py`: Generates binding registration files.
+- `utility_functions_generator.py`: Generates utility-function wrappers.
+- `dts_generator.py`: Generates TypeScript declaration files.
 - `utils/`: Contains shared generator policy, path, naming, and type-mapping helpers.
 - `templates/`: Jinja2 templates for code generation.
-- `generator.py`: Main entry point to run all generators.
 
 ## Usage
 
@@ -21,10 +22,11 @@ This directory contains the Python + Jinja2 code generation framework for Gode.
    ```
 
 2. Create a new generator:
-   - Create a Python file in `builtin/`, `class/`, `register/`, or `dts/`.
-   - Define a class inheriting from `core.base_generator.CodeGenerator`.
+   - Create a Python file directly under `generator/`.
+   - Define a class inheriting from `generator.base_generator.CodeGenerator`.
    - Implement the `run(self)` method.
    - Use `self.render(template_name, context, output_filename, output_key)` to generate files.
+   - Add the generator class to `GENERATOR_CLASSES` in `generator/generator.py`.
 
 3. Run the generator:
    ```bash
@@ -38,7 +40,7 @@ different Godot API checkout.
 ## Example Generator
 
 ```python
-from core.base_generator import CodeGenerator
+from generator.base_generator import CodeGenerator
 
 class MyGenerator(CodeGenerator):
     def run(self):

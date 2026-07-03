@@ -1,13 +1,9 @@
 import json
 import os
-import sys
 
-# Ensure parent directory is in sys.path to import core
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.base_generator import CodeGenerator
-from utils.api_path import find_extension_api_json
-from utils.string_utils import to_snake_case
+from .base_generator import CodeGenerator
+from .utils.api_path import find_extension_api_json
+from .utils.string_utils import to_snake_case
 
 class RegisterGenerator(CodeGenerator):
     def run(self):

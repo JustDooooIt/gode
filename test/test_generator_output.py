@@ -11,7 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 @unittest.skipUnless(importlib.util.find_spec("jinja2"), "jinja2 is required for generator output tests")
 class GeneratorOutputTests(unittest.TestCase):
 	def test_render_does_not_touch_unchanged_files(self):
-		from generator.core.base_generator import CodeGenerator
+		from generator.base_generator import CodeGenerator
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			root = pathlib.Path(temp_dir)
@@ -52,7 +52,7 @@ class GeneratorOutputTests(unittest.TestCase):
 		self.assertEqual("const godot::TypedDictionary<int64_t, godot::String> &", get_cpp_type("typeddictionary::int;String", "", refcounted, is_arg=True))
 
 	def test_typed_collection_parsing_is_shared_and_stable(self):
-		from generator.dts.dts_generator import godot_type_to_ts
+		from generator.dts_generator import godot_type_to_ts
 		from generator.utils.type_mappings import parse_typedarray_element_type, parse_typeddictionary_types
 
 		self.assertEqual("CompositorEffect", parse_typedarray_element_type("typedarray::24/17:CompositorEffect"))
@@ -87,7 +87,7 @@ class GeneratorOutputTests(unittest.TestCase):
 		)
 
 	def test_builtin_argument_matching_accepts_js_arrays_for_array_types(self):
-		from generator.builtin.builtin_classes_generator import napi_match_expr
+		from generator.builtin_classes_generator import napi_match_expr
 
 		self.assertEqual("(info[0].IsNumber() || info[0].IsBigInt())", napi_match_expr("int", 0))
 		self.assertEqual("info[0].IsNumber()", napi_match_expr("float", 0))
@@ -122,7 +122,7 @@ class GeneratorOutputTests(unittest.TestCase):
 
 		for member in ("ok_hsl_h", "ok_hsl_s", "ok_hsl_l"):
 			compat = builtin_member_compat("Color", member)
-			self.assertEqual("utils/color_okhsl_compat.h", compat["include"])
+			self.assertEqual("runtime/color_okhsl_compat.h", compat["include"])
 			self.assertIn(member, compat["getter"])
 			self.assertIn(member, compat["setter"])
 
