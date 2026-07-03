@@ -1,4 +1,4 @@
-#include "utils/value_convert.h"
+#include "runtime/value_convert.h"
 
 #include <climits>
 #include <cmath>
@@ -47,8 +47,8 @@
 #include "builtin/vector3i_binding.gen.h"
 #include "builtin/vector4_binding.gen.h"
 #include "builtin/vector4i_binding.gen.h"
-#include "support/javascript_callable.h"
-#include "utils/node_runtime.h"
+#include "runtime/node_runtime.h"
+#include "script/script_callable.h"
 
 // Helper macros for creating N-API objects from Godot variants
 #define BIND_BUILTIN_TO_NAPI(VariantType, BindingClass)               \
@@ -673,7 +673,7 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 		case godot::Variant::Type::CALLABLE: {
 			godot::Callable callable = variant;
 			if (callable.is_custom()) {
-				gode::JavascriptCallable *js_callable = dynamic_cast<gode::JavascriptCallable *>(callable.get_custom());
+				gode::ScriptCallable *js_callable = dynamic_cast<gode::ScriptCallable *>(callable.get_custom());
 				if (js_callable) {
 					return js_callable->get_function();
 				}
@@ -719,7 +719,7 @@ godot::Variant napi_to_godot(Napi::Value value) {
 	} else if (value.IsString()) {
 		return String::utf8(value.ToString().Utf8Value().c_str());
 	} else if (value.IsFunction()) {
-		JavascriptCallable *callable = memnew(JavascriptCallable(value.As<Napi::Function>()));
+		ScriptCallable *callable = memnew(ScriptCallable(value.As<Napi::Function>()));
 		return godot::Callable(callable);
 	} else if (value.IsArray()) {
 		return js_array_to_godot_array(value.As<Napi::Array>());

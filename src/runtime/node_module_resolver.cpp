@@ -1,4 +1,4 @@
-#include "utils/node_module_resolver.h"
+#include "runtime/node_module_resolver.h"
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/json.hpp>

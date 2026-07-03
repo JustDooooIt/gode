@@ -1,6 +1,6 @@
-#include "utils/typescript_compiler.h"
+#include "compiler/typescript_compiler.h"
 
-#include "utils/node_runtime.h"
+#include "runtime/node_runtime.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/engine.hpp>

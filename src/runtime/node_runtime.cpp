@@ -1,11 +1,11 @@
-#include "utils/node_runtime.h"
-#include "utils/node_bootstrap_scripts.h"
+#include "runtime/node_runtime.h"
 #include "register_builtin.gen.h"
 #include "register_classes.gen.h"
+#include "runtime/napi_error_utils.h"
+#include "runtime/node_bootstrap_scripts.h"
+#include "runtime/node_godot_bridge.h"
+#include "runtime/node_module_resolver.h"
 #include "utility_functions/utility_functions.h"
-#include "utils/napi_error_utils.h"
-#include "utils/node_godot_bridge.h"
-#include "utils/node_module_resolver.h"
 
 #include <node.h>
 #include <node_api.h>
@@ -14,7 +14,7 @@
 #undef CONNECT_DEFERRED
 #endif
 
-#include "utils/value_convert.h"
+#include "runtime/value_convert.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <memory>
@@ -57,7 +57,7 @@ void NodeRuntime::init_once() {
 	std::vector<std::string> args;
 	std::vector<std::string> exec_args;
 	std::vector<std::string> errors;
-	// args[0] 是程序名，后面的是 node 标志
+	// args[0] is the executable name; the remaining entries are Node flags.
 	args.push_back("godot node");
 	args.push_back("--experimental-vm-modules");
 
@@ -100,13 +100,12 @@ void NodeRuntime::init_once() {
 		const std::string boot_script = node_bootstrap_scripts::commonjs_bootstrap_script();
 		node::LoadEnvironment(env, boot_script.c_str());
 
-		// 事件循环跑一次，确保 boot_script 执行完毕
+		// Drive the event loop once to finish boot_script execution.
 		isolate->PerformMicrotaskCheckpoint();
 		uv_run(uv_default_loop(), UV_RUN_ONCE);
 
-		// ESM 支持代码单独执行，确保在 boot_script 之后注册
+		// Execute ESM support after boot_script so the CommonJS bootstrap is already registered.
 		const std::string esm_script = node_bootstrap_scripts::esm_bootstrap_script();
-		// 执行 ESM 支持脚本
 		{
 			v8::Local<v8::String> esm_source = v8::String::NewFromUtf8(
 					isolate, esm_script.c_str(), v8::NewStringType::kNormal)
@@ -178,7 +177,7 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 	v8::Local<v8::Context> context = node_context.Get(isolate);
 	v8::Context::Scope context_scope(context);
 
-	// 检测是否为 ESM
+	// Detect whether the file should be loaded as ESM.
 	v8::Local<v8::Value> result;
 	if (node_module_resolver::is_esm_file(filename, code)) {
 		result = compile_esm_module(code, filename);
@@ -222,7 +221,7 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	v8::Local<v8::Value> promise_val = result.ToLocalChecked();
 
-	// 检查是否是 Promise
+	// Check whether the result is a Promise.
 	if (!promise_val->IsPromise()) {
 		godot::UtilityFunctions::print("compile_esm_module: result is not a Promise");
 		return v8::Local<v8::Value>();
@@ -230,7 +229,7 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	v8::Local<v8::Promise> promise = promise_val.As<v8::Promise>();
 
-	// ESM 加载涉及大量异步操作，循环驱动事件循环直到 Promise settled
+	// ESM loading is async; keep driving the event loop until the Promise settles.
 	while (promise->State() == v8::Promise::kPending) {
 		isolate->PerformMicrotaskCheckpoint();
 		uv_run(uv_default_loop(), UV_RUN_ONCE);
@@ -299,12 +298,12 @@ Napi::Function NodeRuntime::get_default_class(Napi::Value module_exports) {
 	v8::Locker locker(isolate);
 	v8::Isolate::Scope isolate_scope(isolate);
 
-	// 直接是函数，返回
+	// A function export is already a valid default class.
 	if (module_exports.IsFunction()) {
 		return module_exports.As<Napi::Function>();
 	}
 
-	// 尝试获取 default 导出
+	// Try to read the default export.
 	if (module_exports.IsObject()) {
 		Napi::Object exports_obj = module_exports.As<Napi::Object>();
 		if (exports_obj.Has("default")) {

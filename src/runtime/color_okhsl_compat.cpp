@@ -1,6 +1,6 @@
-#include "utils/color_okhsl_compat.h"
+#include "runtime/color_okhsl_compat.h"
 
-#include "utils/ok_color.h"
+#include "runtime/ok_color.h"
 
 #include <algorithm>
 #include <cmath>

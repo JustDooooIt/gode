@@ -10,7 +10,6 @@
 
 #include <string>
 
-
 namespace gode {
 
 class NodeRuntime {
@@ -27,7 +26,7 @@ public:
 	static godot::Dictionary compile_typescript_project(const godot::Array &files);
 	static Napi::Function get_default_class(Napi::Value module_exports);
 	static godot::Variant eval_expression(const std::string &expr);
-    static void spin_loop();
+	static void spin_loop();
 	static void shutdown();
 
 private:

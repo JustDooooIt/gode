@@ -1,7 +1,7 @@
-#include "utils/node_runtime.h"
+#include "runtime/node_runtime.h"
 
-#include "utils/napi_error_utils.h"
-#include "utils/value_convert.h"
+#include "runtime/napi_error_utils.h"
+#include "runtime/value_convert.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 

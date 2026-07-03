@@ -3,7 +3,7 @@
 
 #include "godot_cpp/core/binder_common.hpp"
 #include "godot_cpp/variant/variant.hpp"
-#include "utils/value_convert.h"
+#include "runtime/value_convert.h"
 #include <napi.h>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -360,7 +360,6 @@ inline Napi::Value call_builtin_method(R (*Func)(const godot::Variant **, GDExte
 	return godot_to_napi(info.Env(), Func((const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size()));
 }
 
-
 // Static class MethodBind vararg with GDExtensionCallError reporting.
 inline Napi::Value call_builtin_method(void (*Func)(const godot::Variant **, GDExtensionInt, GDExtensionCallError *), const Napi::CallbackInfo &info) {
 	std::vector<Napi::Value> args = to_args_array(info);
@@ -463,7 +462,6 @@ inline Napi::Value call_builtin_method(R (*Func)(T *, const godot::Variant **, G
 
 	return godot_to_napi(info.Env(), Func(instance, (const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size()));
 }
-
 
 // Instance class MethodBind vararg with GDExtensionCallError reporting.
 template <typename T>

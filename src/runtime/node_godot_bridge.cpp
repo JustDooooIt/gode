@@ -1,4 +1,4 @@
-#include "utils/node_godot_bridge.h"
+#include "runtime/node_godot_bridge.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>

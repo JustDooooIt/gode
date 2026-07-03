@@ -2,14 +2,14 @@
 #define GODE_UTILS_VALUE_CONVER_H
 
 #include <napi.h>
-#include <godot_cpp/classes/ref.hpp>
+#include <cmath>
+#include <cstdint>
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/core/type_info.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/typed_dictionary.hpp>
-#include <cmath>
-#include <cstdint>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -153,25 +153,45 @@ template <typename T>
 struct packed_array_element {};
 
 template <>
-struct packed_array_element<godot::PackedByteArray> { using type = uint8_t; };
+struct packed_array_element<godot::PackedByteArray> {
+	using type = uint8_t;
+};
 template <>
-struct packed_array_element<godot::PackedInt32Array> { using type = int32_t; };
+struct packed_array_element<godot::PackedInt32Array> {
+	using type = int32_t;
+};
 template <>
-struct packed_array_element<godot::PackedInt64Array> { using type = int64_t; };
+struct packed_array_element<godot::PackedInt64Array> {
+	using type = int64_t;
+};
 template <>
-struct packed_array_element<godot::PackedFloat32Array> { using type = float; };
+struct packed_array_element<godot::PackedFloat32Array> {
+	using type = float;
+};
 template <>
-struct packed_array_element<godot::PackedFloat64Array> { using type = double; };
+struct packed_array_element<godot::PackedFloat64Array> {
+	using type = double;
+};
 template <>
-struct packed_array_element<godot::PackedStringArray> { using type = godot::String; };
+struct packed_array_element<godot::PackedStringArray> {
+	using type = godot::String;
+};
 template <>
-struct packed_array_element<godot::PackedVector2Array> { using type = godot::Vector2; };
+struct packed_array_element<godot::PackedVector2Array> {
+	using type = godot::Vector2;
+};
 template <>
-struct packed_array_element<godot::PackedVector3Array> { using type = godot::Vector3; };
+struct packed_array_element<godot::PackedVector3Array> {
+	using type = godot::Vector3;
+};
 template <>
-struct packed_array_element<godot::PackedVector4Array> { using type = godot::Vector4; };
+struct packed_array_element<godot::PackedVector4Array> {
+	using type = godot::Vector4;
+};
 template <>
-struct packed_array_element<godot::PackedColorArray> { using type = godot::Color; };
+struct packed_array_element<godot::PackedColorArray> {
+	using type = godot::Color;
+};
 
 template <typename T, typename = void>
 struct is_godot_packed_array : std::false_type {};

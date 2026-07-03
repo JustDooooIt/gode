@@ -1,4 +1,4 @@
-#include "utils/napi_error_utils.h"
+#include "runtime/napi_error_utils.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
