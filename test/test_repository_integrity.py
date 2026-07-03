@@ -84,6 +84,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			ROOT / "src/utils/node_godot_bridge.cpp",
 			ROOT / "include/utils/node_module_resolver.h",
 			ROOT / "src/utils/node_module_resolver.cpp",
+			ROOT / "src/utils/node_typescript_compiler_bridge.cpp",
 		]
 		missing = [str(path.relative_to(ROOT)) for path in expected_files if not path.exists()]
 		self.assertEqual([], missing)
@@ -104,6 +105,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		bootstrap_source = (ROOT / "src/utils/node_bootstrap_scripts.cpp").read_text(encoding="utf-8")
 		self.assertIn("std::string commonjs_bootstrap_script()", bootstrap_source)
 		self.assertIn("std::string esm_bootstrap_script()", bootstrap_source)
+		self.assertIn("'.js', '.json', '.node', '.mjs', '.cjs'", bootstrap_source)
+		self.assertIn("const _gode_source_fallback", bootstrap_source)
+		self.assertIn("res://.gode/build/typescript/", bootstrap_source)
 
 	def test_node_runtime_public_v8_entries_hold_locker_and_safe_scopes(self):
 		source = (ROOT / "src/utils/node_runtime.cpp").read_text(encoding="utf-8")
@@ -135,7 +139,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 	def test_module_lifecycle_owns_resource_format_refs_until_node_shutdown(self):
 		source = (ROOT / "src/register_types.cpp").read_text(encoding="utf-8")
 
-		for name in ("javascript_saver", "typescript_saver", "javascript_loader", "typescript_loader"):
+		for name in ("typescript_saver", "typescript_loader"):
 			self.assertIn(f"godot::Ref<gode::{''.join(part.capitalize() for part in name.split('_'))}> {name};", source)
 
 		self.assertNotRegex(
@@ -149,15 +153,20 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		shutdown_index = source.index("gode::NodeRuntime::shutdown();")
 		for token in (
-			"javascript_loader->clear_cache();",
 			"typescript_loader->clear_cache();",
-			"javascript_loader.unref();",
 			"typescript_loader.unref();",
-			"javascript_saver.unref();",
 			"typescript_saver.unref();",
 		):
 			self.assertIn(token, source)
 			self.assertLess(source.index(token), shutdown_index, token)
+
+		for token in (
+			"javascript_loader",
+			"javascript_saver",
+			"add_resource_format_loader(javascript_loader)",
+			"add_resource_format_saver(javascript_saver)",
+		):
+			self.assertNotIn(token, source)
 
 	def test_napi_references_are_released_before_or_suppressed_after_runtime_shutdown(self):
 		node_header = (ROOT / "include/utils/node_runtime.h").read_text(encoding="utf-8")
@@ -234,16 +243,140 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertNotIn("ref->get_reference_count() == 0", source)
 			self.assertNotIn("ref->unreference();\n                if", source)
 
-	def test_script_loaders_expose_explicit_cache_clear(self):
-		for language in ("javascript", "typescript"):
-			header = (ROOT / f"include/support/{language}_loader.h").read_text(encoding="utf-8")
-			source = (ROOT / f"src/support/{language}_loader.cpp").read_text(encoding="utf-8")
-			class_name = f"{language.capitalize()}Loader"
+	def test_typescript_loader_exposes_explicit_cache_clear(self):
+		header = (ROOT / "include/support/typescript_loader.h").read_text(encoding="utf-8")
+		source = (ROOT / "src/support/typescript_loader.cpp").read_text(encoding="utf-8")
 
-			self.assertIn("void clear_cache();", header)
-			self.assertIn(f"void {class_name}::clear_cache()", source)
-			self.assertIn("scripts.clear();", source)
-			self.assertIn("clear_cache();", source)
+		self.assertIn("void clear_cache();", header)
+		self.assertIn("void TypescriptLoader::clear_cache()", source)
+		self.assertIn("scripts.clear();", source)
+		self.assertIn("clear_cache();", source)
+
+	def test_legacy_javascript_resource_loader_and_saver_are_removed(self):
+		for path in (
+			ROOT / "include/support/javascript_loader.h",
+			ROOT / "include/support/javascript_saver.h",
+			ROOT / "src/support/javascript_loader.cpp",
+			ROOT / "src/support/javascript_saver.cpp",
+			EXAMPLE_ROOT / "addons/gode/icons/javascript.svg",
+			EXAMPLE_ROOT / "addons/gode/icons/javascript.svg.import",
+		):
+			self.assertFalse(path.exists(), f"{path.relative_to(ROOT)} should not exist")
+
+		for path in sorted((ROOT / "src").glob("**/*.cpp")) + sorted((ROOT / "include").glob("**/*.h")):
+			if "generated" in path.parts:
+				continue
+			text = path.read_text(encoding="utf-8")
+			self.assertNotIn("JavascriptLoader", text, str(path.relative_to(ROOT)))
+			self.assertNotIn("JavascriptSaver", text, str(path.relative_to(ROOT)))
+
+	def test_typescript_default_config_is_packaged_and_project_root_config_exists(self):
+		template_path = EXAMPLE_ROOT / "addons/gode/config/tsconfig.json"
+		project_config_path = EXAMPLE_ROOT / "tsconfig.json"
+		self.assertTrue(template_path.exists())
+		self.assertTrue(project_config_path.exists())
+
+		template = json.loads(template_path.read_text(encoding="utf-8"))
+		project_config = json.loads(project_config_path.read_text(encoding="utf-8"))
+		self.assertEqual(template, project_config)
+
+		options = template["compilerOptions"]
+		self.assertEqual("ESNext", options["module"])
+		self.assertEqual("Bundler", options["moduleResolution"])
+		self.assertTrue(options["strict"])
+		self.assertEqual([], options["types"])
+		self.assertNotIn("baseUrl", options)
+		self.assertNotIn("paths", options)
+		self.assertIn("**/*.ts", template["include"])
+		self.assertIn("**/*.tsx", template["include"])
+		self.assertIn("**/*.d.ts", template["include"])
+		self.assertIn("addons/gode/tsc", template["exclude"])
+
+		compiler_source = (ROOT / "src/utils/typescript_compiler.cpp").read_text(encoding="utf-8")
+		self.assertIn('PROJECT_TYPESCRIPT_CONFIG_PATH = "res://tsconfig.json"', compiler_source)
+		self.assertIn('DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config/tsconfig.json"', compiler_source)
+		self.assertIn("ensure_project_typescript_config", compiler_source)
+
+	def test_example_project_has_no_root_external_dependency_marker(self):
+		for name in (
+			"package.json",
+			"node_modules",
+			"gode.json",
+		):
+			self.assertFalse(
+				(EXAMPLE_ROOT / name).exists(),
+				f"example/{name} should not be present in the dependency-free sample project",
+			)
+
+	def test_gode_json_controls_commercial_npm_export_policy(self):
+		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
+		self.assertTrue(template_path.exists())
+		config = json.loads(template_path.read_text(encoding="utf-8"))
+		npm_config = config["export"]["npm"]
+		self.assertEqual(
+			{
+				"exportDependencies",
+				"requireTools",
+				"includeManifests",
+				"includeNodeModules",
+				"excludePaths",
+				"extraIncludePaths",
+			},
+			set(npm_config),
+		)
+		self.assertEqual(["node_modules/.cache", "node_modules/.bin"], npm_config["excludePaths"])
+
+		plugin_source = (EXAMPLE_ROOT / "addons/gode/gode.gd").read_text(encoding="utf-8")
+		export_source = (EXAMPLE_ROOT / "addons/gode/runtime/export_plugin.gd").read_text(encoding="utf-8")
+
+		for token in (
+			"gode/export/npm",
+			"ProjectSettings.add_property_info",
+			"_ensure_export_settings",
+		):
+			self.assertNotIn(token, plugin_source)
+			self.assertNotIn(token, export_source)
+
+		for token in (
+			'GODE_CONFIG_PATH := "res://gode.json"',
+			'DEFAULT_GODE_CONFIG_PATH := "res://addons/gode/config/gode.json"',
+			"_load_npm_config",
+			"_create_project_gode_config",
+			"_default_npm_config",
+			"_merge_npm_config_value",
+			'"exportDependencies": true',
+			'"requireTools": true',
+			'"includeManifests": true',
+			'"includeNodeModules": true',
+			'"excludePaths": PackedStringArray(["node_modules/.cache", "node_modules/.bin"])',
+			'"extraIncludePaths": PackedStringArray()',
+		):
+			self.assertIn(token, export_source)
+
+		for token in (
+			"NPM_MANIFEST_FILES",
+			"_prepare_npm_export",
+			"_export_npm_runtime_snapshot",
+			"_add_export_directory(\"res://node_modules\")",
+			"add_file(source_path, FileAccess.get_file_as_bytes(source_path), false)",
+			"OS.execute(candidate, PackedStringArray([\"--version\"])",
+			'_command_exists("node")',
+			'_command_exists("npm")',
+			'_file_exists("res://package.json") or _dir_exists("res://node_modules")',
+			"[Gode Export] Created project config from template",
+		):
+			self.assertIn(token, export_source)
+
+		for token in (
+			"nativeAddons",
+			"get_extension().to_lower() == \"node\"",
+			"NPM_MARKER_FILES",
+			"_detect_package_manager",
+			"allowYarnPnP",
+			"packageManager",
+			".pnp.cjs",
+		):
+			self.assertNotIn(token, export_source)
 
 	def test_support_sources_are_not_nested_by_language(self):
 		for directory in (
@@ -315,7 +448,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_fixed_arity_bindings_validate_argument_count(self):
 		source = (ROOT / "include/utils/func_utils.h").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 
 		self.assertIn("prepare_fixed_args", source)
 		self.assertIn("required_arg_count", source)
@@ -336,7 +469,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_scalar_and_string_conversions_reject_wrong_javascript_types(self):
 		value_convert = (ROOT / "include/utils/value_convert.h").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 
 		for token in (
 			"napi_to_godot_bool",
@@ -374,7 +507,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		value_convert = (ROOT / "include/utils/value_convert.h").read_text(encoding="utf-8")
 		class_template = (ROOT / "generator/templates/class_binding.cpp.jinja2").read_text(encoding="utf-8")
 		node_source = (ROOT / "src/generated/classes/node_binding.gen.cpp").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 
 		for token in (
 			"napi_to_godot_object_value",
@@ -413,7 +546,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 	def test_builtin_constructors_and_operators_reject_invalid_signatures(self):
 		template = (ROOT / "generator/templates/builtin_binding.cpp.jinja2").read_text(encoding="utf-8")
 		builtin_generator = (ROOT / "generator/builtin/builtin_classes_generator.py").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 		vector2i_source = (ROOT / "src/generated/builtin/vector2i_binding.gen.cpp").read_text(encoding="utf-8")
 		array_source = (ROOT / "src/generated/builtin/array_binding.gen.cpp").read_text(encoding="utf-8")
 		packed_source = (ROOT / "src/generated/builtin/packed_int32_array_binding.gen.cpp").read_text(encoding="utf-8")
@@ -452,7 +585,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		binding_policy = (ROOT / "generator/utils/binding_policy.py").read_text(encoding="utf-8")
 		builtin_generator = (ROOT / "generator/builtin/builtin_classes_generator.py").read_text(encoding="utf-8")
 		dts_generator = (ROOT / "generator/dts/dts_generator.py").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 		packed_source = (ROOT / "src/generated/builtin/packed_int32_array_binding.gen.cpp").read_text(encoding="utf-8")
 		array_source = (ROOT / "src/generated/builtin/array_binding.gen.cpp").read_text(encoding="utf-8")
 		resource_loader_source = (ROOT / "src/generated/classes/resource_loader_binding.gen.cpp").read_text(encoding="utf-8")
@@ -507,7 +640,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 	def test_class_vararg_methodbind_errors_surface_to_javascript(self):
 		func_utils = (ROOT / "include/utils/func_utils.h").read_text(encoding="utf-8")
 		vararg_macros = (ROOT / "include/utils/vararg_macros.h").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.js").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 
 		self.assertIn("throw_if_godot_call_failed", func_utils)
 		self.assertIn("GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS", func_utils)
@@ -686,6 +819,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("GDObject", object_source)
 		self.assertNotIn("GDObject", godot_dts)
 		self.assertNotIn("GDObject", globals_dts)
+		self.assertIn('"typeof"(variable: VariantArgument): number;', godot_dts)
+		self.assertNotIn("typeof_gd(", godot_dts)
+		self.assertIn("add(right: Vector2i): Vector2i;", godot_dts)
+		self.assertIn("multiply(right: number | bigint): Vector2i;", godot_dts)
 
 	def test_generated_color_okhsl_compatibility_matches_dts(self):
 		source = (ROOT / "src/generated/builtin/color_binding.gen.cpp").read_text(encoding="utf-8")
