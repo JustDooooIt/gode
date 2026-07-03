@@ -2,7 +2,7 @@
 
 - Made TypeScript the only script language, avoiding confusion from mixing two languages.
 - Bundled TypeScript in the plugin, so projects without external dependencies no longer need local environment setup.
-- Dependency updates: embedded Node.js is upgraded to `24.18.0`, and `third/node-addon-api` is upgraded to `8.9.0`.
+- Dependency updates: embedded Node.js is upgraded to `24.18`, and `third/node-addon-api` is upgraded to `8.9`.
 - Bundled a `tsconfig.json` template and automatically generate one when the project root does not have it.
 - Added npm export handling controlled by project-root `gode.json`; one is generated automatically when the project root does not have it.
 - Extended Node's virtual filesystem and module resolver from `res://` to `user://`.
