@@ -2,7 +2,7 @@
 
 - 将 TypeScript 作为唯一脚本语言，防止混用两种语言带来的混乱。
 - 插件内置 TypeScript ，无外部依赖的项目不再需要配置本地环境。
-- 依赖更新：嵌入式 Node.js 升级到 `24.18.0`，`third/node-addon-api` 升级到 `8.9.0`。
+- 依赖更新：嵌入式 Node.js 升级到 `24.18`，`third/node-addon-api` 升级到 `8.9`。
 - 内置 `tsconfig.json` 模板，项目根目录没有时会自动生成一份。
 - 增加由项目根目录 `gode.json` 控制的 npm 导出处理；项目根目录没有时会自动生成一份。
 - 将 Node 虚拟文件系统和模块解析从 `res://` 扩展到 `user://`。
