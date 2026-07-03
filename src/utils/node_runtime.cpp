@@ -27,15 +27,14 @@ static bool node_initialized = false;
 static std::unique_ptr<node::MultiIsolatePlatform> platform;
 static std::unique_ptr<node::ArrayBufferAllocator> allocator;
 static node::IsolateData *isolate_data = nullptr;
-static thread_local napi_env thread_local_env = nullptr;
-
 v8::Isolate *NodeRuntime::isolate = nullptr;
 node::Environment *NodeRuntime::env = nullptr;
 v8::Global<v8::Context> NodeRuntime::node_context;
+thread_local napi_env NodeRuntime::thread_local_env = nullptr;
 
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 	node_runtime_bridge::preload_node_dll_stub();
-	thread_local_env = env;
+	NodeRuntime::thread_local_env = env;
 	gode::register_builtin(env, exports);
 	gode::register_classes(env, exports);
 	gode::GD::init(env, exports);

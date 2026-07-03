@@ -1,6 +1,7 @@
 #include "support/typescript.h"
 #include "support/typescript_language.h"
 #include "utils/node_runtime.h"
+#include "utils/typescript_compiler.h"
 #include "utils/value_convert.h"
 
 #include <tree_sitter/api.h>
@@ -71,14 +72,6 @@ static Variant::Type parse_type_string(const std::string &type_str) {
 		return Variant::OBJECT;
 	}
 	return Variant::NIL;
-}
-
-static String get_js_path(const String &ts_path) {
-	String rel = ts_path;
-	if (rel.begins_with("res://")) {
-		rel = rel.substr(6);
-	}
-	return "res://dist/" + rel.get_basename() + ".js";
 }
 
 static void collect_parent_properties(const StringName &parent_name, const std::string &source, TSNode root_node, uint32_t child_count, const String &file_path, HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
@@ -1031,6 +1024,48 @@ static void parse_class_members(TSNode class_node, const std::string &source, Ha
 	}
 }
 
+static bool parse_default_value(TSNode value_node, const std::string &source, Variant::Type property_type, Variant &r_value) {
+	if (ts_node_is_null(value_node)) {
+		return false;
+	}
+
+	const char *value_type = ts_node_type(value_node);
+	uint32_t value_start = ts_node_start_byte(value_node);
+	uint32_t value_end = ts_node_end_byte(value_node);
+	if (strcmp(value_type, "string") == 0) {
+		r_value = String(source.substr(value_start + 1, value_end - value_start - 2).c_str());
+		return true;
+	}
+	if (strcmp(value_type, "number") == 0) {
+		std::string number = source.substr(value_start, value_end - value_start);
+		if (property_type == Variant::INT) {
+			r_value = std::stoi(number);
+		} else {
+			r_value = std::stod(number);
+		}
+		return true;
+	}
+	if (strcmp(value_type, "true") == 0) {
+		r_value = true;
+		return true;
+	}
+	if (strcmp(value_type, "false") == 0) {
+		r_value = false;
+		return true;
+	}
+	if (strcmp(value_type, "new_expression") == 0 ||
+			strcmp(value_type, "object") == 0 ||
+			strcmp(value_type, "array") == 0) {
+		r_value = NodeRuntime::eval_expression(source.substr(value_start, value_end - value_start));
+		return true;
+	}
+	if (strcmp(value_type, "null") == 0) {
+		r_value = Variant();
+		return true;
+	}
+	return false;
+}
+
 static void parse_exports_object(TSNode obj_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
 	// obj_node 是外层 object，每个 pair 的 key 是属性名，value 是描述对象 { type, default, ... }
 	for (uint32_t j = 0; j < ts_node_child_count(obj_node); j++) {
@@ -1102,6 +1137,48 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, Has
 	}
 }
 
+static void parse_exported_field_defaults(TSNode class_node, const std::string &source, const HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
+	TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
+	if (ts_node_is_null(body)) {
+		return;
+	}
+
+	for (uint32_t i = 0; i < ts_node_child_count(body); i++) {
+		TSNode member = ts_node_child(body, i);
+		if (strcmp(ts_node_type(member), "public_field_definition") != 0) {
+			continue;
+		}
+
+		bool is_static = false;
+		for (uint32_t j = 0; j < ts_node_child_count(member); j++) {
+			if (strcmp(ts_node_type(ts_node_child(member, j)), "static") == 0) {
+				is_static = true;
+				break;
+			}
+		}
+		if (is_static) {
+			continue;
+		}
+
+		TSNode name = ts_node_child_by_field_name(member, "name", 4);
+		TSNode value = ts_node_child_by_field_name(member, "value", 5);
+		if (ts_node_is_null(name) || ts_node_is_null(value)) {
+			continue;
+		}
+
+		StringName property_name(node_text(source, name).c_str());
+		if (!properties.has(property_name) || property_defaults.has(property_name)) {
+			continue;
+		}
+
+		const PropertyInfo *property = properties.getptr(property_name);
+		Variant default_value;
+		if (property && parse_default_value(value, source, property->type, default_value)) {
+			property_defaults[property_name] = default_value;
+		}
+	}
+}
+
 // static exports = {...} 在 TS 中是 class body 内的 public_field_definition（带 static 修饰）
 static void parse_static_exports(TSNode class_node, const std::string &source, HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
 	TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
@@ -1159,8 +1236,8 @@ bool Typescript::compile() const {
 		return false;
 	}
 
-	String js_path = get_js_path(path);
-	if (!FileAccess::file_exists(js_path)) {
+	String js_path;
+	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path)) {
 		return false;
 	}
 
@@ -1197,10 +1274,16 @@ bool Typescript::compile() const {
 	parse_class_metadata(class_node, source, class_name, base_class_name);
 	parse_class_members(class_node, source, properties, property_list, property_defaults, methods, signals, rpc_configs, member_lines, interfaces);
 	parse_static_exports(class_node, source, properties, property_defaults);
+	parse_exported_field_defaults(class_node, source, properties, property_defaults);
 	collect_parent_properties(base_class_name, source, root_node, child_count, get_path(), properties, property_defaults);
 
 	ts_tree_delete(tree);
 	ts_parser_delete(parser);
+
+	if (!default_class.IsEmpty() && NodeRuntime::is_running()) {
+		v8::Locker locker(NodeRuntime::isolate);
+		default_class.Reset();
+	}
 
 	is_valid = true;
 	is_dirty = false;
@@ -1221,8 +1304,8 @@ Napi::Function Typescript::get_default_class() const {
 		return Napi::Function();
 	}
 
-	String js_path = get_js_path(path);
-	if (!FileAccess::file_exists(js_path)) {
+	String js_path;
+	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path)) {
 		return Napi::Function();
 	}
 

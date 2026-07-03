@@ -12,13 +12,17 @@
 
 namespace gode::node_runtime_bridge {
 
+static bool is_godot_path(const std::string &path) {
+	return path.find("res://") == 0 || path.find("user://") == 0;
+}
+
 static Napi::Value fs_readFile(const Napi::CallbackInfo &info) {
 	Napi::Env env = info.Env();
 	if (info.Length() < 1 || !info[0].IsString()) {
 		return env.Null();
 	}
 	std::string path = info[0].As<Napi::String>().Utf8Value();
-	if (path.find("res://") != 0) {
+	if (!is_godot_path(path)) {
 		return env.Null();
 	}
 
@@ -38,7 +42,7 @@ static Napi::Value fs_stat(const Napi::CallbackInfo &info) {
 		return Napi::Number::New(env, 0);
 	}
 	std::string path = info[0].As<Napi::String>().Utf8Value();
-	if (path.find("res://") != 0) {
+	if (!is_godot_path(path)) {
 		return Napi::Number::New(env, 0);
 	}
 
