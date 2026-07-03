@@ -8,6 +8,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXAMPLE_ROOT = ROOT / "example"
+EXTENSION_API_PATH = ROOT / "third/godot-cpp/gdextension/extension_api.json"
 SKIPPED_BUILTIN_CLASSES = {"Nil", "void", "bool", "int", "float"}
 
 
@@ -15,6 +16,10 @@ def res_path_to_file(path: str) -> pathlib.Path:
 	if not path.startswith("res://"):
 		raise ValueError(f"not a Godot resource path: {path}")
 	return EXAMPLE_ROOT / path.removeprefix("res://")
+
+
+def load_extension_api() -> dict:
+	return json.loads(EXTENSION_API_PATH.read_text(encoding="utf-8"))
 
 
 def to_snake_case(name: str) -> str:
@@ -88,6 +93,24 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		self.assertGreater(demo_count, 0)
 		self.assertEqual(demo_count, button_count)
+
+	def test_generator_sources_do_not_contain_local_machine_paths(self):
+		local_path_pattern = re.compile(r"(?:[A-Za-z]:\\|/Users/|/home/[^/\s]+/)")
+		offenders = []
+		for path in sorted((ROOT / "generator").rglob("*.py")):
+			text = path.read_text(encoding="utf-8")
+			if local_path_pattern.search(text):
+				offenders.append(str(path.relative_to(ROOT)))
+
+		self.assertEqual([], offenders)
+
+	def test_generator_readme_matches_package_layout(self):
+		text = (ROOT / "generator/README.md").read_text(encoding="utf-8")
+		for package_name in ("builtin", "class", "register", "dts", "core", "utils", "templates"):
+			self.assertIn(f"`{package_name}/`", text)
+
+		self.assertIn("python generator/generator.py", text)
+		self.assertNotIn("`utility/`", text)
 
 	def test_plugin_version_matches_cmake_project_version(self):
 		cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
@@ -707,8 +730,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertEqual([], sorted(missing))
 
 	def test_generated_utility_functions_match_extension_api(self):
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		expected = sorted(func["name"] for func in api.get("utility_functions", []))
 
 		source = (ROOT / "src/generated/utility_functions/utility_functions.cpp").read_text(encoding="utf-8")
@@ -723,8 +745,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		finally:
 			sys.path.pop(0)
 
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		api_functions = {func["name"]: func for func in api.get("utility_functions", [])}
 		upstream_generator = (ROOT / "third/godot-cpp/binding_generator.py").read_text(encoding="utf-8")
 		source = (ROOT / "src/generated/utility_functions/utility_functions.cpp").read_text(encoding="utf-8")
@@ -742,8 +763,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			)
 
 	def test_generated_builtin_registration_matches_extension_api(self):
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		expected = sorted(
 			cls["name"]
 			for cls in api.get("builtin_classes", [])
@@ -756,8 +776,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertEqual(expected, actual)
 
 	def test_generated_class_registration_matches_extension_api(self):
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		expected = sorted(cls["name"] for cls in api.get("classes", []))
 
 		source = (ROOT / "src/generated/register_classes.gen.cpp").read_text(encoding="utf-8")
@@ -789,8 +808,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("&ProjectSettingsBinding_create", source)
 
 	def test_generated_refcounted_wrappers_hold_external_references(self):
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		missing = []
 
 		for cls in api.get("classes", []):
@@ -884,8 +902,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertIn(f"gode::color_okhsl_compat::set_{member}", source)
 
 	def test_generated_dts_singletons_are_instances_not_constructors(self):
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		godot_dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
 		globals_dts = (ROOT / "example/addons/gode/types/globals.d.ts").read_text(encoding="utf-8")
 		rename_map = {
@@ -938,8 +955,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		finally:
 			sys.path.pop(0)
 
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		object_class_names = {cls["name"] for cls in api.get("classes", [])}
 		dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
 
@@ -979,8 +995,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		finally:
 			sys.path.pop(0)
 
-		api_path = ROOT / "third/godot-cpp/gdextension/extension_api.json"
-		api = json.loads(api_path.read_text(encoding="utf-8"))
+		api = load_extension_api()
 		refcounted_classes = {cls["name"] for cls in api.get("classes", []) if cls.get("is_refcounted")}
 		typed_types = set()
 
