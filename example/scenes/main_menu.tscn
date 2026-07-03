@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://veurryqse135"]
 
-[ext_resource type="Script" path="res://scripts/main_menu.js" id="1_mainmenu"]
+[ext_resource type="Script" path="res://scripts/main_menu.ts" id="1_mainmenu"]
 
 [node name="MainMenu" type="Control" unique_id=288411986]
 layout_mode = 3
@@ -36,7 +36,7 @@ text = "Gode Test Console"
 [node name="Summary" type="Label" parent="Layout/Header" unique_id=224467485]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
-text = "Choose a Godot, JavaScript, or Node.js module test."
+text = "Choose a Godot, TypeScript, or Node.js module test."
 
 [node name="TestGrid" type="GridContainer" parent="Layout" unique_id=306020369]
 layout_mode = 2

@@ -1,6 +1,13 @@
-const trim = value => value.trim();
+export type TestCase = {
+	id: string;
+	title: string;
+	summary: string;
+	code: string;
+};
 
-export const TEST_CASES = [
+const trim = (value: string): string => value.trim();
+
+export const TEST_CASES: TestCase[] = [
 	{
 		id: "godot-signal",
 		title: "Godot signal bridge",
@@ -50,7 +57,7 @@ assert("script editor and output panel are present", children.includes("Layout")
 	{
 		id: "godot-node-meta",
 		title: "Node metadata store",
-		summary: "Attach structured JavaScript state to a Godot Node and read it back.",
+		summary: "Attach structured TypeScript state to a Godot Node and read it back.",
 		code: trim(`
 const key = "gode_demo_state";
 const state = {
@@ -75,7 +82,7 @@ assert("metadata cleanup", !scene.has_meta(key));
 	{
 		id: "godot-timer",
 		title: "Async timer choreography",
-		summary: "Drive Godot-compatible async work with JavaScript timers and promises.",
+		summary: "Drive Godot-compatible async work with TypeScript timers and promises.",
 		code: trim(`
 const signalName = "timer_complete_" + Date.now();
 scene.add_user_signal(signalName);
@@ -101,8 +108,8 @@ assert("timers ran asynchronously", Math.max(...results.map(item => item.elapsed
 `),
 	},
 	{
-		id: "js-json",
-		title: "JavaScript data pipeline",
+		id: "ts-json",
+		title: "TypeScript data pipeline",
 		summary: "Transform gameplay data with modern JS collections, JSON, and reducers.",
 		code: trim(`
 const enemies = [
@@ -129,18 +136,18 @@ assert("json contains formatted lines", json.includes("\\n  \\"report\\""));
 	{
 		id: "node-path",
 		title: "Cross-platform path tools",
-		summary: "Normalize Godot project paths and Node-style paths without leaving JavaScript.",
+		summary: "Normalize Godot project paths and Node-style paths without leaving TypeScript.",
 		code: trim(`
 const path = modules.path;
-const scriptPath = "res://scripts/test_catalog.js";
-const normalized = path.join("res://", "scripts", "..", "scripts", "tests", "demo.js").replace(/\\\\/g, "/");
+const scriptPath = "res://scripts/test_catalog.ts";
+const normalized = path.join("res://", "scripts", "..", "scripts", "tests", "demo.ts").replace(/\\\\/g, "/");
 const parsed = path.parse(scriptPath);
 const relative = path.relative("res://scripts", "res://addons/gode/types/godot.d.ts").replace(/\\\\/g, "/");
 
 log("path analysis", { scriptPath, parsed, normalized, relative });
-assert("basename", path.basename(scriptPath) === "test_catalog.js");
-assert("extension", parsed.ext === ".js");
-assert("normalized project path", normalized.endsWith("scripts/tests/demo.js"));
+assert("basename", path.basename(scriptPath) === "test_catalog.ts");
+assert("extension", parsed.ext === ".ts");
+assert("normalized project path", normalized.endsWith("scripts/tests/demo.ts"));
 assert("relative path crosses addon folder", relative.includes("addons/gode/types"));
 `),
 	},
@@ -155,37 +162,37 @@ request.searchParams.set("scene", "main_menu");
 request.searchParams.set("case", "node:url");
 request.searchParams.set("debug", "1");
 
-const fileUrl = pathToFileURL(modules.path.join(process.cwd(), "package.json"));
+const fileUrl = pathToFileURL(modules.path.join(process.cwd(), "project.godot"));
 log("request url", request.href);
-log("package file url", fileUrl.href);
+log("project file url", fileUrl.href);
 
 assert("https protocol", request.protocol === "https:");
 assert("query parameter set", request.searchParams.get("case") === "node:url");
-assert("file URL points at package", fileUrl.href.endsWith("package.json"));
+assert("file URL points at project", fileUrl.href.endsWith("project.godot"));
 `),
 	},
 	{
 		id: "node-fs",
 		title: "Project filesystem access",
-		summary: "Read the Godot project directory, parse package.json, and inspect script files.",
+		summary: "Read the Godot project directory, parse project.godot, and inspect script files.",
 		code: trim(`
 const fs = modules.fs;
 const path = modules.path;
 const cwd = process.cwd();
-const packagePath = path.join(cwd, "package.json");
+const projectPath = path.join(cwd, "project.godot");
 const scriptsDir = path.join(cwd, "scripts");
-const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
-const scripts = fs.readdirSync(scriptsDir).filter(file => file.endsWith(".js")).sort();
-const stats = fs.statSync(packagePath);
+const projectText = fs.readFileSync(projectPath, "utf8");
+const scripts = fs.readdirSync(scriptsDir).filter(file => file.endsWith(".ts")).sort();
+const stats = fs.statSync(projectPath);
 
-log("project package", packageJson);
+log("project file header", projectText.slice(0, 80));
 log("script files", scripts);
-log("package size", stats.size + " bytes");
+log("project file size", stats.size + " bytes");
 
 assert("cwd exists", fs.existsSync(cwd));
-assert("package parsed", packageJson.name === "gode-example");
-assert("script catalog visible", scripts.includes("test_catalog.js"));
-assert("package file has content", stats.size > 0);
+assert("project file parsed", projectText.includes("config_version"));
+assert("script catalog visible", scripts.includes("test_catalog.ts"));
+assert("project file has content", stats.size > 0);
 `),
 	},
 	{
@@ -196,13 +203,13 @@ assert("package file has content", stats.size > 0);
 const crypto = modules.crypto;
 const fs = modules.fs;
 const path = modules.path;
-const packageText = fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8");
-const digest = crypto.createHash("sha256").update(packageText).digest("hex");
+const projectText = fs.readFileSync(path.join(process.cwd(), "project.godot"), "utf8");
+const digest = crypto.createHash("sha256").update(projectText).digest("hex");
 const hmac = crypto.createHmac("sha256", "gode-demo-key").update(digest).digest("hex");
 const session = crypto.randomBytes(12);
 
 log("manifest", {
-	packageHash: digest,
+	projectHash: digest,
 	signature: hmac,
 	sessionHex: session.toString("hex"),
 });
@@ -210,9 +217,9 @@ log("manifest", {
 assert("sha256 length", digest.length === 64);
 assert("hmac length", hmac.length === 64);
 assert("random session bytes", session.length === 12);
-assert("hash is deterministic", crypto.createHash("sha256").update(packageText).digest("hex") === digest);
+assert("hash is deterministic", crypto.createHash("sha256").update(projectText).digest("hex") === digest);
 `),
-	},
+		},
 	{
 		id: "node-zlib",
 		title: "Compressed save payload",
@@ -304,14 +311,14 @@ const upper = new Transform({
 });
 
 const chunks = [];
-const stream = Readable.from(["godot", " + ", "node", " + ", "javascript"]).pipe(upper);
+const stream = Readable.from(["godot", " + ", "node", " + ", "typescript"]).pipe(upper);
 for await (const chunk of stream) {
 	chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
 }
 
 const output = Buffer.concat(chunks).toString("utf8");
 log("stream output", output);
-assert("transformed text", output === "GODOT + NODE + JAVASCRIPT");
+assert("transformed text", output === "GODOT + NODE + TYPESCRIPT");
 assert("multiple chunks processed", chunks.length >= 1);
 `),
 	},
@@ -458,13 +465,13 @@ assert("inspect includes nested data", inspected.includes("nested"));
 const nodeAssert = modules.assert;
 const actual = {
 	name: "gode",
-	capabilities: ["godot", "node", "javascript"],
+	capabilities: ["godot", "node", "typescript"],
 	metrics: { tests: 20, editable: true },
 };
 const expected = JSON.parse(JSON.stringify(actual));
 
 nodeAssert.deepStrictEqual(actual, expected);
-nodeAssert.match(actual.capabilities.join(","), /godot,node,javascript/);
+nodeAssert.match(actual.capabilities.join(","), /godot,node,typescript/);
 nodeAssert.ok(actual.metrics.editable);
 
 log("asserted object", actual);
@@ -499,6 +506,6 @@ assert("microtasks ran", events.includes("nextTick") && events.includes("microta
 	},
 ];
 
-export function getTestCase(id) {
+export function getTestCase(id: string): TestCase {
 	return TEST_CASES.find(test => test.id === id) ?? TEST_CASES[0];
 }

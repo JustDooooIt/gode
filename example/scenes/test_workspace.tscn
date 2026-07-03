@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/test_workspace.js" id="1_workspace"]
+[ext_resource type="Script" path="res://scripts/test_workspace.ts" id="1_workspace"]
 
 [node name="TestWorkspace" type="Control"]
 layout_mode = 3

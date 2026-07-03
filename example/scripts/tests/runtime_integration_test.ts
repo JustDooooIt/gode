@@ -2,20 +2,20 @@ import nodeAssert from "node:assert/strict";
 import path from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
-import { Color, Engine, GD, GDArray, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedStringArray, PackedVector3Array, ResourceLoader, Vector2i, Vector3 } from "godot";
+import { Color, Engine, GD, GDArray, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedStringArray, PackedVector3Array, ResourceLoader, type VariantArgument, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
-import { buildRuntimePayload, moduleMarker, waitForEventLoopTurn } from "./runtime_helpers";
+import { buildRuntimePayload, moduleMarker, waitForEventLoopTurn } from "./runtime_helpers.js";
 
 v8.setFlagsFromString("--expose-gc");
-const forceGarbageCollection = vm.runInNewContext("gc");
+const forceGarbageCollection = vm.runInNewContext("gc") as () => void;
 
-function assert(condition, message) {
+function assert(condition: boolean, message: string): void {
 	if (!condition) {
 		throw new Error(message);
 	}
 }
 
-function assertApprox(actual, expected, epsilon, message) {
+function assertApprox(actual: number, expected: number, epsilon: number, message: string): void {
 	assert(Math.abs(actual - expected) <= epsilon, `${message}: expected ${expected}, got ${actual}`);
 }
 
@@ -39,14 +39,14 @@ export default class RuntimeIntegrationTest extends Node {
 	count = 7;
 	spawn_offset = new Vector3(4, 5, 6);
 
-	run_test() {
+	run_test(): void {
 		void this.run();
 	}
 
-	async run() {
+	async run(): Promise<void> {
 		try {
 			nodeAssert.equal(moduleMarker, "esm-runtime-helper");
-			nodeAssert.equal(path.posix.basename("res://scripts/tests/runtime_integration_test.js"), "runtime_integration_test.js");
+			nodeAssert.equal(path.posix.basename("res://scripts/tests/runtime_integration_test.ts"), "runtime_integration_test.ts");
 
 			const esmPayload = buildRuntimePayload("alpha");
 			nodeAssert.deepEqual(esmPayload.values, [1, 2, 3]);
@@ -70,7 +70,7 @@ export default class RuntimeIntegrationTest extends Node {
 			assert(this.property_can_revert("label"), "exported string property cannot revert");
 			assert(this.property_can_revert("spawn_offset"), "exported Vector3 property cannot revert");
 			nodeAssert.equal(this.property_get_revert("label"), "runtime");
-			const offset = this.property_get_revert("spawn_offset");
+			const offset = this.property_get_revert("spawn_offset") as Vector3;
 			assert(offset.x === 4 && offset.y === 5 && offset.z === 6, "Vector3 revert value was not preserved");
 
 			this.label = "changed";
@@ -80,7 +80,7 @@ export default class RuntimeIntegrationTest extends Node {
 			nodeAssert.equal(this.enabled, false);
 			nodeAssert.equal(this.count, 9);
 
-			const propertyNames = this.get_property_list().map(property => String(property.name));
+			const propertyNames = (this.get_property_list() as Array<{ name: VariantArgument }>).map(property => String(property.name));
 			for (const name of ["label", "enabled", "count", "spawn_offset"]) {
 				assert(propertyNames.includes(name), `exported property missing from property list: ${name}`);
 			}
@@ -102,9 +102,10 @@ export default class RuntimeIntegrationTest extends Node {
 			Engine.set_print_error_messages(false);
 			try {
 				nodeAssert.throws(
+					// @ts-expect-error Intentional invalid call to verify runtime vararg validation.
 					() => this.emit_signal(),
 					/Godot vararg MethodBind call failed: TOO_FEW_ARGUMENTS/,
-					"invalid class vararg MethodBind calls should surface as JavaScript exceptions",
+					"invalid class vararg MethodBind calls should surface as runtime exceptions",
 				);
 			} finally {
 				Engine.set_print_error_messages(printErrors);
@@ -113,10 +114,11 @@ export default class RuntimeIntegrationTest extends Node {
 			assert(this instanceof GodotObject, "Node script instance does not inherit from GodotObject");
 			assert(!Object.prototype.hasOwnProperty.call(globalThis, "Engine"), "Engine should not be injected into globalThis");
 			assert(!Object.prototype.hasOwnProperty.call(globalThis, "Vector3"), "Vector3 should not be injected into globalThis");
-			assert(Engine.get_version_info().major >= 4, "Engine singleton did not return version info");
+			const versionInfo = Engine.get_version_info() as { major: number };
+			assert(versionInfo.major >= 4, "Engine singleton did not return version info");
 			const threadedPath = "res://scenes/signal_test.tscn";
 			ResourceLoader.load_threaded_request(threadedPath);
-			const threadedProgress = [];
+			const threadedProgress: number[] = [];
 			const threadedStatus = ResourceLoader.load_threaded_get_status(threadedPath, threadedProgress);
 			assert(
 				threadedStatus === ResourceLoader.THREAD_LOAD_IN_PROGRESS || threadedStatus === ResourceLoader.THREAD_LOAD_LOADED,
@@ -126,15 +128,23 @@ export default class RuntimeIntegrationTest extends Node {
 			assert(!Number.isNaN(threadedProgress[0]), "threaded load progress out Array was not synchronized");
 			assert(ResourceLoader.load_threaded_get(threadedPath) !== null, "threaded resource did not finish loading");
 			nodeAssert.equal(this.tr("gode_runtime_translation_probe"), "gode_runtime_translation_probe");
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => this.set_process(), /Godot API call expected exactly 1 argument, got 0/);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => this.set_process(true, false), /Godot API call expected exactly 1 argument, got 2/);
 			const wasProcessing = this.is_processing();
+			// @ts-expect-error Intentional invalid call to verify type validation.
 			nodeAssert.throws(() => this.set_process("true"), TypeError);
 			nodeAssert.equal(this.is_processing(), wasProcessing);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => this.tr(), /Godot API call expected at least 1 argument, got 0/);
+			// @ts-expect-error Intentional invalid call to verify type validation.
 			nodeAssert.throws(() => this.tr(1), TypeError);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => this.tr("message", "context", "extra"), /Godot API call expected at most 2 arguments, got 3/);
+			// @ts-expect-error Intentional invalid call to verify type validation.
 			nodeAssert.throws(() => this.has_node(1), TypeError);
+			// @ts-expect-error Intentional invalid call to verify object validation.
 			nodeAssert.throws(() => this.add_child({}), TypeError);
 
 			const image = Image.create_empty(2, 2, false, Image.FORMAT_RGBA8);
@@ -146,7 +156,9 @@ export default class RuntimeIntegrationTest extends Node {
 			assert(texture instanceof ImageTexture, "ImageTexture.create_from_image did not return an ImageTexture");
 			assert(texture.get_reference_count() >= 1, "Returned ImageTexture wrapper did not hold a RefCounted reference");
 			nodeAssert.equal(texture.get_image().get_width(), 2);
+			// @ts-expect-error Intentional invalid call to verify object validation.
 			nodeAssert.throws(() => ImageTexture.create_from_image({}), TypeError);
+			// @ts-expect-error Intentional invalid call to verify type validation.
 			nodeAssert.throws(() => Color.from_ok_hsl("0.58", 0.5, 0.79), TypeError);
 			nodeAssert.throws(() => Color.from_ok_hsl(NaN, 0.5, 0.79), TypeError);
 			const infiniteVector = new Vector3(Infinity, 0, 0);
@@ -167,10 +179,15 @@ export default class RuntimeIntegrationTest extends Node {
 			const defaultVector2i = new Vector2i();
 			nodeAssert.equal(defaultVector2i.x, 0);
 			nodeAssert.equal(defaultVector2i.y, 0);
+			// @ts-expect-error Intentional invalid constructor call to verify overload validation.
 			nodeAssert.throws(() => new Vector2i(1), /No matching constructor overload for Vector2i/);
+			// @ts-expect-error Intentional invalid constructor call to verify overload validation.
 			nodeAssert.throws(() => new Vector2i("x", 2), /No matching constructor overload for Vector2i/);
+			// @ts-expect-error Intentional invalid constructor call to verify overload validation.
 			nodeAssert.throws(() => new Vector2i(1, 2, 3), /No matching constructor overload for Vector2i/);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => vector2i.add(new Vector2i(3, 4), new Vector2i(5, 6)), /Godot API call expected exactly 1 argument, got 2/);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => vector2i.negate(1), /Godot API call expected exactly 0 arguments, got 1/);
 			const vector2iFromBigInt = new Vector2i(1n, 2n);
 			nodeAssert.equal(vector2iFromBigInt.x, 1);
@@ -182,10 +199,12 @@ export default class RuntimeIntegrationTest extends Node {
 			nodeAssert.throws(() => new Vector2i(Number.MAX_SAFE_INTEGER + 1, 2), TypeError);
 			const vector3 = new Vector3(1, 2, 3);
 			nodeAssert.throws(() => {
+				// @ts-expect-error Intentional invalid assignment to verify type validation.
 				vector3.x = "4";
 			}, TypeError);
 			nodeAssert.equal(vector3.x, 1);
 			nodeAssert.throws(() => {
+				// @ts-expect-error Intentional invalid assignment to verify range validation.
 				vector2i.x = 9223372036854775808n;
 			}, RangeError);
 			nodeAssert.equal(vector2i.x, 1);
@@ -193,6 +212,7 @@ export default class RuntimeIntegrationTest extends Node {
 			const gdArray = new GDArray([1, "two", true]);
 			nodeAssert.equal(gdArray.size(), 3);
 			nodeAssert.equal(gdArray.get(1), "two");
+			// @ts-expect-error Intentional invalid constructor call to verify overload validation.
 			nodeAssert.throws(() => new GDArray(1), /No matching constructor overload for GDArray/);
 			const packedInts = new PackedInt32Array([1, 2, 3]);
 			nodeAssert.equal(packedInts.size(), 3);
@@ -203,15 +223,19 @@ export default class RuntimeIntegrationTest extends Node {
 			const packedTail = packedInts.slice(1);
 			nodeAssert.equal(packedTail.size(), 4);
 			nodeAssert.equal(packedTail.get(0), 2);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => packedInts.slice(), /Godot API call expected at least 1 argument, got 0/);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => packedInts.slice(1, 2, 3), /Godot API call expected at most 2 arguments, got 3/);
+			// @ts-expect-error Intentional invalid call to verify argument-count validation.
 			nodeAssert.throws(() => packedInts.size(1), /Godot API call expected exactly 0 arguments, got 1/);
 			const packedBigInts = new PackedInt32Array([1n, 2n]);
 			nodeAssert.equal(packedBigInts.size(), 2);
 			nodeAssert.equal(packedBigInts.get(1), 2);
+			// @ts-expect-error Intentional invalid constructor call to verify overload validation.
 			nodeAssert.throws(() => new PackedInt32Array(1), /No matching constructor overload for PackedInt32Array/);
 			nodeAssert.throws(() => new PackedInt32Array([9223372036854775808n]), RangeError);
-				const packedStrings = new PackedStringArray(["alpha", new GDString("beta")]);
+			const packedStrings = new PackedStringArray(["alpha", new GDString("beta")]);
 			nodeAssert.equal(packedStrings.size(), 2);
 			nodeAssert.equal(packedStrings.get(1), "beta");
 			const packedVectors = new PackedVector3Array([new Vector3(1, 2, 3), new Vector3(4, 5, 6)]);
@@ -223,31 +247,33 @@ export default class RuntimeIntegrationTest extends Node {
 				payload: esmPayload,
 				fromCommonJS: makeCommonPayload(2),
 			});
-			const restored = this.get_meta(metadataKey);
+			const restored = this.get_meta(metadataKey) as { payload: { label: string }; fromCommonJS: { total: number } };
 			nodeAssert.equal(restored.payload.label, "alpha");
 			nodeAssert.equal(restored.fromCommonJS.total, 9);
 			assert(this.has_meta(metadataKey), "metadata key was not registered");
 			this.remove_meta(metadataKey);
 			assert(!this.has_meta(metadataKey), "metadata key was not removed");
 
-			const keyedDictionary = new Map([
+			const keyedDictionary = new Map<any, any>([
 				[7, "seven"],
 				["nested", new Map([[2, "two"]])],
 			]);
 			nodeAssert.equal(GD.typeof(keyedDictionary), 27);
-			const keyedRoundTrip = GD.str_to_var(GD.var_to_str(keyedDictionary));
+			const keyedRoundTrip = GD.str_to_var(GD.var_to_str(keyedDictionary)) as Map<any, any>;
 			assert(keyedRoundTrip instanceof Map, "Dictionary with non-string keys did not round-trip as Map");
 			nodeAssert.equal(keyedRoundTrip.get(7), "seven");
 			const nestedRoundTrip = keyedRoundTrip.get("nested");
 			assert(nestedRoundTrip instanceof Map, "Nested Dictionary with non-string keys did not round-trip as Map");
 			nodeAssert.equal(nestedRoundTrip.get(2), "two");
 
-			const objectRoundTrip = GD.str_to_var(GD.var_to_str({ name: "gode", count: 3 }));
+			const objectRoundTrip = GD.str_to_var(GD.var_to_str({ name: "gode", count: 3 })) as { name: string; count: number };
 			assert(!(objectRoundTrip instanceof Map), "String-key Dictionary should round-trip as a plain object");
 			nodeAssert.equal(objectRoundTrip.name, "gode");
 			nodeAssert.equal(objectRoundTrip.count, 3);
 
+			// @ts-expect-error Intentional invalid constructor call to verify object validation.
 			nodeAssert.throws(() => new Node({}), TypeError);
+			// @ts-expect-error Intentional invalid constructor call to verify object validation.
 			nodeAssert.throws(() => new Node(1), TypeError);
 			const child = new Node();
 			child.name = "RuntimeChild";
@@ -259,7 +285,7 @@ export default class RuntimeIntegrationTest extends Node {
 			this.remove_child(child);
 			child.queue_free();
 
-			const events = [];
+			const events: string[] = [];
 			process.nextTick(() => events.push("nextTick"));
 			queueMicrotask(() => events.push("microtask"));
 			await Promise.resolve();
@@ -269,7 +295,7 @@ export default class RuntimeIntegrationTest extends Node {
 
 			this.emit_signal("test_finished", true, "");
 		} catch (error) {
-			const message = error && error.stack ? error.stack : String(error);
+			const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
 			console.error("[GodeTest] runtime_integration_test failed", message);
 			this.emit_signal("test_finished", false, message);
 		}

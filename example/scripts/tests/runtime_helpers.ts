@@ -1,6 +1,6 @@
 export const moduleMarker = "esm-runtime-helper";
 
-export function buildRuntimePayload(label) {
+export function buildRuntimePayload(label: string) {
 	return {
 		label,
 		nested: { ok: true, count: 2 },
@@ -9,6 +9,6 @@ export function buildRuntimePayload(label) {
 	};
 }
 
-export function waitForEventLoopTurn() {
+export function waitForEventLoopTurn(): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, 0));
 }

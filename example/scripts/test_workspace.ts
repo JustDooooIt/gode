@@ -1,4 +1,4 @@
-import { Control } from "godot";
+import { Button, CodeEdit, Control, Label, TextEdit } from "godot";
 import nodeAssert from "node:assert";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -12,7 +12,7 @@ import util from "node:util";
 import { pathToFileURL, URL } from "node:url";
 import vm from "node:vm";
 import zlib from "node:zlib";
-import { getTestCase } from "./test_catalog.js";
+import { getTestCase, type TestCase } from "./test_catalog.js";
 import { getSelectedTestId } from "./test_selection.js";
 
 const MODULES = {
@@ -32,13 +32,23 @@ const MODULES = {
 };
 
 export default class TestWorkspace extends Control {
+	titleLabel!: Label;
+	summaryLabel!: Label;
+	editor!: CodeEdit;
+	output!: TextEdit;
+	runButton!: Button;
+	backButton!: Button;
+	testCase!: TestCase;
+	passCount = 0;
+	failCount = 0;
+
 	_ready() {
-		this.titleLabel = this.get_node("Layout/Header/TitleBox/Title");
-		this.summaryLabel = this.get_node("Layout/Header/TitleBox/Summary");
-		this.editor = this.get_node("Layout/Body/ScriptEditor");
-		this.output = this.get_node("Layout/Body/OutputPanel");
-		this.runButton = this.get_node("Layout/Header/Actions/RunButton");
-		this.backButton = this.get_node("Layout/Header/Actions/BackButton");
+		this.titleLabel = this.get_node("Layout/Header/TitleBox/Title") as Label;
+		this.summaryLabel = this.get_node("Layout/Header/TitleBox/Summary") as Label;
+		this.editor = this.get_node("Layout/Body/ScriptEditor") as CodeEdit;
+		this.output = this.get_node("Layout/Body/OutputPanel") as TextEdit;
+		this.runButton = this.get_node("Layout/Header/Actions/RunButton") as Button;
+		this.backButton = this.get_node("Layout/Header/Actions/BackButton") as Button;
 
 		this.testCase = getTestCase(getSelectedTestId());
 		this.passCount = 0;
@@ -54,12 +64,12 @@ export default class TestWorkspace extends Control {
 		this.backButton.connect("pressed", () => this.get_tree().change_scene_to_file("res://scenes/main_menu.tscn"));
 	}
 
-	append(level, message) {
+	append(level: string, message: string): void {
 		const line = `[${level}] ${message}`;
 		this.output.text = this.output.text.length > 0 ? `${this.output.text}\n${line}` : line;
 	}
 
-	formatValue(value) {
+	formatValue(value: unknown): string {
 		if (typeof value === "string") {
 			return value;
 		}
@@ -67,7 +77,8 @@ export default class TestWorkspace extends Control {
 			return value.stack ?? value.message;
 		}
 		if (Buffer.isBuffer(value)) {
-			return `<Buffer ${value.toString("hex")} (${value.length} bytes)>`;
+			const buffer = value as { toString(encoding: string): string; length: number };
+			return `<Buffer ${buffer.toString("hex")} (${buffer.length} bytes)>`;
 		}
 		return util.inspect(value, {
 			depth: 4,
@@ -77,11 +88,11 @@ export default class TestWorkspace extends Control {
 		});
 	}
 
-	formatValues(values) {
+	formatValues(values: unknown[]): string {
 		return values.map(value => this.formatValue(value)).join(" ");
 	}
 
-	assert(label, value) {
+	assert(label: string, value: unknown): void {
 		if (value) {
 			this.passCount++;
 			this.append("PASS", label);
@@ -92,7 +103,7 @@ export default class TestWorkspace extends Control {
 		this.append("FAIL", label);
 	}
 
-	async runCurrentScript() {
+	async runCurrentScript(): Promise<void> {
 		this.passCount = 0;
 		this.failCount = 0;
 		this.output.text = "";
@@ -111,8 +122,8 @@ export default class TestWorkspace extends Control {
 			await execute(
 				MODULES,
 				this,
-				(label, value) => this.assert(label, value),
-				(...messages) => this.append("INFO", this.formatValues(messages)),
+				(label: string, value: unknown) => this.assert(label, value),
+				(...messages: unknown[]) => this.append("INFO", this.formatValues(messages)),
 			);
 			this.append("INFO", `Result: ${this.passCount} passed, ${this.failCount} failed in ${Date.now() - startedAt} ms`);
 		} catch (error) {
