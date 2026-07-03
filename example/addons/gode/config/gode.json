@@ -1,0 +1,15 @@
+{
+  "export": {
+    "npm": {
+      "exportDependencies": true,
+      "requireTools": true,
+      "includeManifests": true,
+      "includeNodeModules": true,
+      "excludePaths": [
+        "node_modules/.cache",
+        "node_modules/.bin"
+      ],
+      "extraIncludePaths": []
+    }
+  }
+}
