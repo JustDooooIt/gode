@@ -47,6 +47,48 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		missing = sorted(path for path in paths if not res_path_to_file(path).exists())
 		self.assertEqual([], missing)
 
+	def test_example_demo_console_is_separate_from_runtime_tests(self):
+		expected_demo_files = [
+			EXAMPLE_ROOT / "scripts/capability_catalog.ts",
+			EXAMPLE_ROOT / "scripts/capability_selection.ts",
+			EXAMPLE_ROOT / "scripts/capability_workspace.ts",
+			EXAMPLE_ROOT / "scenes/capability_workspace.tscn",
+		]
+		missing = [str(path.relative_to(ROOT)) for path in expected_demo_files if not path.exists()]
+		self.assertEqual([], missing)
+
+		retired_demo_test_names = [
+			EXAMPLE_ROOT / "scripts/test_catalog.ts",
+			EXAMPLE_ROOT / "scripts/test_selection.ts",
+			EXAMPLE_ROOT / "scripts/test_workspace.ts",
+			EXAMPLE_ROOT / "scenes/test_workspace.tscn",
+		]
+		present = [str(path.relative_to(ROOT)) for path in retired_demo_test_names if path.exists()]
+		self.assertEqual([], present)
+
+		demo_text = "\n".join(
+			path.read_text(encoding="utf-8")
+			for path in (
+				EXAMPLE_ROOT / "scripts/main_menu.ts",
+				EXAMPLE_ROOT / "scripts/capability_workspace.ts",
+				EXAMPLE_ROOT / "scenes/main_menu.tscn",
+				EXAMPLE_ROOT / "scenes/capability_workspace.tscn",
+			)
+		)
+		for token in ("test_catalog", "test_selection", "test_workspace", "TestGrid", "TestButton", "TestWorkspace"):
+			self.assertNotIn(token, demo_text)
+
+		self.assertTrue((EXAMPLE_ROOT / "scripts/tests").is_dir())
+
+	def test_example_capability_menu_has_button_for_each_demo(self):
+		catalog_text = (EXAMPLE_ROOT / "scripts/capability_catalog.ts").read_text(encoding="utf-8")
+		scene_text = (EXAMPLE_ROOT / "scenes/main_menu.tscn").read_text(encoding="utf-8")
+		demo_count = len(re.findall(r'\n\t\tid: "[^"]+"', catalog_text))
+		button_count = len(re.findall(r'name="CapabilityButton[0-9]{2}"', scene_text))
+
+		self.assertGreater(demo_count, 0)
+		self.assertEqual(demo_count, button_count)
+
 	def test_plugin_version_matches_cmake_project_version(self):
 		cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 		match = re.search(r"project\s*\(\s*gode\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)", cmake_text)
