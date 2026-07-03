@@ -22,7 +22,6 @@ option(GODE_RUN_CODEGEN "Run the Python binding generator at configure time" ON)
 set(GODOT_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/godot-cpp" CACHE PATH "Path to godot-cpp")
 set(NODE_ADDON_API_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/node-addon-api" CACHE PATH "Path to node-addon-api")
 set(TREE_SITTER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter" CACHE PATH "Path to tree-sitter")
-set(TREE_SITTER_JAVASCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter-javascript" CACHE PATH "Path to tree-sitter-javascript")
 set(TREE_SITTER_TYPESCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/tree-sitter-typescript" CACHE PATH "Path to tree-sitter-typescript")
 set(GODE_TARGET_ARCH "" CACHE STRING "Target architecture override: x64, arm64")
 
@@ -76,15 +75,6 @@ add_library(gode_tree_sitter STATIC
 target_include_directories(gode_tree_sitter PUBLIC
 	"${TREE_SITTER_DIR}/lib/include"
 	"${TREE_SITTER_DIR}/lib/src"
-)
-
-add_library(gode_tree_sitter_javascript STATIC
-	"${TREE_SITTER_JAVASCRIPT_DIR}/src/parser.c"
-	"${TREE_SITTER_JAVASCRIPT_DIR}/src/scanner.c"
-)
-target_include_directories(gode_tree_sitter_javascript PRIVATE
-	"${TREE_SITTER_DIR}/lib/include"
-	"${TREE_SITTER_JAVASCRIPT_DIR}/src"
 )
 
 add_library(gode_tree_sitter_typescript STATIC
@@ -181,7 +171,6 @@ target_link_libraries(gode PRIVATE
 	godot-cpp
 	gode_libnode
 	gode_tree_sitter
-	gode_tree_sitter_javascript
 	gode_tree_sitter_typescript
 	${GODE_LIBNODE_SYSTEM_LIBS}
 )
