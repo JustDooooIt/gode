@@ -4,10 +4,10 @@
 
 Godot 引擎的 JavaScript/TypeScript 脚本支持，运行在所有原生平台！
 
-| 平台 | Windows | Android | macOS | iOS | Linux | OHOS |
-| --- | --- | --- | --- | --- | --- | --- |
-| 支持情况 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 最低版本 | 10 | 9 | 10.15 | 16 | Ubuntu 22 | 6 |
+| 平台 | Windows | Android | macOS | iOS | Linux |
+| --- | --- | --- | --- | --- | --- |
+| 支持情况 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 最低版本 | 10 | 9 | 10.15 | 16 | Ubuntu 22 |
 
 ## 快速入门
 

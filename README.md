@@ -4,10 +4,10 @@
 
 JavaScript/TypeScript scripting support for the Godot engine, running on all native platforms.
 
-| Platform | Windows | Android | macOS | iOS | Linux | OHOS |
-| --- | --- | --- | --- | --- | --- | --- |
-| Supported | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Minimum Version | 10 | 9 | 10.15 | 16 | Ubuntu 22 | 6 |
+| Platform | Windows | Android | macOS | iOS | Linux |
+| --- | --- | --- | --- | --- | --- |
+| Supported | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Minimum Version | 10 | 9 | 10.15 | 16 | Ubuntu 22 |
 
 ## Quick Start
 
