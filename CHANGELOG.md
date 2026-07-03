@@ -2,6 +2,7 @@
 
 - Made TypeScript the only Godot-facing script language while retaining JavaScript compatibility and avoiding confusion from mixing two script languages.
 - Added bundled TypeScript `6.0.3` packaging for releases. The compiler is extracted into the plugin `tsc/` directory during packaging without the npm archive's outer `package/` directory.
+- Dependency updates: embedded Node.js is upgraded to `24.18.0`, and `third/node-addon-api` is upgraded to `8.9.0`.
 - Added a packaged default `tsconfig.json` template under `addons/gode/config/` and automatic project-root `res://tsconfig.json` creation when a project has no TypeScript config yet.
 - Added in-process TypeScript project compilation through the embedded Node/V8 runtime, emitting ESM JavaScript into a Gode-managed `user://` cache for editor/runtime use.
 - Added a Godot export plugin that compiles TypeScript before export and injects generated ESM JavaScript into `res://.gode/build/typescript/...` inside exported packages.

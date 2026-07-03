@@ -2,12 +2,13 @@
 
 - 将 TypeScript 作为唯一面向 Godot 的脚本语言，兼容 JavaScript 的同时、防止混用两种语言带来的混乱。
 - 为正式发布包加入内置 TypeScript 打包流程。打包时会把编译器解压到插件的 `tsc/` 目录，且不保留 npm 压缩包中的外层 `package/` 目录。
+- 依赖更新：嵌入式 Node.js 升级到 `24.18.0`，`third/node-addon-api` 升级到 `8.9.0`。
 - 在 `addons/gode/config/` 内置默认 `tsconfig.json` 模板；项目根目录没有 `res://tsconfig.json` 时，Gode 会自动生成一份项目配置。
 - 增加基于嵌入式 Node/V8 的进程内 TypeScript 项目编译，将 ESM JavaScript 输出到 Gode 管理的 `user://` 缓存，供编辑器和运行时使用。
 - 增加 Godot 导出插件：导出前编译 TypeScript，并把生成的 ESM JavaScript 作为 `res://.gode/build/typescript/...` 注入导出包。
 - 增加由项目根目录 `gode.json` 控制的商业化 npm 导出处理；需要该配置的外部依赖项目会从 `addons/gode/config/gode.json` 自动生成默认文件。
 - 将 Node 虚拟文件系统和模块解析从 `res://` 扩展到 `user://`，使 TypeScript 编译缓存中的模块可以可靠导入项目模块和 npm 包。
-- 保留 CommonJS 作为 npm 包和显式 `.cjs` sidecar 模块的互操作路径，同时保持项目生成产物只输出 ESM。
+- 保留 CommonJS 作为 npm 包和显式 `.cjs` sidecar 模块的互操作路径，项目生成产物只输出 ESM。
 - 移除旧 JavaScript 资源 loader/saver 实现和未使用的 JavaScript 脚本图标，避免 `.js` 通过残留代码路径重新作为 Godot 脚本资源出现。
 - 移除示例项目根目录的 `package.json`，保证内置示例无需安装外部依赖即可直接运行。
 - 修复 TypeScript 导出属性的 revert 默认值：通过 `static exports` 声明属性时，会读取同名 class field initializer 作为默认值。
