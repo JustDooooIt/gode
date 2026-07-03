@@ -40,6 +40,7 @@ src/generated/
 
 # Generated TypeScript declarations
 example/addons/gode/types/
+example/addons/gode/tsc/
 
 # Example addon binaries: keep the Godot extension manifest, ignore built libraries.
 example/addons/gode/binary/*
