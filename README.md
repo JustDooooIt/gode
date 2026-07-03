@@ -2,12 +2,12 @@
 
 [EN Doc](https://github.com/godothub/gode) &nbsp;&nbsp;&nbsp; [中文文档](https://github.com/godothub/gode/blob/main/README-ZH.md)
 
-JavaScript / TypeScript support for the Godot engine. Gode is powered by V8 and Node.js, and runs on all native platforms.
+JavaScript/TypeScript scripting support for the Godot engine, running on all native platforms.
 
-| Platform | Windows | Android | macOS | iOS | Linux |
-| --- | --- | --- | --- | --- | --- |
-| Supported | ✅ | ✅ | ✅ | ✅ | ✅ |
-| MinVersion | 10 | 9 | 10.15 | 16 | Ubuntu 22 |
+| Platform | Windows | Android | macOS | iOS | Linux | OHOS |
+| --- | --- | --- | --- | --- | --- | --- |
+| Supported | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Minimum Version | 10 | 9 | 10.15 | 16 | Ubuntu 22 | 6 |
 
 ## Quick Start
 
@@ -27,23 +27,24 @@ my_project
 │       ├── gode.gd.uid
 │       ├── plugin.cfg
 │       ├── runtime
+│       ├── tsc
 │       └── types
 ```
 
 3. Open Godot and go to `Project > Project Settings > Plugins`.
 4. Find `gode` and enable it.
 
-After enabling the plugin, you can choose `JavaScript` or `TypeScript` when creating a script.
+After enabling the plugin, choose `TypeScript` when creating Godot scripts.
 
-### 2. Write a JavaScript Script
+### 2. Write a TypeScript Script
 
-Create `res://scripts/hello.js`:
+Create `res://scripts/hello.ts`:
 
-```js
+```ts
 import { Node } from "godot";
 
 export default class Hello extends Node {
-	_ready() {
+	_ready(): void {
 		console.log("Hello from Gode");
 	}
 }
@@ -51,15 +52,13 @@ export default class Hello extends Node {
 
 Attach this script to any node in the Godot editor and run the scene.
 
-JavaScript scripts can import Godot types with syntax like `import { Node } from "godot"`. They can also import other `.js` files in your project with relative paths:
-
-```js
-import { PlayerState } from "./player_state.js";
-```
+TypeScript scripts import Godot types with syntax like `import { Node } from "godot"`.
 
 ### 3. Use npm Packages
 
-If you only write plain JavaScript scripts, no extra setup is required. To use npm packages, initialize npm in the project root:
+The example project does not include `package.json` or `node_modules`, so users can open and run it directly without installing Node.js or npm. Gode treats a project as an external-dependency project only when the project root contains `package.json` or `node_modules`; export then requires the basic Node.js/npm toolchain to be available.
+
+To use external npm packages, initialize your package manager in the project root. For npm:
 
 ```bash
 npm init -y
@@ -71,24 +70,26 @@ Install a dependency:
 npm install lodash
 ```
 
-Use it in a script:
+pnpm, Yarn, and Bun projects can use their own commands, such as `pnpm init` / `pnpm add lodash`. Gode does not initialize projects or install dependencies automatically; that stays in your own development workflow.
 
-```js
+Use it in a TypeScript script:
+
+```ts
 import { Node } from "godot";
 import lodash from "lodash";
 
 export default class Demo extends Node {
-	_ready() {
+	_ready(): void {
 		console.log(lodash.camelCase("hello gode"));
 	}
 }
 ```
 
-Gode resolves npm packages from the project root `node_modules` (`res://node_modules`). Exported projects also need to include these runtime files; see [Exporting Projects](#exporting-projects).
+Gode resolves npm packages from the project root `node_modules` (`res://node_modules`). ESM packages are loaded as ESM, and CommonJS packages are bridged for default and named imports. Project scripts are still TypeScript-only; `.cjs` is supported as an explicit runtime sidecar format for CommonJS interop. During export, Gode can generate a runtime dependency snapshot from the project-root `gode.json`; external-dependency projects get that file automatically when it is missing. See [Exporting Projects](#exporting-projects).
 
-### 4. Use TypeScript
+### 4. Configure TypeScript
 
-Godot scenes and autoloads can attach `.ts` / `.tsx` scripts. Gode loads the matching compiled JavaScript files from `res://dist`. It is recommended to create `tsconfig.json` in the project root:
+Release builds of the Gode plugin include TypeScript `6.0.3` under `addons/gode/tsc`, so users do not install or run `tsc` for normal Godot development. Gode reads `res://tsconfig.json` from the project root by default. If the project does not have one yet, the first compilation copies the default template from `res://addons/gode/config/tsconfig.json` into the project root:
 
 ```json
 {
@@ -97,67 +98,55 @@ Godot scenes and autoloads can attach `.ts` / `.tsx` scripts. Gode loads the mat
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"strict": true,
-		"rootDir": ".",
-		"outDir": "dist",
-		"paths": {
-			"godot": ["./addons/gode/types/godot.d.ts"]
-		},
-		"types": ["node"]
+		"isolatedModules": true,
+		"forceConsistentCasingInFileNames": true,
+		"useDefineForClassFields": true,
+		"experimentalDecorators": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"skipLibCheck": true,
+		"types": []
 	},
-	"include": ["scripts/**/*.ts", "addons/gode/types/**/*.d.ts"],
-	"exclude": ["dist", "node_modules"]
+	"include": [
+		"**/*.ts",
+		"**/*.tsx",
+		"**/*.d.ts"
+	],
+	"exclude": ["node_modules", ".godot", ".gode", "addons/gode/tsc"]
 }
 ```
 
-Install TypeScript and Node types:
+Treat the generated `tsconfig.json` as project configuration and adjust it as needed. Installing Node types is optional and only needed when your scripts use Node globals or Node package types; when you do, include `"node"` in `"types"`:
 
 ```bash
-npm install -D typescript @types/node
-```
-
-Create `res://scripts/hello.ts`:
-
-```ts
-import { Node } from "godot";
-
-export default class Hello extends Node {
-	_ready(): void {
-		console.log("Hello from TypeScript");
-	}
-}
-```
-
-Run the compiler yourself while working:
-
-```bash
-npx tsc --watch
+npm install -D @types/node
 ```
 
 ## Advanced Usage
 
-### Calling Between JavaScript and GDScript
+### Calling Between TypeScript and GDScript
 
 Here is a complete node setup:
 
 ```text
 Main
-├── JsPlayer      # attached to res://scripts/player_logic.js
+├── TsPlayer      # attached to res://scripts/player_logic.ts
 └── GdTarget      # attached to res://scripts/gd_target.gd
 ```
 
-`res://scripts/player_logic.js`:
+`res://scripts/player_logic.ts`:
 
-```js
+```ts
 import { Node } from "godot";
 
 export default class PlayerLogic extends Node {
-	say_hello(name) {
+	say_hello(name: string): string {
 		return `hi ${name}`;
 	}
 
-	call_gd_target() {
+	call_gd_target(): unknown {
 		const target = this.get_node("../GdTarget");
-		return target.call("some_method", "from JavaScript");
+		return target.call("some_method", "from TypeScript");
 	}
 }
 ```
@@ -168,40 +157,40 @@ export default class PlayerLogic extends Node {
 extends Node
 
 func _ready() -> void:
-	var js_result = $"../JsPlayer".say_hello("Godot")
-	print(js_result) # hi Godot
+	var ts_result = $"../TsPlayer".say_hello("Godot")
+	print(ts_result) # hi Godot
 
-	var gd_result = $"../JsPlayer".call_gd_target()
-	print(gd_result) # gd received from JavaScript
+	var gd_result = $"../TsPlayer".call_gd_target()
+	print(gd_result) # gd received from TypeScript
 
 func some_method(message: String) -> String:
 	return "gd received " + message
 ```
 
-GDScript can call JavaScript script methods directly, just like methods on regular node scripts:
+GDScript can call TypeScript script methods directly, just like methods on regular node scripts:
 
 ```gdscript
-var result = $"../JsPlayer".say_hello("Godot")
+var result = $"../TsPlayer".say_hello("Godot")
 ```
 
-When JavaScript calls a GDScript method, use Godot's generic `call()`:
+When TypeScript calls a GDScript method, use Godot's generic `call()`:
 
-```js
+```ts
 const target = this.get_node("../GdTarget");
-const result = target.call("some_method", "from JavaScript");
+const result = target.call("some_method", "from TypeScript");
 ```
 
-For loose coupling, prefer Godot signals. See [Declaring Signals](#declaring-signals) for JavaScript-defined signals.
+For loose coupling, prefer Godot signals. See [Declaring Signals](#declaring-signals) for TypeScript-defined signals.
 
 ### Godot Types and Singletons
 
 Import Godot classes, built-in Variant types, and runtime singletons from the `godot` module:
 
-```js
+```ts
 import { DisplayServer, Node3D, ResourceLoader, Vector3 } from "godot";
 
 export default class Demo extends Node3D {
-	_ready() {
+	_ready(): void {
 		console.log(DisplayServer.get_name());
 
 		const scene = ResourceLoader.load("res://scenes/marker.tscn");
@@ -212,21 +201,21 @@ export default class Demo extends Node3D {
 }
 ```
 
-Gode 2.0 only exposes Godot APIs through the `godot` module. Import the classes and singletons you use explicitly. The generated `globals.d.ts` file only declares script decorator helpers and export metadata types; it no longer declares Godot APIs such as `Node`, `ResourceLoader`, and `Engine` as globally available names.
+Gode only exposes Godot APIs through the `godot` module. Import the classes and singletons you use explicitly. The generated `globals.d.ts` file only declares script decorator helpers and export metadata types; it no longer declares Godot APIs such as `Node`, `ResourceLoader`, and `Engine` as globally available names.
 
-### JavaScript Autoloads
+### TypeScript Autoloads
 
-JavaScript scripts can be used as Godot autoloads when the script's default export extends a Godot base class such as `Node`:
+TypeScript scripts can be used as Godot autoloads when the script's default export extends a Godot base class such as `Node`:
 
-```js
+```ts
 import { Node } from "godot";
 
 export default class Settings extends Node {
-	_ready() {
+	_ready(): void {
 		this.load_settings();
 	}
 
-	load_settings() {
+	load_settings(): void {
 		// Initialize global settings here.
 	}
 }
@@ -237,21 +226,21 @@ Register the script in `project.godot` or through Project Settings:
 ```ini
 [autoload]
 
-Settings="*res://menu/settings.js"
+Settings="*res://menu/settings.ts"
 ```
 
 Then access it from other scripts through the scene tree:
 
-```js
+```ts
 const settings = this.get_node("/root/Settings");
 settings.load_settings();
 ```
 
 ### Exported Properties and Tool Scripts
 
-Use static `exports` to expose JavaScript fields as Godot script properties. Exported properties appear in the Inspector and can be serialized in scenes and resources.
+Use static `exports` to expose TypeScript fields as Godot script properties. Exported properties appear in the Inspector and can be serialized in scenes and resources.
 
-```js
+```ts
 import { Node3D, Vector3 } from "godot";
 
 export default class Spawner extends Node3D {
@@ -271,7 +260,7 @@ The `type` field uses Godot Variant type names such as `"String"`, `"int"`, `"fl
 
 Set `static tool = true` when the script should run in the editor:
 
-```js
+```ts
 export default class Preview extends Node3D {
 	static tool = true;
 }
@@ -281,7 +270,7 @@ export default class Preview extends Node3D {
 
 Declare custom script signals with a static `signals` object. Gode exposes these to Godot through the script metadata APIs, so `has_signal()`, `connect()`, and editor/runtime signal discovery work as expected.
 
-```js
+```ts
 import { Node } from "godot";
 
 export default class Menu extends Node {
@@ -290,7 +279,7 @@ export default class Menu extends Node {
 		quit: [],
 	};
 
-	_on_start_pressed() {
+	_on_start_pressed(): void {
 		this.emit_signal("replace_main_scene", this.next_scene);
 	}
 }
@@ -300,7 +289,7 @@ Signal arguments are described with `{ name, type }` entries. The `type` value m
 
 You can also connect to existing Godot signals directly:
 
-```js
+```ts
 button.connect("pressed", () => {
 	console.log("button pressed");
 });
@@ -310,7 +299,7 @@ button.connect("pressed", () => {
 
 Methods that should be callable through Godot multiplayer RPC must be declared with static `rpc_config` metadata:
 
-```js
+```ts
 import { CharacterBody3D } from "godot";
 
 export default class Robot extends CharacterBody3D {
@@ -319,19 +308,19 @@ export default class Robot extends CharacterBody3D {
 		play_effect: { mode: "any_peer", call_local: true, transfer_mode: "reliable", channel: 0 },
 	};
 
-	hit() {
+	hit(): void {
 		this.health -= 1;
 	}
 
-	play_effect() {
+	play_effect(): void {
 		this.effect.restart();
 	}
 }
 ```
 
-After the metadata is declared, regular Godot RPC calls can target the JavaScript method:
+After the metadata is declared, regular Godot RPC calls can target the TypeScript method:
 
-```js
+```ts
 if (target.has_method("hit")) {
 	target.rpc("hit");
 }
@@ -341,13 +330,13 @@ Supported `mode` values are `"authority"`, `"any_peer"`, and `"disabled"`. Suppo
 
 ### Resource Loading and Scene Instantiation
 
-Resources loaded from JavaScript are normal Godot resources and keep their Godot lifetime while wrapped by JavaScript:
+Resources loaded from TypeScript are normal Godot resources and keep their Godot lifetime while wrapped by JavaScript:
 
-```js
+```ts
 import { Node, ResourceLoader } from "godot";
 
 export default class SceneSpawner extends Node {
-	_ready() {
+	_ready(): void {
 		const menuScene = ResourceLoader.load("res://menu/menu.tscn");
 		const menu = menuScene.instantiate();
 		this.add_child(menu);
@@ -357,11 +346,11 @@ export default class SceneSpawner extends Node {
 
 Keep a reference to resources that you plan to reuse, just as you would in GDScript:
 
-```js
+```ts
 import { Node, ResourceLoader } from "godot";
 
 export default class LevelLoader extends Node {
-	_ready() {
+	_ready(): void {
 		this.levelScene = ResourceLoader.load("res://level/level.tscn");
 		this.add_child(this.levelScene.instantiate());
 	}
@@ -376,15 +365,9 @@ When a JavaScript exception crosses into Godot, Gode reports it as a Godot scrip
 
 ### TypeScript Workflow
 
-Gode executes JavaScript at runtime, so TypeScript is a source language: attach `.ts` / `.tsx` scripts in Godot scenes, and compile them to matching JavaScript files under `res://dist` before running:
+Gode treats TypeScript as the only Godot-facing script language. At edit time and runtime, `.ts` / `.tsx` resources are compiled in-process to ESM JavaScript under Gode's `user://.gode/typescript/...` cache. That cache is private implementation detail; do not commit it and do not reference it from scenes.
 
-```text
-res://scripts/player.ts        -> res://dist/scripts/player.js
-res://ui/main_menu.ts          -> res://dist/ui/main_menu.js
-res://systems/save_state.ts    -> res://dist/systems/save_state.js
-```
-
-Keep script metadata on the exported TypeScript class the same way you would in JavaScript. Static fields such as `signals`, `rpc_config`, `exports`, and `tool` are preserved in the compiled output:
+Keep script metadata on the exported TypeScript class. Static fields such as `signals`, `rpc_config`, `exports`, and `tool` are preserved in the generated ESM output:
 
 ```ts
 import { Node } from "godot";
@@ -396,61 +379,90 @@ export default class Player extends Node {
 
 	static rpc_config = {
 		hit: { mode: "authority", call_local: true },
-	};
-}
-```
-
-For local imports in TypeScript source, prefer the runtime JavaScript extension so the emitted file can be loaded directly by Node/V8:
-
-```ts
-import { PlayerState } from "./player_state.js";
-```
-
-A common project setup is to keep watch/build commands in `package.json`:
-
-```json
-{
-	"scripts": {
-		"dev": "tsc --watch",
-		"build": "tsc --pretty false"
 	}
 }
 ```
 
-Run `npm run dev` while editing, and run `npm run build` before exporting or committing generated `dist` files.
+For local imports, use modern ESM specifiers:
+
+```ts
+import { PlayerState } from "./player_state";
+```
+
+Gode uses the bundled TypeScript compiler for diagnostics and emit. It respects the project-root `tsconfig.json` for type-checking policy and creates the default config when it is missing. Runtime output is forced to ESM so Godot projects have one primary module format. CommonJS remains a compatibility path for npm packages and explicit `.cjs` sidecar modules, not for Godot script resources.
 
 ### Exporting Projects
 
-Gode resolves npm packages from the project root `node_modules`. Export presets should include runtime JavaScript/JSON files, `dist`, `node_modules`, and `package.json`. The example project uses `all_resources`, which is conservative and favors reliable exports.
+Before export, the Gode export plugin compiles the project and injects the generated ESM JavaScript into `res://.gode/build/typescript/...` inside the exported package. Debug exports include source maps; release exports include only the runtime JavaScript.
 
-Dependency trimming, bundling, native npm addon handling, and production-only installs should stay in your project build pipeline. This keeps Gode compatible with npm, pnpm, yarn, bun, and custom build setups.
+If the project root has no `package.json` or `node_modules`, Gode does not require an external Node.js/npm environment and the project can be exported directly. Only root `package.json` or `node_modules` makes Gode treat the project as an external-dependency project:
+
+- It checks that `node` and `npm` are available in `PATH`, which confirms the basic npm project toolchain exists.
+- Export fails when `package.json` declares dependencies but `node_modules` is missing; run the matching install command first.
+- Root package manifests/lockfiles and a `node_modules` file snapshot are injected into the exported package by default.
+- Gode does not scan or audit package contents inside `node_modules`; if a dependency contains native binaries, wasm, or runtime data files, the project is responsible for making those files valid for the target platform.
+
+Export behavior is controlled from `gode.json` in the project root. When an external-dependency project is exported without a root `gode.json`, Gode creates one from the bundled template at `res://addons/gode/config/gode.json`. The template is:
+
+```json
+{
+  "export": {
+    "npm": {
+      "exportDependencies": true,
+      "requireTools": true,
+      "includeManifests": true,
+      "includeNodeModules": true,
+      "excludePaths": [
+        "node_modules/.cache",
+        "node_modules/.bin"
+      ],
+      "extraIncludePaths": []
+    }
+  }
+}
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `export.npm.exportDependencies` | `true` | Export package manifests and a `node_modules` snapshot when npm project files exist. |
+| `export.npm.requireTools` | `true` | Require `node` and `npm` for npm projects. |
+| `export.npm.includeManifests` | `true` | Export root `package.json`, lockfiles, `.npmrc` / `.yarnrc`, and related manifests. |
+| `export.npm.includeNodeModules` | `true` | Export a `res://node_modules` file snapshot. |
+| `export.npm.excludePaths` | `node_modules/.cache`, `node_modules/.bin` | Path prefixes excluded from the npm snapshot. |
+| `export.npm.extraIncludePaths` | empty | Extra dependency resources to inject, such as external wasm or data directories. |
+
+Recommended project setup:
+
+- Projects without external dependencies: do not place `package.json` or `node_modules` in the project root, and do not need `gode.json`. Export does not require a system Node.js/npm installation. A lockfile by itself does not trigger external-dependency mode.
+- npm/pnpm/Yarn/Bun projects: run `init` / `install` / `add` yourself in the project root and commit `package.json` plus the lockfile. Install dependencies before export, either locally or in CI. The first export creates root `gode.json`; keep `exportDependencies`, `includeManifests`, and `includeNodeModules` enabled unless you have a custom pipeline.
+- Custom dependency pipelines: disable `exportDependencies` or `includeNodeModules` only when another pipeline injects dependencies. Disable `requireTools` only when an outer CI step already validates the toolchain.
+- Gode does not inspect package internals or decide which packages users should use. Export checks are limited to reproducible runtime boundaries: whether root `package.json` / `node_modules` exists and whether declared dependencies are installed.
 
 ## Featured Demos
 
-- [tps-demo-js](https://github.com/godothub/tps-demo-js): JavaScript version of the official tps-demo sample
-- [tps-demo-ts](https://github.com/godothub/tps-demo-ts): TypeScript version of the official tps-demo sample
+- [tps-demo-ts](https://github.com/godothub/gode-tps-demo): TypeScript version of the official tps-demo sample
 
 ## FAQ
 
-**JavaScript / TypeScript script types do not appear after enabling the plugin**
+**The TypeScript script type does not appear after enabling the plugin**
 
 Make sure the plugin directory is `res://addons/gode` and that `res://addons/gode/plugin.cfg` exists. Then enable the plugin again or restart Godot.
 
-**A JavaScript autoload fails to instantiate**
+**A TypeScript autoload fails to instantiate**
 
-Make sure the autoload entry points to a `.js` file and the script's default export class extends a Godot base class such as `Node`. Gode uses that inheritance metadata to create the autoload instance.
+Make sure the autoload entry points to a `.ts` / `.tsx` file and the script's default export class extends a Godot base class such as `Node`. Gode uses that inheritance metadata to create the autoload instance.
 
 **TypeScript scripts are not compiled**
 
-Gode only loads the compiled JavaScript output. Make sure your project has a `tsconfig.json`, `typescript` is installed, and your own build/watch command is running, such as `npx tsc --watch`.
+Make sure the installed plugin contains `addons/gode/tsc/lib/typescript.js`. Gode reports TypeScript diagnostics in the Godot output panel when compilation fails.
 
-**`rpc()` cannot call a JavaScript method**
+**`rpc()` cannot call a TypeScript method**
 
-Declare the method in `static rpc_config` on the JavaScript class. Godot only exposes methods to RPC after the script reports that RPC metadata.
+Declare the method in `static rpc_config` on the TypeScript class. Godot only exposes methods to RPC after the script reports that RPC metadata.
 
 **npm packages cannot be found at runtime**
 
-Make sure dependencies are installed in the Godot project root under `node_modules`, and that your export preset includes the runtime JavaScript files, `dist`, `node_modules`, and `package.json`. Native npm addons (`.node` binaries) may still need package-specific handling.
+Make sure dependencies are installed in the Godot project root under `node_modules`. Keep `export.npm.exportDependencies` enabled in `gode.json` so Gode injects the `node_modules` snapshot; packages that need extra wasm, data files, or platform-specific binaries should be handled with `export.npm.extraIncludePaths` or your own export pipeline.
 
 **The plugin fails to load after export**
 
