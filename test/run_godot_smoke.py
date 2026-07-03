@@ -16,6 +16,7 @@ LEAK_RE = re.compile(
 	re.IGNORECASE,
 )
 ERROR_RE = re.compile(r"^ERROR:", re.IGNORECASE)
+MACOS_CA_ERROR_RE = re.compile(r'^ERROR: Condition "ret != noErr" is true\. Returning: ""$')
 
 
 def candidate_godot_paths():
@@ -79,12 +80,20 @@ def leak_lines(output):
 	return [line for line in output_lines(output) if LEAK_RE.search(line)]
 
 
+def is_known_nonfatal_error(lines, index):
+	line = lines[index]
+	if not MACOS_CA_ERROR_RE.search(line):
+		return False
+	return any("get_system_ca_certificates" in candidate for candidate in lines[index + 1:index + 4])
+
+
 def non_leak_error_lines(output):
-	lines = []
-	for line in output_lines(output):
-		if ERROR_RE.search(line) and not LEAK_RE.search(line):
-			lines.append(line)
-	return lines
+	lines = output_lines(output)
+	errors = []
+	for index, line in enumerate(lines):
+		if ERROR_RE.search(line) and not LEAK_RE.search(line) and not is_known_nonfatal_error(lines, index):
+			errors.append(line)
+	return errors
 
 
 def run_smoke(args):
