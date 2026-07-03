@@ -1,18 +1,16 @@
 ## 2.1.0
 
-- Made TypeScript the only Godot-facing script language while retaining JavaScript compatibility and avoiding confusion from mixing two script languages.
-- Added bundled TypeScript `6.0.3` packaging for releases. The compiler is extracted into the plugin `tsc/` directory during packaging without the npm archive's outer `package/` directory.
+- Made TypeScript the only script language, avoiding confusion from mixing two languages.
+- Bundled TypeScript in the plugin, so projects without external dependencies no longer need local environment setup.
 - Dependency updates: embedded Node.js is upgraded to `24.18.0`, and `third/node-addon-api` is upgraded to `8.9.0`.
-- Added a packaged default `tsconfig.json` template under `addons/gode/config/` and automatic project-root `res://tsconfig.json` creation when a project has no TypeScript config yet.
-- Added in-process TypeScript project compilation through the embedded Node/V8 runtime, emitting ESM JavaScript into a Gode-managed `user://` cache for editor/runtime use.
-- Added a Godot export plugin that compiles TypeScript before export and injects generated ESM JavaScript into `res://.gode/build/typescript/...` inside exported packages.
-- Added production npm export handling controlled by project-root `gode.json`, which is generated from `addons/gode/config/gode.json` for external-dependency projects that need it.
-- Extended Node's virtual filesystem and module resolver support from `res://` to `user://`, enabling compiled TypeScript cache files to import project modules and npm packages reliably.
-- Kept CommonJS as an interoperability path for npm packages and explicit `.cjs` sidecar modules while keeping generated project output ESM-only.
-- Removed the legacy JavaScript resource loader/saver implementations and unused JavaScript script icon assets so `.js` cannot return as a Godot script resource through stale code paths.
+- Bundled a `tsconfig.json` template and automatically generate one when the project root does not have it.
+- Added npm export handling controlled by project-root `gode.json`; one is generated automatically when the project root does not have it.
+- Extended Node's virtual filesystem and module resolver from `res://` to `user://`.
+- Kept CommonJS as the interoperability path for npm packages and explicit `.cjs` files, while project output remains ESM-only.
+- Removed legacy JavaScript-related code and unused icons.
 - Removed the example project's root `package.json`, keeping the bundled sample runnable without external dependency installation.
 - Fixed TypeScript exported property revert defaults by reading class field initializers for properties declared through `static exports`.
-- Added TypeScript declaration generation for runtime-exposed built-in operator methods such as `Vector2i.add()` and preserved reserved runtime names such as `GD.typeof()`.
+- Added TypeScript declaration generation for runtime-exposed built-in operator methods.
 
 ## 2.0.0
 
