@@ -17,7 +17,7 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			[
 				'ERROR: 1 RID allocations of type "Viewport" were leaked at exit.',
 				"WARNING: 17 ObjectDB instances were leaked at exit.",
-				"Leaked instance: Javascript:123 - Reference count: 1",
+				"Leaked instance: TypeScriptScript:123 - Reference count: 1",
 				'ERROR: Condition "ret != noErr" is true. Returning: ""',
 				"   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)",
 				"ERROR: Script failed before running the test.",

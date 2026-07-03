@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_MARKER = "[GodeTest] all tests passed"
 
 LEAK_RE = re.compile(
-	r"(WARNING|ERROR): .*leaked|Leaked instance:|Orphan StringName: (Gode|Javascript|Typescript)",
+	r"(WARNING|ERROR): .*leaked|Leaked instance:|Orphan StringName: (Gode|TypeScriptScript)",
 	re.IGNORECASE,
 )
 ERROR_RE = re.compile(r"^ERROR:", re.IGNORECASE)
