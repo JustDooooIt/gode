@@ -75,7 +75,12 @@ add_library(gode_tree_sitter STATIC
 set_target_properties(gode_tree_sitter PROPERTIES
 	C_STANDARD 11
 	C_STANDARD_REQUIRED ON
-	C_EXTENSIONS OFF
+)
+target_compile_definitions(gode_tree_sitter PRIVATE
+	_POSIX_C_SOURCE=200112L
+	_DEFAULT_SOURCE
+	_BSD_SOURCE
+	_DARWIN_C_SOURCE
 )
 target_include_directories(gode_tree_sitter PUBLIC
 	"${TREE_SITTER_DIR}/lib/include"
@@ -89,7 +94,6 @@ add_library(gode_tree_sitter_typescript STATIC
 set_target_properties(gode_tree_sitter_typescript PROPERTIES
 	C_STANDARD 11
 	C_STANDARD_REQUIRED ON
-	C_EXTENSIONS OFF
 )
 target_include_directories(gode_tree_sitter_typescript PRIVATE
 	"${TREE_SITTER_DIR}/lib/include"
