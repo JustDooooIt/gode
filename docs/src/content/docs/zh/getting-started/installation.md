@@ -3,7 +3,7 @@ title: 安装插件
 description: 将 Gode 插件安装到 Godot 项目中，并确认 TypeScript 脚本可用。
 ---
 
-Gode 以 Godot addon 的形式分发。只要插件位于 `res://addons/gode` 并在 Godot 项目设置中启用，项目就可以使用 Gode。插件里包含运行时和 TypeScript 编译器。常规 Gode 开发不需要安装 nodejs、npm 等。
+Gode 以 Godot addon 的形式分发。插件里包含运行时和 TypeScript 编译器。常规 Gode 开发不需要安装 nodejs、npm 等。
 
 ## 安装步骤
 

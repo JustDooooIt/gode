@@ -1,5 +1,5 @@
 ---
-title: 概览
+title: 项目概览
 description: 面向 Godot 项目的 TypeScript 脚本运行时，兼顾原生平台、npm 生态与可复现导出。
 ---
 

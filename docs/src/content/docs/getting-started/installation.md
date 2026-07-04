@@ -3,7 +3,7 @@ title: Install Plugin
 description: Install the Gode plugin into a Godot project and verify that TypeScript scripts are available.
 ---
 
-Gode is distributed as a Godot addon. Once the plugin lives at `res://addons/gode` and is enabled in Godot's project settings, the project can use Gode. The plugin includes the runtime and the TypeScript compiler. Regular Gode development does not require installing Node.js, npm, or similar tools.
+Gode is distributed as a Godot addon. Regular Gode development does not require installing Node.js, npm, or similar tools.
 
 ## Installation steps
 
