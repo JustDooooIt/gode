@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 
 
@@ -32,6 +33,45 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			"Godot Engine\nSCRIPT ERROR: Parse Error\n",
 			run_godot_smoke.captured_output_text(b"Godot Engine\nSCRIPT ERROR: Parse Error\n"),
 		)
+
+	def test_extension_list_is_created_for_clean_projects(self):
+		with tempfile.TemporaryDirectory() as temp_dir:
+			project = pathlib.Path(temp_dir)
+			manifest = project / "addons/gode/binary/gode.gdextension"
+			manifest.parent.mkdir(parents=True)
+			manifest.write_text("[configuration]\n", encoding="utf-8")
+
+			run_godot_smoke.ensure_extension_list(project, run_godot_smoke.DEFAULT_EXTENSION)
+
+			self.assertEqual(
+				run_godot_smoke.DEFAULT_EXTENSION + "\n",
+				(project / ".godot/extension_list.cfg").read_text(encoding="utf-8"),
+			)
+
+	def test_extension_list_preserves_existing_entries_without_duplicates(self):
+		with tempfile.TemporaryDirectory() as temp_dir:
+			project = pathlib.Path(temp_dir)
+			manifest = project / "addons/gode/binary/gode.gdextension"
+			manifest.parent.mkdir(parents=True)
+			manifest.write_text("[configuration]\n", encoding="utf-8")
+			extension_list = project / ".godot/extension_list.cfg"
+			extension_list.parent.mkdir()
+			extension_list.write_text(
+				"res://addons/other/other.gdextension\n"
+				+ run_godot_smoke.DEFAULT_EXTENSION
+				+ "\n",
+				encoding="utf-8",
+			)
+
+			run_godot_smoke.ensure_extension_list(project, run_godot_smoke.DEFAULT_EXTENSION)
+
+			self.assertEqual(
+				[
+					"res://addons/other/other.gdextension",
+					run_godot_smoke.DEFAULT_EXTENSION,
+				],
+				extension_list.read_text(encoding="utf-8").splitlines(),
+			)
 
 
 if __name__ == "__main__":
