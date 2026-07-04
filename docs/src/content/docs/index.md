@@ -7,12 +7,12 @@ Gode adds JavaScript/TypeScript language support to Godot. Write Godot node scri
 
 ## Platform support
 
-Gode targets native Godot projects and supports the following platforms.
+Gode targets native Godot projects and supports all platforms。
 
 | Platform | Supported | Minimum version |
 | --- | --- | --- |
-| Windows | Yes | Windows 10 |
-| Android | Yes | Android 9 |
-| macOS | Yes | macOS 10.15 |
-| iOS | Yes | iOS 16 |
-| Linux | Yes | Ubuntu 22 |
+| Windows | ✅ | Windows 10 |
+| Android | ✅ | Android 9 |
+| macOS | ✅ | macOS 10.15 |
+| iOS | ✅ | iOS 16 |
+| Linux | ✅ | Ubuntu 22 |

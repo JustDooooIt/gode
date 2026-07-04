@@ -7,12 +7,12 @@ Gode 为 Godot 增加了 JavaScript/TypeScript 语言支持。使用现代 TypeS
 
 ## 平台支持
 
-Gode 面向原生 Godot 项目，支持以下平台。
+Gode 面向原生 Godot 项目，支持所有主流系统。
 
 | 平台 | 支持 | 最低版本 |
 | --- | --- | --- |
-| Windows | 是 | Windows 10 |
-| Android | 是 | Android 9 |
-| macOS | 是 | macOS 10.15 |
-| iOS | 是 | iOS 16 |
-| Linux | 是 | Ubuntu 22 |
+| Windows | ✅ | Windows 10 |
+| Android | ✅ | Android 9 |
+| macOS | ✅ | macOS 10.15 |
+| iOS | ✅ | iOS 16 |
+| Linux | ✅ | Ubuntu 22 |
