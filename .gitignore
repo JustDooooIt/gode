@@ -9,6 +9,8 @@ dist/
 FORME/
 gallery/
 *.import
+node_modules/
+.astro/
 
 # Python cache files
 __pycache__/

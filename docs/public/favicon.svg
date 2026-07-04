@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Gode">
+  <rect width="64" height="64" rx="14" fill="#09090b"/>
+  <path d="M15 34c0-11 8-19 19-19 5 0 9 1 13 4l-5 7c-2-2-5-3-8-3-6 0-10 4-10 11s4 11 10 11c2 0 4 0 6-1v-6h-8v-8h17v19c-4 3-9 5-16 5-11 0-18-8-18-20z" fill="#22c55e"/>
+</svg>
