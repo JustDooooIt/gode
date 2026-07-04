@@ -477,7 +477,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"config/gode.json",
 			"config/tsconfig.json",
 			"icons/typescript.svg",
-			"icons/typescript.svg.import",
 			"runtime/event_loop.gd",
 			"runtime/export_plugin.gd",
 			"runtime/typescript_compiler.js",
@@ -485,6 +484,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"types/godot.d.ts",
 		):
 			self.assertIn(f'"{path}"', package_script)
+		self.assertNotIn("icons/typescript.svg.import", package_script)
 
 		self.assertIn("prepare-typescript.sh", package_script)
 		self.assertIn("tsc/package.json", package_script)

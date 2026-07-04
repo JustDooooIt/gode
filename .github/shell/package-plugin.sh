@@ -50,7 +50,6 @@ required_files=(
 	"config/gode.json"
 	"config/tsconfig.json"
 	"icons/typescript.svg"
-	"icons/typescript.svg.import"
 	"runtime/event_loop.gd"
 	"runtime/export_plugin.gd"
 	"runtime/typescript_compiler.js"
@@ -84,6 +83,7 @@ fi
 rm -rf "$staging_root"
 mkdir -p "$staged_addon_root" "$output_directory"
 cp -R "$addon_root"/. "$staged_addon_root"/
+find "$staged_addon_root" -type f -name '*.import' -delete
 
 "$script_dir/prepare-typescript.sh" --output-directory "$staged_addon_root/tsc"
 
