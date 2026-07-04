@@ -15,7 +15,7 @@ export default defineConfig({
       },
       description:
         'Production documentation for Gode, the TypeScript scripting runtime for Godot.',
-      favicon: '/favicon.svg',
+      favicon: 'https://legacy.godothub.com/icon/godothub.png',
       defaultLocale: 'root',
       locales: {
         root: {
@@ -38,6 +38,7 @@ export default defineConfig({
         baseUrl: 'https://github.com/godothub/gode/edit/main/docs/',
       },
       components: {
+        SiteTitle: './src/components/SiteTitle.astro',
         SocialIcons: './src/components/HeaderLinks.astro',
       },
       customCss: ['./src/styles/gode.css'],

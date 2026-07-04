@@ -33,7 +33,7 @@ jobs:
         with:
           path: ./docs
           node-version: 24
-          package-manager: pnpm@11
+          package-manager: pnpm@10.19.0
           build-cmd: pnpm run build
 
   deploy:
