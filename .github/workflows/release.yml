@@ -55,4 +55,5 @@ jobs:
           tag_name: ${{ inputs.tag }}
           name: ${{ inputs.tag }}
           prerelease: ${{ inputs.prerelease == 'true' }}
+          generate_release_notes: true
           files: dist/gode.zip
