@@ -98,6 +98,10 @@ jobs:
         shell: bash
         run: ./shell/build-linux.sh --arch x64 --config Release --fresh
 
+      - name: Prepare TypeScript compiler
+        shell: bash
+        run: ./.github/shell/prepare-typescript.sh
+
       - name: Download Godot
         shell: bash
         run: |
