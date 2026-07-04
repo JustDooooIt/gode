@@ -1,5 +1,5 @@
 ---
-title: TypeScript Configuration
+title: Configuration
 description: Understand the default tsconfig.json, when Gode creates it, and how to tune project compiler policy.
 ---
 

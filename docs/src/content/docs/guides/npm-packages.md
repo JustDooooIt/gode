@@ -1,5 +1,5 @@
 ---
-title: Using npm Packages
+title: Using NPM
 description: Use npm dependencies from a Godot project root while keeping export behavior explicit and reproducible.
 ---
 
