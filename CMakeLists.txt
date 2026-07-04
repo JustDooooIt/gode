@@ -72,6 +72,11 @@ endif()
 add_library(gode_tree_sitter STATIC
 	"${TREE_SITTER_DIR}/lib/src/lib.c"
 )
+set_target_properties(gode_tree_sitter PROPERTIES
+	C_STANDARD 11
+	C_STANDARD_REQUIRED ON
+	C_EXTENSIONS OFF
+)
 target_include_directories(gode_tree_sitter PUBLIC
 	"${TREE_SITTER_DIR}/lib/include"
 	"${TREE_SITTER_DIR}/lib/src"
@@ -80,6 +85,11 @@ target_include_directories(gode_tree_sitter PUBLIC
 add_library(gode_tree_sitter_typescript STATIC
 	"${TREE_SITTER_TYPESCRIPT_DIR}/typescript/src/parser.c"
 	"${TREE_SITTER_TYPESCRIPT_DIR}/typescript/src/scanner.c"
+)
+set_target_properties(gode_tree_sitter_typescript PROPERTIES
+	C_STANDARD 11
+	C_STANDARD_REQUIRED ON
+	C_EXTENSIONS OFF
 )
 target_include_directories(gode_tree_sitter_typescript PRIVATE
 	"${TREE_SITTER_DIR}/lib/include"
