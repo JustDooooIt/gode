@@ -3,6 +3,7 @@ extends EditorExportPlugin
 
 const GODE_CONFIG_PATH := "res://gode.json"
 const DEFAULT_GODE_CONFIG_PATH := "res://addons/gode/config/gode.json"
+const INLINE_SOURCE_MAP_MARKER := "//# sourceMappingURL=data:application/json;base64,"
 
 const NPM_MANIFEST_FILES := [
 	"package.json",
@@ -44,8 +45,8 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 	for output: Dictionary in result.get("outputs", []):
 		var source_path: String = output.get("path", "")
 		var exported_path: String = output.get("exported_path", "")
-		_add_compiled_file(exported_path, source_path)
-		if is_debug:
+		_add_compiled_file(exported_path, source_path, is_debug)
+		if is_debug and FileAccess.file_exists(source_path + ".map"):
 			_add_compiled_file(exported_path + ".map", source_path + ".map")
 
 	if _should_export_npm_dependencies() and has_npm_project:
@@ -54,13 +55,32 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 		if npm_exported_files > 0:
 			print("[Gode Export] Added npm runtime snapshot files: %d" % npm_exported_files)
 
-func _add_compiled_file(exported_path: String, source_path: String) -> void:
+func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> void:
 	if exported_path.is_empty() or source_path.is_empty():
 		return
 	if not FileAccess.file_exists(source_path):
 		push_error("Missing Gode TypeScript output: %s" % source_path)
 		return
+	if not include_inline_source_map and source_path.ends_with(".js"):
+		var code := FileAccess.get_file_as_string(source_path)
+		if FileAccess.get_open_error() != OK:
+			push_error("Failed to read Gode TypeScript output: %s" % source_path)
+			return
+		add_file(exported_path, _strip_inline_source_map(code).to_utf8_buffer(), false)
+		return
 	add_file(exported_path, FileAccess.get_file_as_bytes(source_path), false)
+
+func _strip_inline_source_map(code: String) -> String:
+	var marker_index := code.rfind(INLINE_SOURCE_MAP_MARKER)
+	if marker_index == -1:
+		return code
+	var line_start := code.rfind("\n", marker_index)
+	if line_start == -1:
+		return ""
+	var line_end := code.find("\n", marker_index)
+	if line_end == -1:
+		return code.substr(0, line_start + 1)
+	return code.substr(0, line_start + 1) + code.substr(line_end + 1)
 
 func _print_diagnostics(diagnostics: Array) -> void:
 	for diagnostic: Dictionary in diagnostics:

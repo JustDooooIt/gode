@@ -307,22 +307,22 @@
 			}
 			return tsApi.createSourceFile(normalizePath(fileName), source, languageVersion, true);
 		};
-			host.resolveModuleNames = (moduleNames, containingFile) => moduleNames.map((moduleName) => {
-				if (moduleName === "godot") {
-					return {
-						resolvedFileName: "res://addons/gode/types/godot.d.ts",
-						extension: tsApi.Extension.Dts,
-						isExternalLibraryImport: false
-					};
-				}
-				const sourceResolved = resolveSourceModule(tsApi, baseHost, moduleName, normalizePath(containingFile));
-				if (sourceResolved) {
-					return sourceResolved;
-				}
-				const resolved = tsApi.resolveModuleName(
-					moduleName,
-					normalizePath(containingFile),
-					options,
+		host.resolveModuleNames = (moduleNames, containingFile) => moduleNames.map((moduleName) => {
+			if (moduleName === "godot") {
+				return {
+					resolvedFileName: "res://addons/gode/types/godot.d.ts",
+					extension: tsApi.Extension.Dts,
+					isExternalLibraryImport: false
+				};
+			}
+			const sourceResolved = resolveSourceModule(tsApi, baseHost, moduleName, normalizePath(containingFile));
+			if (sourceResolved) {
+				return sourceResolved;
+			}
+			const resolved = tsApi.resolveModuleName(
+				moduleName,
+				normalizePath(containingFile),
+				options,
 				host
 			).resolvedModule;
 			return resolved || undefined;
@@ -345,11 +345,25 @@
 			experimentalDecorators: true,
 			skipLibCheck: true,
 			types: [],
-			sourceMap: true,
+			inlineSourceMap: true,
 			inlineSources: true,
 			declaration: false,
 			noEmit: true
 		};
+	}
+
+	function sourceRootForSource(filePath) {
+		const normalized = normalizePath(filePath);
+		const slash = normalized.lastIndexOf("/");
+		if (slash < 0) {
+			return "";
+		}
+		for (const prefix of ["res://", "user://"]) {
+			if (normalized.startsWith(prefix) && slash < prefix.length) {
+				return prefix;
+			}
+		}
+		return normalized.slice(0, slash + 1);
 	}
 
 	function isEmittableSource(filePath) {
@@ -358,24 +372,25 @@
 	}
 
 	globalThis.__gode_compile_typescript_project = function(files) {
-			try {
-				const tsApi = getTypescript();
-				const sources = Array.isArray(files) ? files : [];
-				const context = createSourceContext(sources);
-				const baseHost = createBaseHost(context);
-				const config = readTsConfig(tsApi, baseHost);
-				const compilerOptions = {
-					...defaultCompilerOptions(tsApi),
+		try {
+			const tsApi = getTypescript();
+			const sources = Array.isArray(files) ? files : [];
+			const context = createSourceContext(sources);
+			const baseHost = createBaseHost(context);
+			const config = readTsConfig(tsApi, baseHost);
+			const compilerOptions = {
+				...defaultCompilerOptions(tsApi),
 				...config.options,
 				module: tsApi.ModuleKind.ESNext,
 				moduleResolution: tsApi.ModuleResolutionKind.Bundler || tsApi.ModuleResolutionKind.Node10,
 				noEmit: true,
-				sourceMap: true,
+				sourceMap: false,
+				inlineSourceMap: true,
 				inlineSources: true,
-					declaration: false,
-					allowImportingTsExtensions: false
-				};
-				const host = createHost(tsApi, context, compilerOptions);
+				declaration: false,
+				allowImportingTsExtensions: false
+			};
+			const host = createHost(tsApi, context, compilerOptions);
 			const rootNames = sources.map((source) => normalizePath(source.path));
 			for (const internalType of ["res://addons/gode/types/globals.d.ts"]) {
 				if (fs.existsSync(internalType) && !rootNames.includes(internalType)) {
@@ -397,8 +412,12 @@
 				if (!isEmittableSource(sourcePath)) {
 					continue;
 				}
+				const sourceEmitOptions = {
+					...emitOptions,
+					sourceRoot: sourceRootForSource(sourcePath)
+				};
 				const result = tsApi.transpileModule(String(source.source || ""), {
-					compilerOptions: emitOptions,
+					compilerOptions: sourceEmitOptions,
 					fileName: sourcePath,
 					reportDiagnostics: true
 				});
@@ -433,5 +452,5 @@
 				}]
 			};
 		}
-	};
+};
 })();

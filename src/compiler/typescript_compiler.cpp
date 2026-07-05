@@ -337,11 +337,15 @@ Dictionary compile_project_internal(bool force) {
 		String output_path = compiled_path_for_source_internal(source_path);
 		String code = emitted["code"];
 		String source_map = emitted.has("sourceMap") ? String(emitted["sourceMap"]) : String();
+		String source_map_path = output_path + ".map";
 		if (!write_text_file(output_path, code)) {
 			return make_result(false, "Failed to write compiled TypeScript output: " + output_path);
 		}
-		if (!source_map.is_empty() && !write_text_file(output_path + ".map", source_map)) {
-			return make_result(false, "Failed to write TypeScript source map: " + output_path + ".map");
+		if (!source_map.is_empty() && !write_text_file(source_map_path, source_map)) {
+			return make_result(false, "Failed to write TypeScript source map: " + source_map_path);
+		}
+		if (source_map.is_empty() && FileAccess::file_exists(source_map_path)) {
+			DirAccess::remove_absolute(source_map_path);
 		}
 		written_count++;
 	}
