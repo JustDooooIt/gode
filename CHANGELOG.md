@@ -1,3 +1,9 @@
+## 2.2.0
+
+- Added breakpoint debugging support: Gode can expose the JavaScript engine runtime through the V8 Inspector protocol for VS Code or Chrome DevTools attach workflows.
+- Added `debug.inspector` configuration for `enabled`, `host`, `port`, `waitForDebugger`, `breakOnStart`, `sourceMaps`, `logUrl`, `autoIncrementPort`, `maxPortRetries`, and `allowInRelease`.
+- Expanded debugging documentation, the `gode.json` template, and repository integrity tests for inspector configuration, VS Code attach examples, and release safety policy.
+
 ## 2.1.0
 
 - Made TypeScript the only script language, avoiding confusion from mixing two languages.

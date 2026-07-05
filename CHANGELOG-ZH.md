@@ -1,3 +1,9 @@
+## 2.2.0
+
+- 新增断点调试支持：Gode 可以通过 V8 Inspector 协议让 VS Code 或 Chrome DevTools 附加到 JavaScript 引擎运行时。
+- 新增 `debug.inspector` 配置项，可控制 `enabled`、`host`、`port`、`waitForDebugger`、`breakOnStart`、`sourceMaps`、`logUrl`、`autoIncrementPort`、`maxPortRetries` 和 `allowInRelease`。
+- 补充调试文档、`gode.json` 模板和仓库完整性测试，覆盖 inspector 配置、VS Code attach 示例和 release 安全策略。
+
 ## 2.1.0
 
 - 将 TypeScript 作为唯一脚本语言，防止混用两种语言带来的混乱。
