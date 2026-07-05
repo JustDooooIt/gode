@@ -194,6 +194,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			ROOT / "src/runtime/node_bootstrap_scripts.cpp",
 			ROOT / "include/runtime/node_godot_bridge.h",
 			ROOT / "src/runtime/node_godot_bridge.cpp",
+			ROOT / "include/runtime/node_inspector.h",
+			ROOT / "src/runtime/node_inspector.cpp",
 			ROOT / "include/runtime/node_module_resolver.h",
 			ROOT / "src/runtime/node_module_resolver.cpp",
 			ROOT / "src/compiler/node_typescript_compiler_bridge.cpp",
@@ -455,6 +457,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('PROJECT_TYPESCRIPT_CONFIG_PATH = "res://tsconfig.json"', compiler_source)
 		self.assertIn('DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config/tsconfig.json"', compiler_source)
 		self.assertIn("ensure_project_typescript_config", compiler_source)
+		self.assertIn("DirAccess::remove_absolute(source_map_path)", compiler_source)
 
 	def test_example_project_has_no_root_external_dependency_marker(self):
 		for name in (
@@ -490,10 +493,27 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("tsc/package.json", package_script)
 		self.assertIn("tsc/lib/typescript.js", package_script)
 
+	def test_release_workflow_uses_packaged_smoke_test_and_changelog_notes(self):
+		release_workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+		for token in (
+			"needs: build",
+			"plugin_artifact_name: gode-plugin",
+			"CHANGELOG.md",
+			"version=\"${RELEASE_TAG#v}\"",
+			"sed '/./,$!d'",
+			"sed -e :a",
+			"body_path: ${{ steps.release_notes.outputs.path }}",
+			"files: dist/gode.zip",
+		):
+			self.assertIn(token, release_workflow)
+		self.assertNotIn("generate_release_notes: true", release_workflow)
+
 	def test_gode_json_controls_commercial_npm_export_policy(self):
 		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
 		self.assertTrue(template_path.exists())
 		config = json.loads(template_path.read_text(encoding="utf-8"))
+		self.assertIn("debug", config)
 		npm_config = config["export"]["npm"]
 		self.assertEqual(
 			{
@@ -541,6 +561,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"_export_npm_runtime_snapshot",
 			"_add_export_directory(\"res://node_modules\")",
 			"add_file(source_path, FileAccess.get_file_as_bytes(source_path), false)",
+			"INLINE_SOURCE_MAP_MARKER",
+			"_strip_inline_source_map",
+			"_add_compiled_file(exported_path, source_path, is_debug)",
 			"OS.execute(candidate, PackedStringArray([\"--version\"])",
 			'_command_exists("node")',
 			'_command_exists("npm")',
@@ -559,6 +582,88 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			".pnp.cjs",
 		):
 			self.assertNotIn(token, export_source)
+
+	def test_gode_json_controls_node_inspector_debug_policy(self):
+		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
+		self.assertTrue(template_path.exists())
+		config = json.loads(template_path.read_text(encoding="utf-8"))
+		inspector_config = config["debug"]["inspector"]
+		self.assertEqual(
+			{
+				"enabled",
+				"host",
+				"port",
+				"waitForDebugger",
+				"breakOnStart",
+				"sourceMaps",
+				"logUrl",
+				"autoIncrementPort",
+				"maxPortRetries",
+				"allowInRelease",
+			},
+			set(inspector_config),
+		)
+		self.assertFalse(inspector_config["enabled"])
+		self.assertEqual("127.0.0.1", inspector_config["host"])
+		self.assertEqual(9229, inspector_config["port"])
+		self.assertFalse(inspector_config["waitForDebugger"])
+		self.assertFalse(inspector_config["breakOnStart"])
+		self.assertTrue(inspector_config["sourceMaps"])
+		self.assertTrue(inspector_config["logUrl"])
+		self.assertTrue(inspector_config["autoIncrementPort"])
+		self.assertEqual(20, inspector_config["maxPortRetries"])
+		self.assertFalse(inspector_config["allowInRelease"])
+
+		runtime_source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
+		inspector_source = (ROOT / "src/runtime/node_inspector.cpp").read_text(encoding="utf-8")
+		bootstrap_source = (ROOT / "src/runtime/node_bootstrap_scripts.cpp").read_text(encoding="utf-8")
+		compiler_source = (EXAMPLE_ROOT / "addons/gode/runtime/typescript_compiler.js").read_text(encoding="utf-8")
+		for token in (
+			'PROJECT_GODE_CONFIG_PATH = "res://gode.json"',
+			'DEFAULT_GODE_CONFIG_PATH = "res://addons/gode/config/gode.json"',
+			"Config load_config",
+			"debug.inspector",
+			"allowInRelease",
+			"is_release_export_runtime",
+			"open_node_inspector",
+			"wait_for_node_debugger",
+			"void close_if_open",
+			"break_on_next_user_script",
+			"is_user_compiled_typescript_module",
+			"Node inspector is not bound to a loopback host",
+			"void print_attach_info",
+		):
+			self.assertIn(token, inspector_source)
+		for token in (
+			"node_inspector::load_config",
+			"node_inspector::open_if_enabled",
+			"node_inspector::maybe_break_on_user_script",
+			"node_inspector::close_if_open",
+			"--enable-source-maps",
+		):
+			self.assertIn(token, runtime_source)
+
+		for token in (
+			"__gode_open_inspector",
+			"__gode_wait_for_debugger",
+			"__gode_close_inspector",
+			"require('inspector')",
+			"inspector.open(candidate, safeHost, false)",
+			"inspector.url()",
+			"resolvedPort",
+			"waitForDebugger()",
+			"require('inspector').close()",
+		):
+			self.assertIn(token, bootstrap_source)
+		for token in (
+			"inlineSourceMap: true",
+			"sourceMap: false",
+			"sourceRootForSource",
+		):
+			self.assertIn(token, compiler_source)
+
+		self.assertNotIn("--inspect", runtime_source)
+		self.assertNotIn("--inspect-brk", runtime_source)
 
 	def test_native_sources_use_domain_directories(self):
 		for directory in (
