@@ -20,6 +20,65 @@ GD.printerr("failed to load profile", profileId);
 
 遇到只在运行时出现的问题时，建议从终端启动 Godot，以便看到 Node/V8 warning、`console.*` 输出和 GDExtension 消息。
 
+## TypeScript 断点调试
+
+Gode 可以通过 Node/V8 Inspector 协议让 VS Code 或 Chrome DevTools 附加到嵌入式 Node 运行时。该功能默认关闭；关闭时不会加载 `inspector` 模块、不会监听端口，也不会处理调试协议消息。
+
+在项目根目录创建或更新 `res://gode.json`：
+
+```json
+{
+  "debug": {
+    "inspector": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 9229,
+      "waitForDebugger": false,
+      "breakOnStart": false,
+      "sourceMaps": true,
+      "logUrl": true,
+      "autoIncrementPort": true,
+      "maxPortRetries": 20,
+      "allowInRelease": false
+    }
+  }
+}
+```
+
+启动项目后，Gode 会在输出中打印真实的 inspector WebSocket URL 和 Chrome DevTools URL。不要手写 `ws=127.0.0.1:9229/1`；Node inspector 的路径不是固定值，必须使用运行时打印的 URL，或访问 `http://127.0.0.1:9229/json/list` 查询。
+
+VS Code 可以使用 attach 配置：
+
+```json
+{
+  "type": "node",
+  "request": "attach",
+  "name": "Attach to Gode",
+  "address": "127.0.0.1",
+  "port": 9229,
+  "protocol": "inspector",
+  "sourceMaps": true,
+  "sourceMapPathOverrides": {
+    "res://*": "${workspaceFolder}/*"
+  },
+  "skipFiles": [
+    "<node_internals>/**",
+    "**/addons/gode/**",
+    "**/.gode/build/**"
+  ]
+}
+```
+
+`breakOnStart` 会在第一个用户 TypeScript 脚本编译前执行一次调试暂停，不会改写用户脚本内容。需要从启动阶段就等待调试器时，打开 `waitForDebugger`；Gode 会先打印连接地址，再阻塞等待调试器附加。
+
+启用 `sourceMaps` 时，编译后的 TypeScript 会内联 source map，使外部调试器无需读取 Godot 虚拟文件系统也能解析 `res://` 和 `user://` 脚本 URL。release 导出会移除内联 source map，除非导出预设是 debug 导出。
+
+安全建议：
+
+- 保持默认的 `host: "127.0.0.1"`，除非确实需要远程调试。
+- release 导出默认不会启用 inspector；只有显式设置 `allowInRelease: true` 才会覆盖该保护。
+- 调试器附加后可以执行 JavaScript，远程开放端口应视为高权限操作。
+
 ## TypeScript 诊断
 
 编译失败时，Gode 会在 Godot 输出面板报告 TypeScript 诊断。常见原因包括：

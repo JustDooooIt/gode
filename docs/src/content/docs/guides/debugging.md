@@ -20,6 +20,65 @@ GD.printerr("failed to load profile", profileId);
 
 For runtime-only issues, start Godot from a terminal so Node/V8 warnings, `console.*` output, and native extension messages are visible.
 
+## TypeScript breakpoints
+
+Gode can expose the embedded Node runtime through the Node/V8 Inspector protocol so VS Code or Chrome DevTools can attach to TypeScript scripts. This feature is disabled by default; when disabled, Gode does not load the `inspector` module, listen on a port, or process debugger protocol messages.
+
+Create or update `res://gode.json` in the project root:
+
+```json
+{
+  "debug": {
+    "inspector": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 9229,
+      "waitForDebugger": false,
+      "breakOnStart": false,
+      "sourceMaps": true,
+      "logUrl": true,
+      "autoIncrementPort": true,
+      "maxPortRetries": 20,
+      "allowInRelease": false
+    }
+  }
+}
+```
+
+When the project starts, Gode prints the real inspector WebSocket URL and a Chrome DevTools URL. Do not hard-code `ws=127.0.0.1:9229/1`; the Node inspector path is not fixed. Use the URL printed by Gode or query `http://127.0.0.1:9229/json/list`.
+
+VS Code can attach with:
+
+```json
+{
+  "type": "node",
+  "request": "attach",
+  "name": "Attach to Gode",
+  "address": "127.0.0.1",
+  "port": 9229,
+  "protocol": "inspector",
+  "sourceMaps": true,
+  "sourceMapPathOverrides": {
+    "res://*": "${workspaceFolder}/*"
+  },
+  "skipFiles": [
+    "<node_internals>/**",
+    "**/addons/gode/**",
+    "**/.gode/build/**"
+  ]
+}
+```
+
+`breakOnStart` runs a one-time debugger pause immediately before the first user TypeScript script is compiled. Use `waitForDebugger` when startup should block until a debugger attaches; Gode prints the attach URL before waiting.
+
+When `sourceMaps` is enabled, compiled TypeScript includes inline source maps so external debuggers can resolve `res://` and `user://` script URLs without reading Godot's virtual filesystem. Release exports strip inline source maps unless the export preset is a debug export.
+
+Security guidance:
+
+- Keep the default `host: "127.0.0.1"` unless remote debugging is intentional.
+- Release exports do not enable the inspector by default; set `allowInRelease: true` only when that is deliberate.
+- An attached debugger can execute JavaScript, so exposing the port remotely should be treated as a privileged operation.
+
 ## TypeScript diagnostics
 
 When compilation fails, Gode reports TypeScript diagnostics in the Godot output panel. Common causes include:
