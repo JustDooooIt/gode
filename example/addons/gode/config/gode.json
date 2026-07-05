@@ -1,4 +1,18 @@
 {
+  "debug": {
+    "inspector": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 9229,
+      "waitForDebugger": false,
+      "breakOnStart": false,
+      "sourceMaps": true,
+      "logUrl": true,
+      "autoIncrementPort": true,
+      "maxPortRetries": 20,
+      "allowInRelease": false
+    }
+  },
   "export": {
     "npm": {
       "exportDependencies": true,

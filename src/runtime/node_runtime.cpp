@@ -4,6 +4,7 @@
 #include "runtime/napi_error_utils.h"
 #include "runtime/node_bootstrap_scripts.h"
 #include "runtime/node_godot_bridge.h"
+#include "runtime/node_inspector.h"
 #include "runtime/node_module_resolver.h"
 #include "utility_functions/utility_functions.h"
 
@@ -54,12 +55,17 @@ void NodeRuntime::init_once() {
 		return;
 	}
 
+	node_inspector::Config inspector_config = node_inspector::load_config();
+
 	std::vector<std::string> args;
 	std::vector<std::string> exec_args;
 	std::vector<std::string> errors;
 	// args[0] is the executable name; the remaining entries are Node flags.
 	args.push_back("godot node");
 	args.push_back("--experimental-vm-modules");
+	if (inspector_config.enabled && inspector_config.source_maps) {
+		args.push_back("--enable-source-maps");
+	}
 
 	int flags = node::ProcessInitializationFlags::kNoInitializeV8 |
 			node::ProcessInitializationFlags::kNoInitializeNodeV8Platform |
@@ -124,6 +130,7 @@ void NodeRuntime::init_once() {
 		}
 
 		node_context.Reset(isolate, context);
+		node_inspector::open_if_enabled(inspector_config);
 	}
 
 	node_initialized = true;
@@ -176,6 +183,8 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 
 	v8::Local<v8::Context> context = node_context.Get(isolate);
 	v8::Context::Scope context_scope(context);
+
+	node_inspector::maybe_break_on_user_script(filename);
 
 	// Detect whether the file should be loaded as ESM.
 	v8::Local<v8::Value> result;
@@ -385,6 +394,7 @@ void NodeRuntime::shutdown() {
 
 		{
 			v8::Context::Scope context_scope(node_context.Get(isolate));
+			node_inspector::close_if_open();
 			clear_godot_instance_cache();
 			reset_class_references();
 			reset_builtin_references();
