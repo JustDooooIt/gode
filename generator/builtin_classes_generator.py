@@ -1,8 +1,12 @@
-import json
 import os
 
 from .base_generator import CodeGenerator
-from .utils.api_path import find_extension_api_json
+from .utils.api_data import load_extension_api_json
+from .utils.binding_policy import (
+    builtin_operator_method_name,
+    method_conflicts_with_builtin_member,
+    variant_operator_enum_name,
+)
 from .utils.builtin_compat import builtin_member_compat, builtin_method_compat
 from .utils.string_utils import sanitize_method_name, to_snake_case
 from .utils.type_mappings import (
@@ -52,36 +56,6 @@ def napi_match_expr(type_name, index):
     return f"{value}.IsObject()"
 
 
-def variant_operator_enum(op_symbol):
-    return {
-        '==': 'OP_EQUAL',
-        '!=': 'OP_NOT_EQUAL',
-        '<': 'OP_LESS',
-        '<=': 'OP_LESS_EQUAL',
-        '>': 'OP_GREATER',
-        '>=': 'OP_GREATER_EQUAL',
-        '+': 'OP_ADD',
-        '-': 'OP_SUBTRACT',
-        'unary-': 'OP_NEGATE',
-        'unary+': 'OP_POSITIVE',
-        '*': 'OP_MULTIPLY',
-        '/': 'OP_DIVIDE',
-        '%': 'OP_MODULE',
-        '**': 'OP_POWER',
-        '<<': 'OP_SHIFT_LEFT',
-        '>>': 'OP_SHIFT_RIGHT',
-        '&': 'OP_BIT_AND',
-        '|': 'OP_BIT_OR',
-        '^': 'OP_BIT_XOR',
-        '~': 'OP_BIT_NEGATE',
-        'and': 'OP_AND',
-        'or': 'OP_OR',
-        'xor': 'OP_XOR',
-        'not': 'OP_NOT',
-        'in': 'OP_IN',
-    }.get(op_symbol)
-
-
 # Map of classes and their direct fields (vs properties accessed via methods)
 DIRECT_FIELDS = {
     'Vector2': ['x', 'y'],
@@ -129,19 +103,7 @@ FIELD_MAPPING = {
 
 class BuiltinClassGenerator(CodeGenerator):
     def run(self):
-        api_path = find_extension_api_json()
-        
-        try:
-            with open(api_path, 'r', encoding='utf-8') as f:
-                api_data = json.load(f)
-        except FileNotFoundError:
-            print(f"Error: extension_api.json not found at {api_path}")
-            return
-
-        # Iterate over all builtin classes
-        if 'builtin_classes' not in api_data:
-            print("Error: 'builtin_classes' key not found in api_data")
-            return
+        api_data = load_extension_api_json(required_keys=("builtin_classes",))
             
         # Collect refcounted classes
         refcounted_classes = set()
@@ -192,15 +154,7 @@ class BuiltinClassGenerator(CodeGenerator):
             filtered_methods = []
             for method in methods:
                 method_name = method['name']
-                is_conflict = False
-                
-                # Check for get_member / set_member pattern
-                if method_name.startswith('get_') and method_name[4:] in member_names:
-                    is_conflict = True
-                elif method_name.startswith('set_') and method_name[4:] in member_names:
-                    is_conflict = True
-                
-                if not is_conflict:
+                if not method_conflicts_with_builtin_member(method_name, member_names):
                     filtered_methods.append(method)
             
             methods = filtered_methods
@@ -337,29 +291,6 @@ class BuiltinClassGenerator(CodeGenerator):
                     if arg_type == 'Basis' and class_name != 'Quaternion':
                         dependencies.add("builtin/quaternion_binding.gen.h")
             
-            # Map operator symbols to readable names for JS methods
-            op_symbol_to_name = {
-                '==': 'equal',
-                '!=': 'not_equal',
-                '<': 'less',
-                '<=': 'less_equal',
-                '>': 'greater',
-                '>=': 'greater_equal',
-                '+': 'add',
-                '-': 'subtract',
-                '*': 'multiply',
-                '/': 'divide',
-                '%': 'module',
-                '**': 'power',
-                '~': 'bit_not',
-                '&': 'bit_and',
-                '|': 'bit_or',
-                '^': 'bit_xor',
-                '<<': 'bit_shift_left',
-                '>>': 'bit_shift_right',
-                'in': 'in'
-            }
-
             if 'operators' in builtin_class:
                 for op in builtin_class['operators']:
                     op_symbol = op['name']
@@ -367,30 +298,10 @@ class BuiltinClassGenerator(CodeGenerator):
                     # Determine arguments
                     right_type = op.get('right_type')
                     is_unary = not bool(right_type)
-                    
-                    # Handle unary operators specifically
-                    if is_unary:
-                        if op_symbol in ('-', 'unary-'):
-                            op_name = 'negate'
-                        elif op_symbol in ('+', 'unary+'):
-                            op_name = 'positive'
-                        elif op_symbol == 'not':
-                            op_name = 'not'
-                        elif op_symbol in op_symbol_to_name:
-                            op_name = op_symbol_to_name[op_symbol]
-                        else:
-                            # print(f"Warning: Unknown unary operator {op_symbol}")
-                            op_name = 'operator_' + sanitize_method_name(op_symbol)
-                    else:
-                        if op_symbol in op_symbol_to_name:
-                            op_name = op_symbol_to_name[op_symbol]
-                        else:
-                            # print(f"Warning: Unknown binary operator {op_symbol}")
-                            op_name = 'operator_' + sanitize_method_name(op_symbol)
-                    
-                    # Skip 'in' operator for now if needed, or map it
-                    variant_op = variant_operator_enum(op_symbol)
-                    if op_symbol == 'in' or not variant_op:
+
+                    op_name = builtin_operator_method_name(op_symbol)
+                    variant_op = variant_operator_enum_name(op_symbol)
+                    if not op_name or not variant_op:
                         continue
 
                     args = []
@@ -464,6 +375,7 @@ class BuiltinClassGenerator(CodeGenerator):
                 'vararg_methods': vararg_methods,
                 'members': members,
                 'constants': constants,
+                'enums': builtin_class.get('enums', []),
                 'operators': grouped_operators, # Changed structure!
                 'constructors': constructors,
                 'has_destructor': builtin_class.get('has_destructor', False),

@@ -19,6 +19,7 @@ namespace gode {
 inline std::vector<Napi::Value> to_args_array(const Napi::CallbackInfo &info) {
 	std::size_t argc = info.Length();
 	std::vector<Napi::Value> args;
+	args.reserve(argc);
 	for (std::size_t i = 0; i < argc; ++i) {
 		args.push_back(info[i]);
 	}
@@ -243,7 +244,7 @@ inline Napi::Value call_builtin_method_impl(R (*Func)(P...), Napi::Env env, std:
 		if (!sync_out_args<0, P...>(env, args, converted_args)) {
 			return env.Undefined();
 		}
-		return godot_to_napi(env, result);
+		return godot_result_to_napi(env, result);
 	}
 }
 
@@ -266,7 +267,7 @@ inline Napi::Value call_builtin_method_impl(R (T::*Func)(P...), T *instance, Nap
 		if (!sync_out_args<0, P...>(env, args, converted_args)) {
 			return env.Undefined();
 		}
-		return godot_to_napi(env, result);
+		return godot_result_to_napi(env, result);
 	}
 }
 
@@ -289,7 +290,7 @@ inline Napi::Value call_builtin_method_impl(R (T::*Func)(P...) const, T *instanc
 		if (!sync_out_args<0, P...>(env, args, converted_args)) {
 			return env.Undefined();
 		}
-		return godot_to_napi(env, result);
+		return godot_result_to_napi(env, result);
 	}
 }
 
@@ -357,7 +358,8 @@ inline Napi::Value call_builtin_method(R (*Func)(const godot::Variant **, GDExte
 		arg_ptrs.push_back(&variant_args[i]);
 	}
 
-	return godot_to_napi(info.Env(), Func((const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size()));
+	R result = Func((const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size());
+	return godot_result_to_napi(info.Env(), result);
 }
 
 // Static class MethodBind vararg with GDExtensionCallError reporting.
@@ -411,7 +413,7 @@ inline Napi::Value call_builtin_method(R (*Func)(const godot::Variant **, GDExte
 	if (throw_if_godot_call_failed(info.Env(), error, "Godot static vararg MethodBind call")) {
 		return info.Env().Undefined();
 	}
-	return godot_to_napi(info.Env(), result);
+	return godot_result_to_napi(info.Env(), result);
 }
 
 // 4. Instance Method (Vararg Helper - Static function taking T*)
@@ -460,7 +462,8 @@ inline Napi::Value call_builtin_method(R (*Func)(T *, const godot::Variant **, G
 		arg_ptrs.push_back(&variant_args[i]);
 	}
 
-	return godot_to_napi(info.Env(), Func(instance, (const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size()));
+	R result = Func(instance, (const godot::Variant **)arg_ptrs.data(), (GDExtensionInt)arg_ptrs.size());
+	return godot_result_to_napi(info.Env(), result);
 }
 
 // Instance class MethodBind vararg with GDExtensionCallError reporting.
@@ -515,7 +518,7 @@ inline Napi::Value call_builtin_method(R (*Func)(T *, const godot::Variant **, G
 	if (throw_if_godot_call_failed(info.Env(), error, "Godot vararg MethodBind call")) {
 		return info.Env().Undefined();
 	}
-	return godot_to_napi(info.Env(), result);
+	return godot_result_to_napi(info.Env(), result);
 }
 
 // 6. Instance Method (Regular Non-Const)

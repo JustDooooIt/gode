@@ -1,9 +1,8 @@
-import json
 import os
 
 from .base_generator import CodeGenerator
-from .utils.api_path import find_extension_api_json
-from .utils.binding_policy import method_bind_out_argument_indices, skipped_method_reason
+from .utils.api_data import load_extension_api_json
+from .utils.binding_policy import method_bind_out_argument_indices, resolve_property_accessor, skipped_method_reason
 from .utils.string_utils import sanitize_method_name, to_snake_case
 from .utils.type_mappings import (
     GODOT_BUILTIN_TYPES,
@@ -14,30 +13,9 @@ from .utils.type_mappings import (
 )
 
 
-def resolve_property_accessor(name, method_names):
-    if not name:
-        return None
-    if name in method_names:
-        return name
-    if name.startswith('_') and name[1:] in method_names:
-        return name[1:]
-    return None
-
-
 class ClassGenerator(CodeGenerator):
     def run(self):
-        api_path = find_extension_api_json()
-        
-        try:
-            with open(api_path, 'r', encoding='utf-8') as f:
-                api_data = json.load(f)
-        except FileNotFoundError:
-            print(f"Error: extension_api.json not found at {api_path}")
-            return
-
-        if 'classes' not in api_data:
-            print("Error: 'classes' key not found in api_data")
-            return
+        api_data = load_extension_api_json(required_keys=("classes",))
             
         # Build type map for dependency resolution
         type_map = {}

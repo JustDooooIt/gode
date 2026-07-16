@@ -70,6 +70,8 @@ static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
 constexpr const char *GODOT_OBJECT_ID_SYMBOL = "__gode.godot_object_id__";
 constexpr const char *GODOT_OBJECT_PTR_SYMBOL = "__gode.godot_object_ptr__";
 constexpr double JS_MAX_SAFE_INTEGER = 9007199254740991.0;
+constexpr int64_t JS_MAX_SAFE_INTEGER_INT64 = 9007199254740991LL;
+constexpr uint64_t JS_MAX_SAFE_INTEGER_UINT64 = 9007199254740991ULL;
 
 static bool is_safe_js_integer(double number) {
 	return std::isfinite(number) && std::trunc(number) == number && std::fabs(number) <= JS_MAX_SAFE_INTEGER;
@@ -81,6 +83,32 @@ static void throw_integer_type_error(Napi::Env env) {
 
 static void throw_integer_range_error(Napi::Env env) {
 	Napi::RangeError::New(env, "Integer value is outside the Godot 64-bit integer range").ThrowAsJavaScriptException();
+}
+
+Napi::Value godot_int_to_napi(Napi::Env env, int64_t value) {
+	if (value >= -JS_MAX_SAFE_INTEGER_INT64 && value <= JS_MAX_SAFE_INTEGER_INT64) {
+		return Napi::Number::New(env, static_cast<double>(value));
+	}
+	return Napi::BigInt::New(env, value);
+}
+
+Napi::Value godot_uint_to_napi(Napi::Env env, uint64_t value) {
+	if (value <= JS_MAX_SAFE_INTEGER_UINT64) {
+		return Napi::Number::New(env, static_cast<double>(value));
+	}
+	return Napi::BigInt::New(env, value);
+}
+
+bool godot_array_length_to_uint32(Napi::Env env, int64_t length, const char *context, uint32_t &out_length) {
+	if (length < 0 || length > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+		std::string label = context && context[0] ? context : "Godot array";
+		Napi::RangeError::New(env, label + " is too large to represent as a JavaScript Array").ThrowAsJavaScriptException();
+		out_length = 0;
+		return false;
+	}
+
+	out_length = static_cast<uint32_t>(length);
+	return true;
 }
 
 int64_t napi_to_godot_int64(Napi::Value value) {
@@ -170,14 +198,12 @@ void sync_godot_array_to_js_array(Napi::Env env, const Napi::Value &target, cons
 		return;
 	}
 
-	const int64_t length = array.size();
-	if (length < 0 || length > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-		Napi::RangeError::New(env, "Godot out array is too large to synchronize to a JavaScript Array").ThrowAsJavaScriptException();
+	uint32_t js_length = 0;
+	if (!godot_array_length_to_uint32(env, array.size(), "Godot out array", js_length)) {
 		return;
 	}
 
 	Napi::Array js_array = target.As<Napi::Array>();
-	const uint32_t js_length = static_cast<uint32_t>(length);
 	js_array.Set("length", Napi::Number::New(env, js_length));
 	if (env.IsExceptionPending()) {
 		return;
@@ -307,9 +333,16 @@ static Napi::Value dictionary_to_map(Napi::Env env, const godot::Dictionary &god
 		for (int64_t i = 0; i < key_count; i++) {
 			const godot::Variant key = keys[i];
 			const godot::String key_string = key.operator godot::String();
+			Napi::Value js_value = godot_to_napi(env, godot_dictionary.get(key, Variant()));
+			if (env.IsExceptionPending()) {
+				return env.Undefined();
+			}
 			fallback.Set(
 					Napi::String::New(env, key_string.utf8().get_data()),
-					godot_to_napi(env, godot_dictionary.get(key, Variant())));
+					js_value);
+			if (env.IsExceptionPending()) {
+				return env.Undefined();
+			}
 		}
 		return fallback;
 	}
@@ -324,10 +357,21 @@ static Napi::Value dictionary_to_map(Napi::Env env, const godot::Dictionary &god
 	const int64_t key_count = keys.size();
 	for (int64_t i = 0; i < key_count; i++) {
 		const godot::Variant key = keys[i];
+		Napi::Value js_key = godot_to_napi(env, key);
+		if (env.IsExceptionPending()) {
+			return env.Undefined();
+		}
+		Napi::Value js_value = godot_to_napi(env, godot_dictionary.get(key, Variant()));
+		if (env.IsExceptionPending()) {
+			return env.Undefined();
+		}
 		set.Call(map, {
-							  godot_to_napi(env, key),
-							  godot_to_napi(env, godot_dictionary.get(key, Variant())),
+							  js_key,
+							  js_value,
 					  });
+		if (env.IsExceptionPending()) {
+			return env.Undefined();
+		}
 	}
 
 	return map;
@@ -352,9 +396,16 @@ static Napi::Value godot_dictionary_to_napi(Napi::Env env, const godot::Dictiona
 	for (int64_t i = 0; i < key_count; i++) {
 		const godot::Variant key = keys[i];
 		const godot::String key_string = key.operator godot::String();
+		Napi::Value js_value = godot_to_napi(env, godot_dictionary.get(key, Variant()));
+		if (env.IsExceptionPending()) {
+			return env.Undefined();
+		}
 		js_object.Set(
 				Napi::String::New(env, key_string.utf8().get_data()),
-				godot_to_napi(env, godot_dictionary.get(key, Variant())));
+				js_value);
+		if (env.IsExceptionPending()) {
+			return env.Undefined();
+		}
 	}
 	return js_object;
 }
@@ -618,7 +669,7 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 		case godot::Variant::Type::NIL:
 			return env.Null();
 		case godot::Variant::Type::INT:
-			return Napi::Number::New(env, variant.operator int64_t());
+			return godot_int_to_napi(env, variant.operator int64_t());
 		case godot::Variant::Type::FLOAT:
 			return Napi::Number::New(env, variant.operator double());
 		case godot::Variant::Type::BOOL:
@@ -628,10 +679,16 @@ Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant) {
 			return Napi::String::New(env, variant.operator String().utf8().get_data());
 		case godot::Variant::Type::ARRAY: {
 			const godot::Array godot_array = variant.operator godot::Array();
-			const uint32_t array_length = static_cast<uint32_t>(godot_array.size());
+			uint32_t array_length = 0;
+			if (!godot_array_length_to_uint32(env, godot_array.size(), "Godot Array", array_length)) {
+				return env.Undefined();
+			}
 			Napi::Array js_array = Napi::Array::New(env, array_length);
 			for (uint32_t i = 0; i < array_length; i++) {
 				js_array.Set(i, godot_to_napi(env, godot_array[i]));
+				if (env.IsExceptionPending()) {
+					return env.Undefined();
+				}
 			}
 			return js_array;
 		}

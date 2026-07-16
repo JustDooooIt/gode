@@ -17,11 +17,31 @@
 namespace gode {
 extern Napi::Value godot_to_napi(Napi::Env env, godot::Variant variant);
 extern godot::Variant napi_to_godot(Napi::Value value);
+Napi::Value godot_int_to_napi(Napi::Env env, int64_t value);
+Napi::Value godot_uint_to_napi(Napi::Env env, uint64_t value);
+bool godot_array_length_to_uint32(Napi::Env env, int64_t length, const char *context, uint32_t &out_length);
 godot::Array js_array_to_godot_array(const Napi::Array &js_array);
 void sync_godot_array_to_js_array(Napi::Env env, const Napi::Value &target, const godot::Array &array);
 void sync_godot_variant_out_argument(Napi::Env env, const Napi::Value &target, const godot::Variant &variant);
 int64_t napi_to_godot_int64(Napi::Value value);
 uint64_t napi_to_godot_uint64(Napi::Value value);
+
+template <typename T>
+Napi::Value godot_result_to_napi(Napi::Env env, const T &value) {
+	using ClearType = std::remove_const_t<std::remove_reference_t<T>>;
+
+	if constexpr (std::is_same_v<ClearType, bool>) {
+		return Napi::Boolean::New(env, value);
+	} else if constexpr (std::is_integral_v<ClearType> && std::is_signed_v<ClearType>) {
+		return godot_int_to_napi(env, static_cast<int64_t>(value));
+	} else if constexpr (std::is_integral_v<ClearType> && std::is_unsigned_v<ClearType>) {
+		return godot_uint_to_napi(env, static_cast<uint64_t>(value));
+	} else if constexpr (std::is_enum_v<ClearType>) {
+		return godot_int_to_napi(env, static_cast<int64_t>(value));
+	} else {
+		return godot_to_napi(env, value);
+	}
+}
 
 typedef godot::Object *(*UnwrapFunc)(const Napi::Object &);
 typedef void (*WrapFunc)(const Napi::Object &, godot::Object *);
@@ -208,14 +228,12 @@ void sync_godot_packed_array_to_js_array(Napi::Env env, const Napi::Value &targe
 		return;
 	}
 
-	const int64_t length = value.size();
-	if (length < 0 || length > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
-		Napi::RangeError::New(env, "Godot out array is too large to synchronize to a JavaScript Array").ThrowAsJavaScriptException();
+	uint32_t js_length = 0;
+	if (!godot_array_length_to_uint32(env, value.size(), "Godot out packed array", js_length)) {
 		return;
 	}
 
 	Napi::Array js_array = target.As<Napi::Array>();
-	const uint32_t js_length = static_cast<uint32_t>(length);
 	js_array.Set("length", Napi::Number::New(env, js_length));
 	if (env.IsExceptionPending()) {
 		return;

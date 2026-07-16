@@ -1,51 +1,39 @@
-import json
-import os
-
 from .base_generator import CodeGenerator
-from .utils.api_path import find_extension_api_json
+from .utils.api_data import load_extension_api_json
 from .utils.string_utils import to_snake_case
 
 class RegisterGenerator(CodeGenerator):
     def run(self):
-        api_path = find_extension_api_json()
-        
-        try:
-            with open(api_path, 'r', encoding='utf-8') as f:
-                api_data = json.load(f)
-        except FileNotFoundError:
-            print(f"Error: extension_api.json not found at {api_path}")
-            return
+        api_data = load_extension_api_json(required_keys=("builtin_classes", "classes"))
 
         builtins = []
         classes = []
 
         # Process Builtin Classes
-        if 'builtin_classes' in api_data:
-            for builtin_class in api_data['builtin_classes']:
-                class_name = builtin_class['name']
-                # Skip POD types and void/Nil
-                if class_name in ['bool', 'int', 'float', 'void', 'Nil']:
-                    continue
-                
-                snake_name = to_snake_case(class_name)
-                
-                builtins.append({
-                    'class_name': class_name,
-                    'snake_name': snake_name,
-                    'include': f"builtin/{snake_name}_binding.gen.h"
-                })
+        for builtin_class in api_data['builtin_classes']:
+            class_name = builtin_class['name']
+            # Skip POD types and void/Nil
+            if class_name in ['bool', 'int', 'float', 'void', 'Nil']:
+                continue
+
+            snake_name = to_snake_case(class_name)
+
+            builtins.append({
+                'class_name': class_name,
+                'snake_name': snake_name,
+                'include': f"builtin/{snake_name}_binding.gen.h"
+            })
 
         # Process Classes
-        if 'classes' in api_data:
-            for class_def in api_data['classes']:
-                class_name = class_def['name']
-                snake_name = to_snake_case(class_name)
-                
-                classes.append({
-                    'class_name': class_name,
-                    'snake_name': snake_name,
-                    'include': f"classes/{snake_name}_binding.gen.h"
-                })
+        for class_def in api_data['classes']:
+            class_name = class_def['name']
+            snake_name = to_snake_case(class_name)
+
+            classes.append({
+                'class_name': class_name,
+                'snake_name': snake_name,
+                'include': f"classes/{snake_name}_binding.gen.h"
+            })
 
         context = {
             'builtins': builtins,
