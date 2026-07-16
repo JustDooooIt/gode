@@ -24,6 +24,16 @@
 
 	function resourceDirname(filePath) {
 		const normalized = normalizePath(filePath);
+		for (const prefix of ["res://", "user://"]) {
+			if (normalized === prefix) {
+				return "";
+			}
+			if (normalized.startsWith(prefix)) {
+				const body = normalized.slice(prefix.length).replace(/\/+$/g, "");
+				const slash = body.lastIndexOf("/");
+				return slash >= 0 ? `${prefix}${body.slice(0, slash)}` : prefix;
+			}
+		}
 		const slash = normalized.lastIndexOf("/");
 		return slash >= 0 ? normalized.slice(0, slash) : "";
 	}
@@ -31,6 +41,9 @@
 	function normalizeResourcePath(filePath) {
 		const normalized = normalizePath(filePath);
 		const hasResourcePrefix = normalized.startsWith("res://");
+		if (normalized.includes("://") && !hasResourcePrefix) {
+			return "";
+		}
 		const prefix = hasResourcePrefix ? "res://" : "";
 		const body = hasResourcePrefix ? normalized.slice("res://".length) : normalized;
 		const segments = [];
@@ -39,9 +52,10 @@
 				continue;
 			}
 			if (part === "..") {
-				if (segments.length > 0) {
-					segments.pop();
+				if (segments.length === 0) {
+					return "";
 				}
+				segments.pop();
 				continue;
 			}
 			segments.push(part);
@@ -70,7 +84,13 @@
 		if (!base) {
 			return [];
 		}
+		return sourcePathCandidatesForBase(base);
+	}
 
+	function sourcePathCandidatesForBase(base) {
+		if (!base) {
+			return [];
+		}
 		const candidates = [];
 		const lower = base.toLowerCase();
 		const runtimeExtensions = [".js", ".jsx", ".mjs", ".cjs"];
@@ -104,6 +124,88 @@
 		return candidates;
 	}
 
+	function configPathBase(pathValue) {
+		const normalized = normalizePath(pathValue);
+		if (!normalized || normalized === ".") {
+			return "res://";
+		}
+		if (normalized.startsWith("res://")) {
+			return normalizeResourcePath(normalized);
+		}
+		return normalizeResourcePath(`res://${normalized}`);
+	}
+
+	function patternPrefixLength(pattern) {
+		const star = pattern.indexOf("*");
+		return star === -1 ? pattern.length : star;
+	}
+
+	function matchPathPattern(pattern, moduleName) {
+		const star = pattern.indexOf("*");
+		if (star === -1) {
+			return pattern === moduleName ? "" : null;
+		}
+		const prefix = pattern.slice(0, star);
+		const suffix = pattern.slice(star + 1);
+		if (!moduleName.startsWith(prefix) || !moduleName.endsWith(suffix)) {
+			return null;
+		}
+		return moduleName.slice(prefix.length, moduleName.length - suffix.length);
+	}
+
+	function configuredModuleCandidates(moduleName, config) {
+		const rawOptions = config.rawCompilerOptions || {};
+		const candidates = [];
+		const baseUrl = typeof rawOptions.baseUrl === "string" && rawOptions.baseUrl
+			? configPathBase(rawOptions.baseUrl)
+			: "res://";
+		if (!baseUrl) {
+			return candidates;
+		}
+		const paths = rawOptions.paths && typeof rawOptions.paths === "object" ? rawOptions.paths : {};
+		const patterns = Object.keys(paths).sort((left, right) => patternPrefixLength(right) - patternPrefixLength(left));
+
+		for (const pattern of patterns) {
+			const matched = matchPathPattern(pattern, moduleName);
+			if (matched === null) {
+				continue;
+			}
+			const targets = Array.isArray(paths[pattern]) ? paths[pattern] : [];
+			for (const target of targets) {
+				const targetText = String(target);
+				const mapped = targetText.includes("*") ? targetText.replace("*", matched) : targetText;
+				const mappedBase = normalizeResourcePath(`${baseUrl}/${mapped}`);
+				for (const candidate of sourcePathCandidatesForBase(mappedBase)) {
+					pushUnique(candidates, candidate);
+				}
+			}
+		}
+
+		if (typeof rawOptions.baseUrl === "string" && rawOptions.baseUrl) {
+			for (const candidate of sourcePathCandidatesForBase(normalizeResourcePath(`${baseUrl}/${moduleName}`))) {
+				pushUnique(candidates, candidate);
+			}
+		}
+		return candidates;
+	}
+
+	function resolveProjectModule(tsApi, baseHost, moduleName, containingFile, config) {
+		const sourceCandidates = isRelativeModuleName(moduleName) || moduleName.startsWith("res://")
+			? sourceModuleCandidates(moduleName, containingFile)
+			: configuredModuleCandidates(moduleName, config);
+		for (const candidate of sourceCandidates) {
+			if (!baseHost.fileExists(candidate)) {
+				continue;
+			}
+			return {
+				resolvedFileName: candidate,
+				extension: sourceFileExtension(tsApi, candidate),
+				isExternalLibraryImport: candidate.includes("/node_modules/")
+			};
+		}
+		return undefined;
+	}
+
 	function sourceFileExtension(tsApi, filePath) {
 		const lower = normalizePath(filePath).toLowerCase();
 		if (lower.endsWith(".d.ts")) {
@@ -121,26 +223,15 @@
 		return tsApi.Extension.Js;
 	}
 
-	function resolveSourceModule(tsApi, baseHost, moduleName, containingFile) {
-		for (const candidate of sourceModuleCandidates(moduleName, containingFile)) {
-			if (!baseHost.fileExists(candidate)) {
-				continue;
-			}
-			return {
-				resolvedFileName: candidate,
-				extension: sourceFileExtension(tsApi, candidate),
-				isExternalLibraryImport: candidate.includes("/node_modules/")
-			};
-		}
-		return undefined;
-	}
-
 	function parentDirs(filePath) {
 		const dirs = [];
-		let dir = path.dirname(filePath);
-		while (dir && dir !== "." && !dirs.includes(dir)) {
+		let dir = resourceDirname(filePath);
+		while (dir && !dirs.includes(dir)) {
 			dirs.push(dir);
-			const parent = path.dirname(dir);
+			if (dir === "res://" || dir === "user://") {
+				break;
+			}
+			const parent = resourceDirname(dir);
 			if (parent === dir) {
 				break;
 			}
@@ -176,6 +267,28 @@
 		return normalized;
 	}
 
+	function toTypescriptVirtualPath(filePath) {
+		const normalized = normalizePath(filePath);
+		if (normalized === "res://") {
+			return "/__gode_res__";
+		}
+		if (normalized.startsWith("res://")) {
+			return `/__gode_res__/${normalized.slice("res://".length)}`;
+		}
+		return normalized;
+	}
+
+	function fromTypescriptVirtualPath(filePath) {
+		const normalized = normalizePath(filePath);
+		if (normalized === "/__gode_res__") {
+			return "res://";
+		}
+		if (normalized.startsWith("/__gode_res__/")) {
+			return `res://${normalized.slice("/__gode_res__/".length)}`;
+		}
+		return normalized;
+	}
+
 	function isUnderDirectory(filePath, directoryName) {
 		const normalizedDirectory = normalizeDirectoryPath(directoryName);
 		if (normalizedDirectory === "res://") {
@@ -190,6 +303,64 @@
 		}
 		const lower = filePath.toLowerCase();
 		return extensions.some((extension) => lower.endsWith(String(extension).toLowerCase()));
+	}
+
+	function normalizeTypescriptVirtualDirectoryPath(directoryName) {
+		let normalized = normalizePath(directoryName);
+		while (normalized.length > 1 && normalized.endsWith("/")) {
+			normalized = normalized.slice(0, -1);
+		}
+		return normalized;
+	}
+
+	function fileSystemEntriesForVirtualDirectory(virtualSourceFiles, directoryName) {
+		const directory = normalizeTypescriptVirtualDirectoryPath(directoryName);
+		const prefix = directory === "/__gode_res__" ? "/__gode_res__/" : `${directory}/`;
+		const files = [];
+		const directories = new Set();
+
+		for (const filePath of virtualSourceFiles) {
+			if (!filePath.startsWith(prefix)) {
+				continue;
+			}
+			const relative = filePath.slice(prefix.length);
+			if (!relative) {
+				continue;
+			}
+			const slash = relative.indexOf("/");
+			if (slash === -1) {
+				files.push(relative);
+			} else {
+				directories.add(relative.slice(0, slash));
+			}
+		}
+
+		return {
+			files,
+			directories: Array.from(directories)
+		};
+	}
+
+	function readDirectoryWithTypescript(tsApi, context, directoryName, extensions, excludes, includes, depth) {
+		if (tsApi && typeof tsApi.matchFiles === "function") {
+			const virtualSourceFiles = context.sourceFiles.map((filePath) => toTypescriptVirtualPath(filePath)).sort();
+			const virtualDirectory = toTypescriptVirtualPath(normalizeDirectoryPath(directoryName));
+			return tsApi.matchFiles(
+				virtualDirectory,
+				extensions,
+				excludes,
+				includes,
+				true,
+				toTypescriptVirtualPath("res://"),
+				depth,
+				(directory) => fileSystemEntriesForVirtualDirectory(virtualSourceFiles, directory),
+				(filePath) => normalizePath(filePath)
+			).map((filePath) => fromTypescriptVirtualPath(filePath));
+		}
+
+		return context.sourceFiles.filter((filePath) => {
+			return isUnderDirectory(filePath, directoryName) && matchesExtension(filePath, extensions);
+		});
 	}
 
 	function categoryName(tsApi, category) {
@@ -223,16 +394,24 @@
 	function readTsConfig(tsApi, host) {
 		const configPath = "res://tsconfig.json";
 		if (!fs.existsSync(configPath)) {
-			return { options: {}, diagnostics: [] };
+			return { options: {}, rawCompilerOptions: {}, diagnostics: [], fileNames: [], hasConfig: false };
 		}
 
 		const config = tsApi.readConfigFile(configPath, host.readFile);
 		if (config.error) {
-			return { options: {}, diagnostics: [config.error] };
+			return { options: {}, rawCompilerOptions: {}, diagnostics: [config.error], fileNames: [], hasConfig: true };
 		}
 
+		const rawCompilerOptions = {
+			ignoreDeprecations: "6.0",
+			...((config.config && config.config.compilerOptions) || {})
+		};
+		const configObject = {
+			...(config.config || {}),
+			compilerOptions: rawCompilerOptions
+		};
 		const parsed = tsApi.parseJsonConfigFileContent(
-			config.config,
+			configObject,
 			{
 					useCaseSensitiveFileNames: true,
 					fileExists: host.fileExists,
@@ -246,11 +425,14 @@
 
 		return {
 			options: parsed.options || {},
-			diagnostics: parsed.errors || []
+			rawCompilerOptions,
+			diagnostics: parsed.errors || [],
+			fileNames: (parsed.fileNames || []).map((fileName) => normalizePath(fileName)).sort(),
+			hasConfig: true
 		};
 	}
 
-	function createBaseHost(context) {
+	function createBaseHost(context, tsApi) {
 		const readFile = (fileName) => {
 			const normalized = normalizePath(fileName);
 			if (context.sourceMap.has(normalized)) {
@@ -275,9 +457,9 @@
 			return fs.existsSync(normalized) && fs.statSync(normalized).isDirectory();
 		};
 
-		const readDirectory = (directoryName, extensions) => context.sourceFiles.filter((filePath) => {
-			return isUnderDirectory(filePath, directoryName) && matchesExtension(filePath, extensions);
-		});
+		const readDirectory = (directoryName, extensions, excludes, includes, depth) => {
+			return readDirectoryWithTypescript(tsApi, context, directoryName, extensions, excludes, includes, depth);
+		};
 
 		return {
 			fileExists,
@@ -287,8 +469,8 @@
 		};
 	}
 
-	function createHost(tsApi, context, options) {
-		const baseHost = createBaseHost(context);
+	function createHost(tsApi, context, options, config) {
+		const baseHost = createBaseHost(context, tsApi);
 		const host = tsApi.createCompilerHost(options, true);
 		host.useCaseSensitiveFileNames = () => true;
 		host.getCurrentDirectory = () => "res://";
@@ -315,7 +497,7 @@
 					isExternalLibraryImport: false
 				};
 			}
-			const sourceResolved = resolveSourceModule(tsApi, baseHost, moduleName, normalizePath(containingFile));
+			const sourceResolved = resolveProjectModule(tsApi, baseHost, moduleName, normalizePath(containingFile), config);
 			if (sourceResolved) {
 				return sourceResolved;
 			}
@@ -336,6 +518,7 @@
 			target: tsApi.ScriptTarget.ES2022,
 			module: tsApi.ModuleKind.ESNext,
 			moduleResolution: tsApi.ModuleResolutionKind.Bundler || tsApi.ModuleResolutionKind.Node10,
+			jsx: tsApi.JsxEmit.React,
 			strict: true,
 			isolatedModules: true,
 			forceConsistentCasingInFileNames: true,
@@ -345,6 +528,7 @@
 			experimentalDecorators: true,
 			skipLibCheck: true,
 			types: [],
+			ignoreDeprecations: "6.0",
 			inlineSourceMap: true,
 			inlineSources: true,
 			declaration: false,
@@ -371,12 +555,124 @@
 		return (normalized.endsWith(".ts") || normalized.endsWith(".tsx")) && !normalized.endsWith(".d.ts");
 	}
 
+	function sourceToOutputPath(filePath) {
+		const normalized = normalizeResourcePath(filePath);
+		return normalized.replace(/\.tsx?$/i, ".js");
+	}
+
+	function resourcePathBody(filePath) {
+		const normalized = normalizeResourcePath(filePath);
+		return normalized.startsWith("res://") ? normalized.slice("res://".length) : normalized;
+	}
+
+	function relativeOutputSpecifier(fromSourcePath, toSourcePath) {
+		const fromDir = path.posix.dirname(resourcePathBody(fromSourcePath));
+		const targetPath = resourcePathBody(sourceToOutputPath(toSourcePath));
+		let relative = path.posix.relative(fromDir === "." ? "" : fromDir, targetPath).replace(/\\/g, "/");
+		if (!relative.startsWith(".")) {
+			relative = `./${relative}`;
+		}
+		return relative;
+	}
+
+	function isStringLiteralNode(tsApi, node) {
+		return node && (node.kind === tsApi.SyntaxKind.StringLiteral || node.kind === tsApi.SyntaxKind.NoSubstitutionTemplateLiteral);
+	}
+
+	function rewrittenProjectModuleSpecifier(tsApi, baseHost, specifierText, sourcePath, config) {
+		const resolved = resolveProjectModule(tsApi, baseHost, specifierText, sourcePath, config);
+		if (!resolved || !isEmittableSource(resolved.resolvedFileName)) {
+			return "";
+		}
+		const replacement = relativeOutputSpecifier(sourcePath, resolved.resolvedFileName);
+		return replacement === specifierText ? "" : replacement;
+	}
+
+	function createProjectModuleSpecifierTransformer(tsApi, sourcePath, context, config) {
+		const baseHost = createBaseHost(context, tsApi);
+
+		return (transformContext) => {
+			const factory = transformContext.factory || tsApi.factory;
+
+			function rewriteModuleSpecifier(specifierNode) {
+				if (!isStringLiteralNode(tsApi, specifierNode)) {
+					return specifierNode;
+				}
+				const replacement = rewrittenProjectModuleSpecifier(tsApi, baseHost, specifierNode.text, sourcePath, config);
+				return replacement ? factory.createStringLiteral(replacement) : specifierNode;
+			}
+
+			function visit(node) {
+				if (tsApi.isImportDeclaration(node) && node.moduleSpecifier) {
+					const moduleSpecifier = rewriteModuleSpecifier(node.moduleSpecifier);
+					if (moduleSpecifier !== node.moduleSpecifier) {
+						return factory.updateImportDeclaration(
+								node,
+								node.modifiers,
+								node.importClause,
+								moduleSpecifier,
+								node.attributes || node.assertClause);
+					}
+				}
+
+				if (tsApi.isExportDeclaration(node) && node.moduleSpecifier) {
+					const moduleSpecifier = rewriteModuleSpecifier(node.moduleSpecifier);
+					if (moduleSpecifier !== node.moduleSpecifier) {
+						return factory.updateExportDeclaration(
+								node,
+								node.modifiers,
+								node.isTypeOnly,
+								node.exportClause,
+								moduleSpecifier,
+								node.attributes || node.assertClause);
+					}
+				}
+
+				if (tsApi.isCallExpression(node) &&
+						node.expression.kind === tsApi.SyntaxKind.ImportKeyword &&
+						node.arguments.length > 0) {
+					const moduleSpecifier = rewriteModuleSpecifier(node.arguments[0]);
+					if (moduleSpecifier !== node.arguments[0]) {
+						const args = [moduleSpecifier, ...Array.prototype.slice.call(node.arguments, 1)];
+						return factory.updateCallExpression(node, node.expression, node.typeArguments, args);
+					}
+				}
+				return tsApi.visitEachChild(node, visit, transformContext);
+			}
+
+			return (sourceFile) => tsApi.visitNode(sourceFile, visit);
+		};
+	}
+
+	function projectRootNames(config, sources) {
+		if (config.hasConfig) {
+			return config.fileNames.slice();
+		}
+		return sources.map((source) => normalizePath(source.path));
+	}
+
+	function emittableProgramSources(program, context) {
+		const outputs = [];
+		for (const sourceFile of program.getSourceFiles()) {
+			const sourcePath = normalizePath(sourceFile.fileName);
+			if (!context.sourceMap.has(sourcePath) || !isEmittableSource(sourcePath)) {
+				continue;
+			}
+			outputs.push({
+				path: sourcePath,
+				source: context.sourceMap.get(sourcePath)
+			});
+		}
+		outputs.sort((left, right) => left.path.localeCompare(right.path));
+		return outputs;
+	}
+
 	globalThis.__gode_compile_typescript_project = function(files) {
 		try {
 			const tsApi = getTypescript();
 			const sources = Array.isArray(files) ? files : [];
 			const context = createSourceContext(sources);
-			const baseHost = createBaseHost(context);
+			const baseHost = createBaseHost(context, tsApi);
 			const config = readTsConfig(tsApi, baseHost);
 			const compilerOptions = {
 				...defaultCompilerOptions(tsApi),
@@ -390,8 +686,8 @@
 				declaration: false,
 				allowImportingTsExtensions: false
 			};
-			const host = createHost(tsApi, context, compilerOptions);
-			const rootNames = sources.map((source) => normalizePath(source.path));
+			const host = createHost(tsApi, context, compilerOptions, config);
+			const rootNames = projectRootNames(config, sources);
 			for (const internalType of ["res://addons/gode/types/globals.d.ts"]) {
 				if (fs.existsSync(internalType) && !rootNames.includes(internalType)) {
 					rootNames.push(internalType);
@@ -407,11 +703,8 @@
 			};
 			const outputs = [];
 
-			for (const source of sources) {
-				const sourcePath = normalizePath(source.path);
-				if (!isEmittableSource(sourcePath)) {
-					continue;
-				}
+			for (const source of emittableProgramSources(program, context)) {
+				const sourcePath = source.path;
 				const sourceEmitOptions = {
 					...emitOptions,
 					sourceRoot: sourceRootForSource(sourcePath)
@@ -419,7 +712,10 @@
 				const result = tsApi.transpileModule(String(source.source || ""), {
 					compilerOptions: sourceEmitOptions,
 					fileName: sourcePath,
-					reportDiagnostics: true
+					reportDiagnostics: true,
+					transformers: {
+						before: [createProjectModuleSpecifierTransformer(tsApi, sourcePath, context, config)]
+					}
 				});
 				outputs.push({
 					source: sourcePath,

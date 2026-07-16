@@ -17,6 +17,7 @@ public:
 	~TypeScriptLoader();
 	static TypeScriptLoader *get_singleton();
 	void clear_cache();
+	void reload_cached_scripts();
 
 private:
 	static TypeScriptLoader *singleton;

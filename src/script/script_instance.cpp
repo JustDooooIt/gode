@@ -105,6 +105,13 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 			owner->add_user_signal(E.key, args);
 		}
 
+		if (!NodeRuntime::is_running()) {
+			NodeRuntime::init_once();
+		}
+		if (!NodeRuntime::is_running()) {
+			return;
+		}
+
 		v8::Locker locker(NodeRuntime::isolate);
 		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 		v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -167,6 +174,10 @@ bool ScriptInstance::is_placeholder() const {
 	return placeholder;
 }
 
+bool ScriptInstance::is_runtime_instance_valid() const {
+	return placeholder || !js_instance.IsEmpty();
+}
+
 void ScriptInstance::reload(bool p_keep_state) {
 	if (placeholder) {
 		return;
@@ -189,6 +200,13 @@ void ScriptInstance::reload(bool p_keep_state) {
 			args.push_back(d);
 		}
 		owner->add_user_signal(E.key, args);
+	}
+
+	if (!NodeRuntime::is_running()) {
+		NodeRuntime::init_once();
+	}
+	if (!NodeRuntime::is_running()) {
+		return;
 	}
 
 	v8::Locker locker(NodeRuntime::isolate);
@@ -289,6 +307,9 @@ bool ScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 	if (js_instance.IsEmpty()) {
 		return false;
 	}
+	if (!NodeRuntime::is_running()) {
+		return false;
+	}
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
@@ -360,14 +381,15 @@ bool ScriptInstance::get(const StringName &p_name, Variant &r_value) const {
 		return false;
 	}
 
+	if (js_instance.IsEmpty() || !NodeRuntime::is_running()) {
+		return false;
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	std::string prop_name = String(p_name).utf8().get_data();
 	if (!script->properties.has(prop_name.c_str())) {
-		return false;
-	}
-	if (js_instance.IsEmpty()) {
 		return false;
 	}
 	try {
@@ -427,16 +449,18 @@ bool ScriptInstance::has_method(const StringName &p_method) const {
 	if (js_instance.IsEmpty()) {
 		return false;
 	}
+	if (!NodeRuntime::is_running()) {
+		return false;
+	}
 	v8::Locker locker(NodeRuntime::isolate);
-	v8::HandleScope scope(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	Napi::Object instance = js_instance.Value();
 	std::string method_name = String(p_method).utf8().get_data();
 	return script->_has_method(method_name.c_str());
 }
 
 int32_t ScriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
-	v8::Locker locker(NodeRuntime::isolate);
 	if (!script.is_valid()) {
 		r_is_valid = false;
 		return 0;
@@ -461,14 +485,19 @@ Variant ScriptInstance::call(const StringName &p_method, const Variant *p_args, 
 		return Variant();
 	}
 
+	if (!NodeRuntime::is_running()) {
+		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
+		return Variant();
+	}
+
 	if (!script.is_valid() || (Engine::get_singleton()->is_editor_hint() && !script->_is_tool())) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
 
 	v8::Locker locker(NodeRuntime::isolate);
-	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Context::Scope context_scope(NodeRuntime::node_context.Get(NodeRuntime::isolate));
 	Napi::Object instance = js_instance.Value();
 	Napi::Env env = instance.Env();
@@ -590,10 +619,13 @@ void ScriptInstance::notification(int32_t p_what, bool p_reversed) {
 	if (js_instance.IsEmpty()) {
 		return;
 	}
+	if (!NodeRuntime::is_running()) {
+		return;
+	}
 
 	v8::Locker locker(NodeRuntime::isolate);
-	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Context::Scope context_scope(NodeRuntime::node_context.Get(NodeRuntime::isolate));
 
 	Napi::Object instance = js_instance.Value();
@@ -606,6 +638,10 @@ String ScriptInstance::to_string(bool &r_is_valid) const {
 		return "ScriptInstance(Placeholder)";
 	}
 	if (js_instance.IsEmpty()) {
+		r_is_valid = false;
+		return String();
+	}
+	if (!NodeRuntime::is_running()) {
 		r_is_valid = false;
 		return String();
 	}

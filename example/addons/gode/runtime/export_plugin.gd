@@ -4,6 +4,7 @@ extends EditorExportPlugin
 const GODE_CONFIG_PATH := "res://gode.json"
 const DEFAULT_GODE_CONFIG_PATH := "res://addons/gode/config/gode.json"
 const INLINE_SOURCE_MAP_MARKER := "//# sourceMappingURL=data:application/json;base64,"
+const TYPESCRIPT_EXPORT_MANIFEST_PATH := "res://.gode/build/typescript/manifest.json"
 
 const NPM_MANIFEST_FILES := [
 	"package.json",
@@ -42,12 +43,23 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 		push_error("Gode TypeScript export failed. Fix TypeScript diagnostics before exporting.")
 		return
 
+	var export_manifest_outputs: Array = []
 	for output: Dictionary in result.get("outputs", []):
+		var source_resource_path: String = output.get("source", "")
 		var source_path: String = output.get("path", "")
 		var exported_path: String = output.get("exported_path", "")
-		_add_compiled_file(exported_path, source_path, is_debug)
+		if not _add_compiled_file(exported_path, source_path, is_debug):
+			return
 		if is_debug and FileAccess.file_exists(source_path + ".map"):
-			_add_compiled_file(exported_path + ".map", source_path + ".map")
+			if not _add_compiled_file(exported_path + ".map", source_path + ".map"):
+				return
+		if not source_resource_path.is_empty() and not exported_path.is_empty():
+			export_manifest_outputs.append({
+				"source": source_resource_path,
+				"exported_path": exported_path,
+			})
+
+	_add_typescript_export_manifest(export_manifest_outputs)
 
 	if _should_export_npm_dependencies() and has_npm_project:
 		if not _export_npm_runtime_snapshot():
@@ -55,20 +67,35 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 		if npm_exported_files > 0:
 			print("[Gode Export] Added npm runtime snapshot files: %d" % npm_exported_files)
 
-func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> void:
+func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> bool:
 	if exported_path.is_empty() or source_path.is_empty():
-		return
+		push_error("Gode TypeScript output mapping is incomplete.")
+		return false
 	if not FileAccess.file_exists(source_path):
 		push_error("Missing Gode TypeScript output: %s" % source_path)
-		return
+		return false
 	if not include_inline_source_map and source_path.ends_with(".js"):
 		var code := FileAccess.get_file_as_string(source_path)
 		if FileAccess.get_open_error() != OK:
 			push_error("Failed to read Gode TypeScript output: %s" % source_path)
-			return
+			return false
 		add_file(exported_path, _strip_inline_source_map(code).to_utf8_buffer(), false)
-		return
-	add_file(exported_path, FileAccess.get_file_as_bytes(source_path), false)
+		return true
+	return _add_file_from_bytes(exported_path, source_path, "Failed to read Gode TypeScript output: %s")
+
+func _add_file_from_bytes(exported_path: String, source_path: String, error_message: String) -> bool:
+	var bytes := FileAccess.get_file_as_bytes(source_path)
+	if FileAccess.get_open_error() != OK:
+		push_error(error_message % source_path)
+		return false
+	add_file(exported_path, bytes, false)
+	return true
+
+func _add_typescript_export_manifest(outputs: Array) -> void:
+	var manifest := {
+		"outputs": outputs,
+	}
+	add_file(TYPESCRIPT_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer(), false)
 
 func _strip_inline_source_map(code: String) -> String:
 	var marker_index := code.rfind(INLINE_SOURCE_MAP_MARKER)
@@ -183,14 +210,19 @@ func _add_export_file(source_path: String) -> bool:
 	if not _file_exists(source_path):
 		push_error("Gode export expected file does not exist: %s" % source_path)
 		return false
-	add_file(source_path, FileAccess.get_file_as_bytes(source_path), false)
+	if not _add_file_from_bytes(source_path, source_path, "Failed to read Gode export file: %s"):
+		return false
 	npm_exported_files += 1
 	return true
 
 func _read_package_json() -> Dictionary:
 	if not _file_exists("res://package.json"):
 		return {}
-	var parsed := JSON.parse_string(FileAccess.get_file_as_string("res://package.json"))
+	var package_json_text := FileAccess.get_file_as_string("res://package.json")
+	if FileAccess.get_open_error() != OK:
+		push_warning("Gode export could not read res://package.json.")
+		return {}
+	var parsed := JSON.parse_string(package_json_text)
 	if typeof(parsed) == TYPE_DICTIONARY:
 		return parsed
 	push_warning("Gode export could not parse res://package.json.")
@@ -221,7 +253,11 @@ func _load_npm_config(should_create_project_config: bool) -> Dictionary:
 		if not _create_project_gode_config():
 			return config
 
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(GODE_CONFIG_PATH))
+	var config_text := FileAccess.get_file_as_string(GODE_CONFIG_PATH)
+	if FileAccess.get_open_error() != OK:
+		config_error = "Gode could not read project config: %s" % GODE_CONFIG_PATH
+		return config
+	var parsed: Variant = JSON.parse_string(config_text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		config_error = "Gode config must be a JSON object: %s" % GODE_CONFIG_PATH
 		return config
@@ -253,6 +289,9 @@ func _create_project_gode_config() -> bool:
 		return false
 
 	var default_config := FileAccess.get_file_as_string(DEFAULT_GODE_CONFIG_PATH)
+	if FileAccess.get_open_error() != OK:
+		config_error = "Gode could not read default config template: %s" % DEFAULT_GODE_CONFIG_PATH
+		return false
 	if typeof(JSON.parse_string(default_config)) != TYPE_DICTIONARY:
 		config_error = "Gode default config template must be a JSON object: %s" % DEFAULT_GODE_CONFIG_PATH
 		return false
@@ -328,12 +367,25 @@ func _normalize_res_path(path: String) -> String:
 	var normalized := path.strip_edges().replace("\\", "/")
 	if normalized.is_empty():
 		return ""
+	if normalized.contains("://") and not normalized.begins_with("res://"):
+		return ""
 	if normalized.begins_with("res://"):
-		return normalized
-	return "res://" + normalized.trim_prefix("/")
+		if _path_has_parent_segment(normalized):
+			return ""
+		return "res://" + normalized.trim_prefix("res://").simplify_path()
+	normalized = normalized.trim_prefix("/")
+	if _path_has_parent_segment(normalized):
+		return ""
+	return "res://" + normalized.simplify_path()
 
 func _to_resource_relative(path: String) -> String:
 	return _normalize_res_path(path).trim_prefix("res://").trim_suffix("/")
+
+func _path_has_parent_segment(path: String) -> bool:
+	for segment in path.replace("\\", "/").split("/", false):
+		if segment == "..":
+			return true
+	return false
 
 func _file_exists(path: String) -> bool:
 	return FileAccess.file_exists(path)

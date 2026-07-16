@@ -14,7 +14,7 @@ import { Node3D, Vector3 } from "godot";
 
 export default class Spawner extends Node3D {
   static exports = {
-    spawn_count: { type: "int" },
+    spawn_count: { type: "int", default: 3 },
     spawn_offset: { type: "Vector3" },
     enabled: { type: "bool" },
   };
@@ -25,7 +25,7 @@ export default class Spawner extends Node3D {
 }
 ```
 
-The `type` value uses Godot Variant type names such as `"String"`, `"int"`, `"float"`, `"bool"`, `"Vector3"`, and `"Object"`.
+The `type` value uses Godot Variant type names such as `"String"`, `"int"`, `"float"`, `"bool"`, `"Vector3"`, and `"Object"`. Export descriptors may also include Inspector metadata such as `hint`, `hintString`, and a Godot Variant-compatible `default` value.
 
 ## Tool scripts
 

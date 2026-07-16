@@ -55,11 +55,21 @@ int64_t read_int_field(const godot::Dictionary &dict, const char *key, int64_t d
 		return default_value;
 	}
 	const godot::Variant value = dict.get(key_name, godot::Variant());
-	if (value.get_type() != godot::Variant::Type::INT) {
+	const godot::Variant::Type value_type = value.get_type();
+	int64_t number = default_value;
+	if (value_type == godot::Variant::Type::INT) {
+		number = int64_t(value);
+	} else if (value_type == godot::Variant::Type::FLOAT) {
+		const double float_value = double(value);
+		number = int64_t(float_value);
+		if (double(number) != float_value) {
+			warn_debug_config(godot::String("Ignoring non-integer config value: ") + path + "." + key);
+			return default_value;
+		}
+	} else {
 		warn_debug_config(godot::String("Ignoring non-integer config value: ") + path + "." + key);
 		return default_value;
 	}
-	const int64_t number = int64_t(value);
 	if (number < min_value || number > max_value) {
 		warn_debug_config(godot::String("Ignoring out-of-range config value: ") + path + "." + key);
 		return default_value;

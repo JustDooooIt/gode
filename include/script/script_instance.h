@@ -40,6 +40,7 @@ public:
 
 	godot::Object *get_owner() const;
 	bool is_placeholder() const;
+	bool is_runtime_instance_valid() const;
 
 	bool set(const godot::StringName &p_name, const godot::Variant &p_value);
 	bool get(const godot::StringName &p_name, godot::Variant &r_value) const;

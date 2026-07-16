@@ -14,7 +14,7 @@ import { Node3D, Vector3 } from "godot";
 
 export default class Spawner extends Node3D {
   static exports = {
-    spawn_count: { type: "int" },
+    spawn_count: { type: "int", default: 3 },
     spawn_offset: { type: "Vector3" },
     enabled: { type: "bool" },
   };
@@ -25,7 +25,7 @@ export default class Spawner extends Node3D {
 }
 ```
 
-`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。
+`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。导出描述也可以包含 `hint`、`hintString` 和 Godot Variant 兼容的 `default` 值等 Inspector metadata。
 
 ## Tool 脚本
 

@@ -1,8 +1,20 @@
 #include "runtime/napi_error_utils.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <v8.h>
 
 namespace gode {
+namespace {
+
+std::string v8_value_to_string(v8::Isolate *isolate, v8::Local<v8::Value> value) {
+	if (value.IsEmpty()) {
+		return std::string();
+	}
+	v8::String::Utf8Value text(isolate, value);
+	return *text ? *text : std::string();
+}
+
+} // namespace
 
 std::string js_error_to_string(Napi::Value value) {
 	try {
@@ -42,6 +54,26 @@ std::string js_error_to_string(const Napi::Error &error) {
 
 void log_js_error(const std::string &context, const std::string &message) {
 	godot::UtilityFunctions::printerr(context.c_str(), ": ", message.c_str());
+}
+
+void log_v8_exception(v8::Isolate *isolate, v8::TryCatch &try_catch, const std::string &context) {
+	if (!try_catch.HasCaught()) {
+		godot::UtilityFunctions::printerr(context.c_str(), ": Unknown V8 exception");
+		return;
+	}
+
+	v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
+	v8::Local<v8::Value> stack;
+	if (try_catch.StackTrace(v8_context).ToLocal(&stack) && !stack->IsUndefined() && !stack->IsNull()) {
+		const std::string stack_text = v8_value_to_string(isolate, stack);
+		if (!stack_text.empty()) {
+			godot::UtilityFunctions::printerr(context.c_str(), ": ", stack_text.c_str());
+			return;
+		}
+	}
+
+	const std::string exception_text = v8_value_to_string(isolate, try_catch.Exception());
+	godot::UtilityFunctions::printerr(context.c_str(), ": ", exception_text.empty() ? "Unknown V8 exception" : exception_text.c_str());
 }
 
 bool log_and_clear_pending_js_exception(Napi::Env env, const std::string &context) {

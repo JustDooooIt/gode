@@ -31,6 +31,7 @@ protected:
 
 	mutable godot::StringName class_name;
 	mutable godot::StringName base_class_name;
+	mutable godot::String base_script_path;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> methods;
 	mutable godot::HashMap<godot::StringName, godot::Dictionary> rpc_configs;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> signals;
@@ -52,6 +53,7 @@ protected:
 public:
 	~TypeScriptScript();
 	bool compile() const;
+	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state);
 	Napi::Function get_default_class() const;
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }

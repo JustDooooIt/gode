@@ -69,6 +69,7 @@ declare module "node:stream" {
 
 declare module "node:url" {
 	export const URL: any;
+	export const fileURLToPath: any;
 	export const pathToFileURL: any;
 }
 

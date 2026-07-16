@@ -6,7 +6,9 @@
 #include "script/typescript_script.h"
 #include <v8-isolate.h>
 #include <v8-locker.h>
+#include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/core/gdextension_interface_loader.hpp>
+#include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
 using namespace godot;
@@ -43,7 +45,15 @@ bool TypeScriptScript::_can_instantiate() const {
 }
 
 Ref<Script> TypeScriptScript::_get_base_script() const {
-	return Ref<Script>();
+	compile();
+	if (base_script_path.is_empty() || base_script_path == get_path()) {
+		return Ref<Script>();
+	}
+	Ref<Resource> resource = ResourceLoader::get_singleton()->load(base_script_path);
+	if (resource.is_null()) {
+		return Ref<Script>();
+	}
+	return Ref<Script>(resource);
 }
 
 StringName TypeScriptScript::_get_global_name() const {
@@ -57,6 +67,16 @@ bool TypeScriptScript::_inherits_script(const Ref<Script> &p_script) const {
 	if (base_script.is_valid() && base_script->class_name == base_class_name) {
 		return true;
 	}
+	Ref<Script> direct_base = _get_base_script();
+	if (direct_base.is_valid()) {
+		if (direct_base == p_script) {
+			return true;
+		}
+		Ref<TypeScriptScript> direct_base_ts = direct_base;
+		if (direct_base_ts.is_valid() && direct_base_ts->_inherits_script(p_script)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -66,11 +86,26 @@ StringName TypeScriptScript::_get_instance_base_type() const {
 }
 
 void *TypeScriptScript::_instance_create(Object *p_for_object) const {
+	if (!p_for_object || !compile()) {
+		return nullptr;
+	}
+
 	Ref<TypeScriptScript> self(const_cast<TypeScriptScript *>(this));
 	ScriptInstance *instance = memnew(ScriptInstance(self, p_for_object, false));
+	if (!instance->is_runtime_instance_valid()) {
+		memdelete(instance);
+		return nullptr;
+	}
+
+	void *gd_instance = gdextension_interface::script_instance_create3(&script_instance_info, instance);
+	if (!gd_instance) {
+		memdelete(instance);
+		return nullptr;
+	}
+
 	instances.insert(instance);
 	instance_objects.insert(p_for_object);
-	return gdextension_interface::script_instance_create3(&script_instance_info, instance);
+	return gd_instance;
 }
 
 void *TypeScriptScript::_placeholder_instance_create(Object *p_for_object) const {
@@ -92,21 +127,20 @@ String TypeScriptScript::_get_source_code() const {
 	return source_code;
 }
 
-void TypeScriptScript::_set_source_code(const String &p_code) {
+Error TypeScriptScript::reload_source_code(const String &p_code, bool p_keep_state) {
 	is_dirty = true;
 	source_code = p_code;
+	return _reload(p_keep_state);
+}
 
-	if (compile()) {
-		for (ScriptInstance *instance : instances) {
-			if (instance && !instance->is_placeholder()) {
-				instance->reload(true);
-			}
-		}
-	}
+void TypeScriptScript::_set_source_code(const String &p_code) {
+	reload_source_code(p_code, true);
 }
 
 Error TypeScriptScript::_reload(bool p_keep_state) {
-	compile();
+	if (!compile()) {
+		return Error::ERR_INVALID_PARAMETER;
+	}
 
 	// Reload all instances
 	for (ScriptInstance *instance : instances) {

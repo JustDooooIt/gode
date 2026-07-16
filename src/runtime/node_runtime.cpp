@@ -119,13 +119,14 @@ void NodeRuntime::init_once() {
 			v8::Local<v8::String> esm_name = v8::String::NewFromUtf8Literal(isolate, "<gode-esm-init>");
 			v8::ScriptOrigin esm_origin(esm_name);
 			v8::Local<v8::Script> esm_compiled;
+			v8::TryCatch try_catch(isolate);
 			if (v8::Script::Compile(context, esm_source, &esm_origin).ToLocal(&esm_compiled)) {
 				v8::Local<v8::Value> ignored_result;
 				if (!esm_compiled->Run(context).ToLocal(&ignored_result)) {
-					// printf("[Gode ESM] Failed to run ESM init script\n");
+					log_v8_exception(isolate, try_catch, "[Gode ESM] Failed to run ESM init script");
 				}
 			} else {
-				// printf("[Gode ESM] Failed to compile ESM init script\n");
+				log_v8_exception(isolate, try_catch, "[Gode ESM] Failed to compile ESM init script");
 			}
 		}
 
@@ -157,13 +158,16 @@ void NodeRuntime::run_script(const std::string &code) {
 
 	v8::ScriptOrigin origin(name);
 	v8::Local<v8::Script> script;
+	v8::TryCatch try_catch(isolate);
 
 	if (!v8::Script::Compile(context, source, &origin).ToLocal(&script)) {
+		log_v8_exception(isolate, try_catch, "NodeRuntime run_script compile");
 		return;
 	}
 
 	v8::MaybeLocal<v8::Value> result = script->Run(context);
 	if (result.IsEmpty()) {
+		log_v8_exception(isolate, try_catch, "NodeRuntime run_script execution");
 		return;
 	}
 }
@@ -180,6 +184,8 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 
 	v8::Locker locker(isolate);
 	v8::Isolate::Scope isolate_scope(isolate);
+	Napi::Env napi_env(thread_local_env);
+	Napi::EscapableHandleScope handle_scope(napi_env);
 
 	v8::Local<v8::Context> context = node_context.Get(isolate);
 	v8::Context::Scope context_scope(context);
@@ -198,8 +204,7 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 		return Napi::Value();
 	}
 
-	Napi::Value exports(thread_local_env, reinterpret_cast<napi_value>(*result));
-	return exports;
+	return handle_scope.Escape(reinterpret_cast<napi_value>(*result));
 }
 
 v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, const std::string &filename) {
@@ -209,7 +214,11 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	v8::Local<v8::String> fn_name = v8::String::NewFromUtf8Literal(isolate, "__gode_compile_esm");
 	v8::Local<v8::Value> fn_val;
+	v8::TryCatch try_catch(isolate);
 	if (!context->Global()->Get(context, fn_name).ToLocal(&fn_val) || !fn_val->IsFunction()) {
+		if (try_catch.HasCaught()) {
+			log_v8_exception(isolate, try_catch, "NodeRuntime ESM compiler lookup");
+		}
 		godot::UtilityFunctions::print("compile_esm_module: __gode_compile_esm not found");
 		return v8::Local<v8::Value>();
 	}
@@ -224,7 +233,7 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 	v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), 2, args);
 
 	if (result.IsEmpty()) {
-		godot::UtilityFunctions::print("compile_esm_module: fn->Call returned empty");
+		log_v8_exception(isolate, try_catch, "NodeRuntime ESM compile call");
 		return v8::Local<v8::Value>();
 	}
 
@@ -249,8 +258,8 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	if (promise->State() == v8::Promise::kRejected) {
 		v8::Local<v8::Value> error = promise->Result();
-		v8::String::Utf8Value error_str(isolate, error);
-		godot::UtilityFunctions::print("compile_esm_module: Promise rejected: ", *error_str);
+		Napi::Value js_error(thread_local_env, reinterpret_cast<napi_value>(*error));
+		log_js_error("NodeRuntime ESM compile rejected", js_error_to_string(js_error));
 		return v8::Local<v8::Value>();
 	}
 
@@ -271,7 +280,11 @@ v8::Local<v8::Value> NodeRuntime::compile_cjs_module(const std::string &code, co
 
 	v8::Local<v8::String> fn_name = v8::String::NewFromUtf8Literal(isolate, "__gode_compile");
 	v8::Local<v8::Value> fn_val;
+	v8::TryCatch try_catch(isolate);
 	if (!context->Global()->Get(context, fn_name).ToLocal(&fn_val) || !fn_val->IsFunction()) {
+		if (try_catch.HasCaught()) {
+			log_v8_exception(isolate, try_catch, "NodeRuntime CJS compiler lookup");
+		}
 		return v8::Local<v8::Value>();
 	}
 
@@ -285,7 +298,7 @@ v8::Local<v8::Value> NodeRuntime::compile_cjs_module(const std::string &code, co
 	v8::MaybeLocal<v8::Value> result = fn->Call(context, context->Global(), 2, args);
 
 	if (result.IsEmpty()) {
-		godot::UtilityFunctions::print("compile_cjs_module: fn->Call returned empty (exception?)");
+		log_v8_exception(isolate, try_catch, "NodeRuntime CJS compile call");
 		return v8::Local<v8::Value>();
 	}
 
@@ -306,10 +319,12 @@ Napi::Function NodeRuntime::get_default_class(Napi::Value module_exports) {
 
 	v8::Locker locker(isolate);
 	v8::Isolate::Scope isolate_scope(isolate);
+	Napi::Env napi_env = module_exports.Env();
+	Napi::EscapableHandleScope handle_scope(napi_env);
 
 	// A function export is already a valid default class.
 	if (module_exports.IsFunction()) {
-		return module_exports.As<Napi::Function>();
+		return handle_scope.Escape(module_exports).As<Napi::Function>();
 	}
 
 	// Try to read the default export.
@@ -318,7 +333,7 @@ Napi::Function NodeRuntime::get_default_class(Napi::Value module_exports) {
 		if (exports_obj.Has("default")) {
 			Napi::Value default_export = exports_obj.Get("default");
 			if (default_export.IsFunction()) {
-				return default_export.As<Napi::Function>();
+				return handle_scope.Escape(default_export).As<Napi::Function>();
 			}
 		}
 	}
