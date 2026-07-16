@@ -13,15 +13,15 @@ export default class SignalTest extends Node {
 			{ name: "success", type: "bool" },
 			{ name: "message", type: "String" },
 		],
-	};
+	} as const;
 
 	static exports = {
-		threshold: { type: "int" },
-		spawn_offset: { type: "Vector3" },
-	};
+		"threshold": { "type": "int", "hint": 1, "hint_string": "0,10,1", "default": 3 as const },
+		"spawn_offset": { "type": "Vector3" },
+	} satisfies ExportMap;
 
-	threshold = 3;
-	spawn_offset = new Vector3(1, 2, 3);
+	threshold = 3 as const;
+	spawn_offset = new Vector3(1, 2, 3) as Vector3;
 
 	run_test() {
 		void this.run();
@@ -32,6 +32,13 @@ export default class SignalTest extends Node {
 			assert(this.has_signal("completed"), "static signal metadata was not registered");
 			assert(this.threshold === 3, "exported scalar default was not applied");
 			assert(this.spawn_offset.x === 1 && this.spawn_offset.y === 2 && this.spawn_offset.z === 3, "exported Vector3 default was not applied");
+			const propertyList = this.get_property_list() as Array<{ name: VariantArgument; hint?: VariantArgument; hint_string?: VariantArgument }>;
+			const thresholdProperty = propertyList.find(property => String(property.name) === "threshold");
+			if (!thresholdProperty) {
+				throw new Error("threshold export metadata missing from property list");
+			}
+			assert(Number(thresholdProperty.hint) === 1, "static exports hint was not preserved");
+			assert(String(thresholdProperty.hint_string) === "0,10,1", "static exports hint string was not preserved");
 
 				const received: VariantArgument[] = [];
 				this.connect("completed", (payload: VariantArgument) => {
