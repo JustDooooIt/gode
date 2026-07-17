@@ -1015,6 +1015,19 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertIn(token, release_workflow)
 		self.assertNotIn("generate_release_notes: true", release_workflow)
 
+	def test_static_workflow_prepares_typescript_compiler_before_tests(self):
+		test_workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+		static_start = test_workflow.index("  static:")
+		smoke_start = test_workflow.index("  smoke:", static_start)
+		static_body = test_workflow[static_start:smoke_start]
+
+		self.assertIn("Prepare TypeScript compiler", static_body)
+		self.assertIn("./.github/shell/prepare-typescript.sh", static_body)
+		self.assertLess(
+			static_body.index("Prepare TypeScript compiler"),
+			static_body.index("Run repository integrity tests"),
+		)
+
 	def test_gode_json_controls_commercial_npm_export_policy(self):
 		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
 		self.assertTrue(template_path.exists())

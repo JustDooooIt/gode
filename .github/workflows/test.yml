@@ -64,6 +64,10 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare TypeScript compiler
+        shell: bash
+        run: ./.github/shell/prepare-typescript.sh
+
       - name: Run repository integrity tests
         run: python -m unittest discover -s test
 
