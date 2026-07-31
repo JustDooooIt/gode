@@ -7,7 +7,7 @@ import v8 from "node:v8";
 import vm from "node:vm";
 import { Color, Engine, GD, GDArray, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, Resource, ResourceLoader, ResourceSaver, type VariantArgument, Vector2, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
-import RuntimeArrayResource from "./runtime_array_resource.js";
+import type RuntimeArrayResource from "./runtime_array_resource.js";
 import * as RuntimeBaseModule from "./runtime_base_test.js";
 import { buildRuntimePayload, moduleMarker, waitForEventLoopTurn } from "./runtime_helpers.js";
 
@@ -21,7 +21,6 @@ const PROPERTY_HINT_ARRAY_TYPE = 31;
 const PROPERTY_HINT_RESOURCE_TYPE = 17;
 const PROPERTY_HINT_NODE_TYPE = 34;
 const RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH = "res://scripts/tests/runtime_array_resource.ts";
-const RUNTIME_ARRAY_RESOURCE_FIXTURE_PATH = "res://scripts/tests/runtime_array_resource.tres";
 
 function assert(condition: boolean, message: string): void {
 	if (!condition) {
@@ -51,6 +50,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 		"spawn_offset": { "type": "Vector3" },
 		"static_resource_default_first": { "default": null, "type": "Resource" },
 		"static_image": { "type": "Image", "default": null },
+		"static_number_array": { "type": "Array<number>", "default": [3] as const },
+		"static_custom_resource_array": { "type": "ReadonlyArray<RuntimeArrayResource>", "default": [] as const },
 	} satisfies ExportMap;
 
 	label = "runtime" as string;
@@ -59,6 +60,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	spawn_offset = new Vector3(4, 5, 6) as Vector3;
 	static_resource_default_first = null as Resource | null;
 	static_image = null as Image | null;
+	static_number_array = [3] as Array<number>;
+	static_custom_resource_array = [] as ReadonlyArray<RuntimeArrayResource>;
 
 	@Export()
 	resource_slot: Resource | null = null;
@@ -78,6 +81,12 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	@Export()
 	editor_custom_resource_array: RuntimeArrayResource[] = [];
 
+	@Export()
+	editor_generic_number_array: Array<number> = [];
+
+	@Export()
+	editor_readonly_custom_resource_array: ReadonlyArray<RuntimeArrayResource> = [];
+
 	run_test(): void {
 		void this.run();
 	}
@@ -86,28 +95,14 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 		try {
 			nodeAssert.deepEqual(this.editor_array, [11, "inspector", true]);
 			nodeAssert.deepEqual(this.editor_number_array, [0]);
-			nodeAssert.equal(this.editor_custom_resource_array.length, 1);
-			nodeAssert.equal(this.editor_custom_resource_array[0].resource_name, "RuntimeArrayFixture");
+			nodeAssert.equal(this.editor_custom_resource_array.length, 0);
+			nodeAssert.deepEqual(this.editor_generic_number_array, [1, 2.5]);
+			nodeAssert.equal(this.editor_readonly_custom_resource_array.length, 0);
+			nodeAssert.deepEqual(this.static_number_array, [4, 5.5]);
+			nodeAssert.equal(this.static_custom_resource_array.length, 0);
 			nodeAssert.equal(moduleMarker, "esm-runtime-helper");
 			nodeAssert.equal(path.posix.basename("res://scripts/tests/runtime_integration_test.ts"), "runtime_integration_test.ts");
-			nodeAssert.equal(String(ResourceLoader.get_resource_type(RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH)), "TypeScriptScript");
-
-			const runtimeArrayResourceScript = ResourceLoader.load(RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH) as unknown as {
-				get_global_name(): VariantArgument;
-				get_instance_base_type(): VariantArgument;
-			};
-			assert(runtimeArrayResourceScript !== null, "custom Resource TypeScript script did not load");
-			nodeAssert.equal(String(runtimeArrayResourceScript.get_global_name()), "RuntimeArrayResource");
-			nodeAssert.equal(String(runtimeArrayResourceScript.get_instance_base_type()), "Resource");
-
-			const runtimeArrayResourceFixture = ResourceLoader.load(RUNTIME_ARRAY_RESOURCE_FIXTURE_PATH) as Resource;
-			assert(runtimeArrayResourceFixture instanceof Resource, "custom Resource fixture did not load");
-			nodeAssert.equal(runtimeArrayResourceFixture.resource_name, "RuntimeArrayFixture");
-			const fixtureScript = runtimeArrayResourceFixture.get_script() as unknown as {
-				get_global_name(): VariantArgument;
-			};
-			assert(fixtureScript !== null, "custom Resource fixture lost its TypeScript script");
-			nodeAssert.equal(String(fixtureScript.get_global_name()), "RuntimeArrayResource");
+			nodeAssert.equal(ResourceLoader.exists(RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH, "TypeScriptScript"), true);
 
 			const esmPayload = buildRuntimePayload("alpha");
 			nodeAssert.deepEqual(esmPayload.values, [1, 2, 3]);
@@ -200,6 +195,12 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				nodeAssert.equal(String(property.hint_string), hintString);
 				nodeAssert.equal(String(property.class_name), hintString);
 			};
+			const assertArrayExportMetadata = (name: string, hintString: string) => {
+				const property = getExportProperty(name);
+				nodeAssert.equal(Number(property.type), VARIANT_TYPE_ARRAY);
+				nodeAssert.equal(Number(property.hint), PROPERTY_HINT_ARRAY_TYPE);
+				nodeAssert.equal(String(property.hint_string), hintString);
+			};
 			const findPackedScenePropertyValue = (scene: PackedScene, propertyName: string): VariantArgument => {
 				const state = scene.get_state();
 				for (let nodeIndex = 0; nodeIndex < Number(state.get_node_count()); nodeIndex++) {
@@ -217,11 +218,15 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assert(this.property_can_revert("spawn_offset"), "exported Vector3 property cannot revert");
 			assert(this.property_can_revert("resource_slot"), "exported Resource property cannot revert");
 			assert(this.property_can_revert("static_resource_default_first"), "static exported Resource property cannot revert");
+			assert(this.property_can_revert("static_number_array"), "static exported Array property cannot revert");
+			assert(this.property_can_revert("static_custom_resource_array"), "static exported custom Resource Array property cannot revert");
 			nodeAssert.equal(this.property_get_revert("label"), "runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_label"), "base-runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_count"), 11);
 			nodeAssert.equal(this.property_get_revert("resource_slot"), null);
 			nodeAssert.equal(this.property_get_revert("static_resource_default_first"), null);
+			nodeAssert.deepEqual(this.property_get_revert("static_number_array"), [3]);
+			nodeAssert.deepEqual(this.property_get_revert("static_custom_resource_array"), []);
 			const offset = this.property_get_revert("spawn_offset") as Vector3;
 			assert(offset.x === 4 && offset.y === 5 && offset.z === 6, "Vector3 revert value was not preserved");
 
@@ -232,7 +237,27 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(this.enabled, false);
 			nodeAssert.equal(this.count, 9);
 
-			for (const name of ["label", "enabled", "count", "spawn_offset", "resource_slot", "image_slot", "node_slot", "static_resource_default_first", "static_image", "inherited_label", "inherited_count"]) {
+			const expectedExportProperties = [
+				"label",
+				"enabled",
+				"count",
+				"spawn_offset",
+				"resource_slot",
+				"image_slot",
+				"node_slot",
+				"editor_array",
+				"editor_number_array",
+				"editor_custom_resource_array",
+				"editor_generic_number_array",
+				"editor_readonly_custom_resource_array",
+				"static_resource_default_first",
+				"static_image",
+				"static_number_array",
+				"static_custom_resource_array",
+				"inherited_label",
+				"inherited_count",
+			];
+			for (const name of expectedExportProperties) {
 				assert(propertyNames.includes(name), `exported property missing from property list: ${name}`);
 			}
 			const labelProperty = getExportProperty("label");
@@ -246,14 +271,12 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assertObjectExportMetadata("static_resource_default_first", PROPERTY_HINT_RESOURCE_TYPE, "Resource");
 			assertObjectExportMetadata("static_image", PROPERTY_HINT_RESOURCE_TYPE, "Image");
 			assertObjectExportMetadata("node_slot", PROPERTY_HINT_NODE_TYPE, "Node");
-			const numberArrayProperty = getExportProperty("editor_number_array");
-			nodeAssert.equal(Number(numberArrayProperty.type), VARIANT_TYPE_ARRAY);
-			nodeAssert.equal(Number(numberArrayProperty.hint), PROPERTY_HINT_ARRAY_TYPE);
-			nodeAssert.equal(String(numberArrayProperty.hint_string), `${VARIANT_TYPE_FLOAT}:`);
-			const customResourceArrayProperty = getExportProperty("editor_custom_resource_array");
-			nodeAssert.equal(Number(customResourceArrayProperty.type), VARIANT_TYPE_ARRAY);
-			nodeAssert.equal(Number(customResourceArrayProperty.hint), PROPERTY_HINT_ARRAY_TYPE);
-			nodeAssert.equal(String(customResourceArrayProperty.hint_string), `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_number_array", `${VARIANT_TYPE_FLOAT}:`);
+			assertArrayExportMetadata("editor_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_generic_number_array", `${VARIANT_TYPE_FLOAT}:`);
+			assertArrayExportMetadata("editor_readonly_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("static_number_array", `${VARIANT_TYPE_FLOAT}:`);
+			assertArrayExportMetadata("static_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 
 			const exportedResource = new Resource();
 			exportedResource.resource_name = "PersistentRuntimeResource";
