@@ -49,14 +49,13 @@ func _run_next() -> void:
 		if current_test.get("editor_number_array") != [0]:
 			_fail("RuntimeIntegrationTest typed export Array did not round-trip through ScriptInstance")
 			return
-		var custom_resource := load("res://scripts/tests/runtime_array_resource.tres")
-		if custom_resource == null:
-			_fail("RuntimeIntegrationTest custom Resource fixture did not load")
+		current_test.set("editor_generic_number_array", [1, 2.5])
+		if current_test.get("editor_generic_number_array") != [1, 2.5]:
+			_fail("RuntimeIntegrationTest generic typed export Array did not round-trip through ScriptInstance")
 			return
-		current_test.set("editor_custom_resource_array", [custom_resource])
-		var custom_resource_array: Array = current_test.get("editor_custom_resource_array")
-		if custom_resource_array.size() != 1 or custom_resource_array[0] != custom_resource:
-			_fail("RuntimeIntegrationTest custom Resource Array did not round-trip through ScriptInstance")
+		current_test.set("static_number_array", [4, 5.5])
+		if current_test.get("static_number_array") != [4, 5.5]:
+			_fail("RuntimeIntegrationTest static export Array did not round-trip through ScriptInstance")
 			return
 
 	current_test.call(RUN_TEST_METHOD)
