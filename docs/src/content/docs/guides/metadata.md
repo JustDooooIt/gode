@@ -25,7 +25,7 @@ export default class Spawner extends Node3D {
 }
 ```
 
-The `type` value uses Godot Variant type names such as `"String"`, `"int"`, `"float"`, `"bool"`, `"Vector3"`, and `"Object"`. Export descriptors may also include `hint` for the Godot Inspector hint type, `hintString` for that hint's argument string, and a Godot Variant-compatible `default` value.
+The `type` value uses Godot Variant type names such as `"String"`, `"int"`, `"float"`, `"bool"`, `"Vector3"`, and `"Object"`. Export descriptors may also include `hint` for the Godot Inspector hint type, `hint_string` for that hint's argument string, and a Godot Variant-compatible `default` value.
 
 ## Tool scripts
 

@@ -25,7 +25,7 @@ export default class Spawner extends Node3D {
 }
 ```
 
-`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。导出描述也可以包含 `hint` 表示 Godot Inspector hint 类型、`hintString` 表示该 hint 的参数字符串，以及 Godot Variant 兼容的 `default` 值。
+`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。导出描述也可以包含 `hint` 表示 Godot Inspector hint 类型、`hint_string` 表示该 hint 的参数字符串，以及 Godot Variant 兼容的 `default` 值。
 
 ## Tool 脚本
 

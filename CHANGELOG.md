@@ -2,7 +2,7 @@
 
 - Updated GitHub Actions artifact download steps to `actions/download-artifact@v8`, removing Node.js 20 deprecation warnings from release packaging and packaged-plugin smoke-test artifact downloads.
 - Fixed TypeScript exported Object/Resource/Node properties so script instance state saving returns stored export values, Resource and Node inspector hints are inferred from typed exports, and static export defaults are parsed after the descriptor type regardless of field order.
-- Breaking: simplified TypeScript metadata input keys to camelCase only. Export metadata now uses `hintString`, and RPC metadata now uses `static rpcConfig` with `transferMode` and `callLocal`; the old snake_case input aliases were removed.
+- Breaking: TypeScript export metadata now uses `hint_string`. RPC metadata continues to use `static rpcConfig` with `transferMode` and `callLocal`.
 - Improved generated-binding build ergonomics by skipping configure-time code generation when generator inputs are unchanged, batching generated C++ sources with generated-only unity builds, and automatically using `sccache` or `ccache` when available.
 - Fixed libnode static linking so platform builds force-load the full libnode archive instead of relying on the linker's default demand-loaded archive member selection.
 
