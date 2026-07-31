@@ -598,8 +598,8 @@ static std::string canonical_type_name(const std::string &type_str) {
 	return class_name;
 }
 
-// Returns the element type of T[] and Array<T>. An untyped Array deliberately
-// returns an empty string so the Inspector retains its generic Variant element.
+// Returns the element type of T[], Array<T>, and ReadonlyArray<T>. An untyped
+// Array deliberately returns an empty string so the Inspector keeps Variant items.
 static std::string array_element_type_text(const std::string &type_str) {
 	const std::string type_name = unwrap_nullable_type_text(type_str);
 	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
