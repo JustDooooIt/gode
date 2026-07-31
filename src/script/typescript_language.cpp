@@ -908,10 +908,7 @@ void TypeScriptLanguage::_frame() {
 }
 
 bool TypeScriptLanguage::_handles_global_class_type(const String &p_type) const {
-	return p_type == String(TypeScriptScript::get_class_static()) ||
-			p_type == String("TypeScript") ||
-			p_type == String("ts") ||
-			p_type == String("tsx");
+	return p_type == String(TypeScriptScript::get_class_static());
 }
 
 Dictionary TypeScriptLanguage::_get_global_class_name(const String &p_path) const {
