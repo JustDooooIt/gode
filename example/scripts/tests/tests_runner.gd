@@ -40,6 +40,23 @@ func _run_next() -> void:
 	if not current_test.has_method(RUN_TEST_METHOD):
 		_fail("%s did not expose %s" % [current_test.name, RUN_TEST_METHOD])
 		return
+	if current_test.name == "RuntimeIntegrationTest":
+		current_test.set("editor_array", [11, "inspector", true])
+		if current_test.get("editor_array") != [11, "inspector", true]:
+			_fail("RuntimeIntegrationTest export Array did not round-trip through ScriptInstance")
+			return
+		current_test.set("editor_number_array", [0])
+		if current_test.get("editor_number_array") != [0]:
+			_fail("RuntimeIntegrationTest typed export Array did not round-trip through ScriptInstance")
+			return
+		current_test.set("editor_generic_number_array", [1, 2.5])
+		if current_test.get("editor_generic_number_array") != [1, 2.5]:
+			_fail("RuntimeIntegrationTest generic typed export Array did not round-trip through ScriptInstance")
+			return
+		current_test.set("static_number_array", [4, 5.5])
+		if current_test.get("static_number_array") != [4, 5.5]:
+			_fail("RuntimeIntegrationTest static export Array did not round-trip through ScriptInstance")
+			return
 
 	current_test.call(RUN_TEST_METHOD)
 

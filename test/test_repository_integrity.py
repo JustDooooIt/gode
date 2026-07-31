@@ -580,6 +580,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("scripts.has(cache_key)", source)
 		self.assertIn("script->set_path(load_path);", source)
 		self.assertIn("scripts[cache_key] = Ref(script);", source)
+		self.assertIn('p_type == StringName("Script")', source)
+		self.assertIn("p_type == TypeScriptScript::get_class_static()", source)
+		self.assertIn("return String(TypeScriptScript::get_class_static());", source)
+		resource_type_body = source[
+			source.index("String TypeScriptLoader::_get_resource_type") :
+			source.index("String TypeScriptLoader::_get_resource_script_class")
+		]
+		self.assertNotIn('return String("Script");', resource_type_body)
 		self.assertIn("tree_sitter_typescript", source)
 		self.assertIn("String TypeScriptLoader::_get_resource_script_class", source)
 		self.assertIn("find_default_resource_class", source)
@@ -681,9 +689,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"script->reload_source_code(source_code, p_keep_state);",
 			"d[\"is_tool\"]",
 			"d[\"base_type\"]",
-			"p_type == String(\"TypeScript\")",
+			"p_type == String(TypeScriptScript::get_class_static())",
 		):
 			self.assertIn(token, source)
+
+		handles_global_class_body = source[
+			source.index("bool TypeScriptLanguage::_handles_global_class_type") :
+			source.index("Dictionary TypeScriptLanguage::_get_global_class_name")
+		]
+		for legacy_type in ('String("TypeScript")', 'String("ts")', 'String("tsx")'):
+			self.assertNotIn(legacy_type, handles_global_class_body)
 
 		self.assertIn("bool TypeScriptLanguage::_is_using_templates() {\n\treturn true;\n}", source)
 		self.assertIn("bool TypeScriptLanguage::_has_named_classes() const {\n\treturn true;\n}", source)
