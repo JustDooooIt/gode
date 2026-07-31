@@ -39,7 +39,7 @@ export default class SignalTest extends Node {
 	} as const;
 
 	static exports = {
-		"threshold": { "type": "int", "hint": 1, "hintString": "0,10,1", "default": 3 as const },
+		"threshold": { "type": "int", "hint": 1, "hint_string": "0,10,1", "default": 3 as const },
 		"spawn_offset": { "type": "Vector3" },
 	} satisfies ExportMap;
 
