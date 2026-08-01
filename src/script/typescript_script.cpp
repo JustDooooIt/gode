@@ -483,9 +483,7 @@ static bool parse_integer_literal(const std::string &text, int64_t &r_value) {
 		return false;
 	}
 
-	const uint64_t limit = negative ?
-			static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1ULL :
-			static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+	const uint64_t limit = negative ? static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1ULL : static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
 	uint64_t value = 0;
 	for (size_t i = offset; i < normalized.size(); i++) {
 		const int digit = numeric_digit_value(normalized[i]);
@@ -563,6 +561,7 @@ enum class ExportTypeKind {
 	UNKNOWN,
 	BUILTIN,
 	ARRAY,
+	DICTIONARY,
 	STRING_ENUM,
 	OBJECT,
 	RESOURCE,
@@ -574,6 +573,7 @@ struct ExportTypeClassification {
 	Variant::Type variant_type = Variant::NIL;
 	StringName class_name;
 	std::vector<std::string> string_enum_values;
+	std::unique_ptr<ExportTypeClassification> key_type;
 	std::unique_ptr<ExportTypeClassification> element_type;
 };
 
@@ -696,6 +696,12 @@ static std::string unwrap_nullable_type_text(const std::string &type_text) {
 
 static std::string canonical_type_name(const std::string &type_str) {
 	std::string type_name = unwrap_nullable_type_text(type_str);
+	if (type_name == "GDArray") {
+		return "Array";
+	}
+	if (type_name == "GDDictionary") {
+		return "Dictionary";
+	}
 	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
 		return "Array";
 	}
@@ -703,11 +709,12 @@ static std::string canonical_type_name(const std::string &type_str) {
 	if (class_name == "ReadonlyArray") {
 		return "Array";
 	}
+	if (class_name == "Map") {
+		return "Dictionary";
+	}
 	return class_name;
 }
 
-// Returns the element type of T[], Array<T>, and ReadonlyArray<T>. An untyped
-// Array deliberately returns an empty string so the Inspector keeps Variant items.
 static std::string array_element_type_text(const std::string &type_str) {
 	const std::string type_name = unwrap_nullable_type_text(type_str);
 	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
@@ -741,6 +748,84 @@ static std::string array_element_type_text(const std::string &type_str) {
 		return std::string();
 	}
 	return trim_type_text(type_name.substr(generic_start + 1, type_name.size() - generic_start - 2));
+}
+
+static bool dictionary_element_type_text(const std::string &type_str, std::string &r_key_type, std::string &r_value_type) {
+	const std::string type_name = unwrap_nullable_type_text(type_str);
+	const size_t generic_start = type_name.find('<');
+	if (generic_start == std::string::npos || type_name.back() != '>') {
+		return false;
+	}
+	const std::string container_name = string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str())));
+	if (container_name != "Map") {
+		return false;
+	}
+
+	int angle_depth = 0;
+	int paren_depth = 0;
+	int bracket_depth = 0;
+	int brace_depth = 0;
+	char quote = '\0';
+	bool escaped = false;
+	size_t separator = std::string::npos;
+	for (size_t i = generic_start + 1; i + 1 < type_name.size(); i++) {
+		const char c = type_name[i];
+		if (quote != '\0') {
+			if (escaped) {
+				escaped = false;
+			} else if (c == '\\') {
+				escaped = true;
+			} else if (c == quote) {
+				quote = '\0';
+			}
+			continue;
+		}
+		if (c == '"' || c == '\'') {
+			quote = c;
+			continue;
+		}
+		if (c == '<') {
+			angle_depth++;
+		} else if (c == '>') {
+			if (angle_depth == 0) {
+				return false;
+			}
+			angle_depth--;
+		} else if (c == '(') {
+			paren_depth++;
+		} else if (c == ')') {
+			if (paren_depth == 0) {
+				return false;
+			}
+			paren_depth--;
+		} else if (c == '[') {
+			bracket_depth++;
+		} else if (c == ']') {
+			if (bracket_depth == 0) {
+				return false;
+			}
+			bracket_depth--;
+		} else if (c == '{') {
+			brace_depth++;
+		} else if (c == '}') {
+			if (brace_depth == 0) {
+				return false;
+			}
+			brace_depth--;
+		} else if (c == ',' && angle_depth == 0 && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+			if (separator != std::string::npos) {
+				return false;
+			}
+			separator = i;
+		}
+	}
+	if (quote != '\0' || angle_depth != 0 || paren_depth != 0 || bracket_depth != 0 || brace_depth != 0 || separator == std::string::npos) {
+		return false;
+	}
+
+	r_key_type = trim_type_text(type_name.substr(generic_start + 1, separator - generic_start - 1));
+	r_value_type = trim_type_text(type_name.substr(separator + 1, type_name.size() - separator - 2));
+	return !r_key_type.empty() && !r_value_type.empty();
 }
 
 static StringName godot_class_name_from_type(const std::string &type_str) {
@@ -822,6 +907,9 @@ static Variant::Type parse_builtin_type_string(const std::string &type_str) {
 	if (type_name == "Array") {
 		return Variant::ARRAY;
 	}
+	if (type_name == "Dictionary") {
+		return Variant::DICTIONARY;
+	}
 	return Variant::NIL;
 }
 
@@ -876,10 +964,6 @@ static TSNode unwrap_metadata_expression(TSNode node) {
 static bool parse_default_value(TSNode value_node, const std::string &source, Variant::Type property_type, Variant &r_value);
 static TSNode find_default_class(TSNode root_node, uint32_t child_count, const std::string &source);
 
-// PROPERTY_HINT_ARRAY_TYPE encodes the element PropertyInfo as
-// "VariantType/PropertyHint:hint_string". Passing only a class name makes the
-// Inspector treat the array as untyped, so Resource-derived elements are added
-// as null instead of opening a resource picker.
 static String array_element_hint_string(const PropertyInfo &element_property) {
 	String encoded = String::num_int64(static_cast<int64_t>(element_property.type));
 	const uint32_t element_hint = element_property.type == Variant::ARRAY && element_property.hint == PROPERTY_HINT_ARRAY_TYPE ? PROPERTY_HINT_NONE : element_property.hint;
@@ -894,6 +978,10 @@ static String array_element_hint_string(const PropertyInfo &element_property) {
 		encoded += String(element_property.class_name);
 	}
 	return encoded;
+}
+
+static String dictionary_element_hint_string(const PropertyInfo &element_property) {
+	return array_element_hint_string(element_property);
 }
 
 static StringName qualifier_from_type_text(const std::string &type_str) {
@@ -1070,6 +1158,18 @@ static ExportTypeClassification classify_export_type(
 		return classification;
 	}
 
+	if (canonical_type_name(effective_type) == "Dictionary") {
+		classification.kind = ExportTypeKind::DICTIONARY;
+		classification.variant_type = Variant::DICTIONARY;
+		std::string key_type_str;
+		std::string value_type_str;
+		if (dictionary_element_type_text(effective_type, key_type_str, value_type_str)) {
+			classification.key_type = std::make_unique<ExportTypeClassification>(classify_export_type(key_type_str, file_path, source, root_node, child_count, alias_depth));
+			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(value_type_str, file_path, source, root_node, child_count, alias_depth));
+		}
+		return classification;
+	}
+
 	const Variant::Type builtin_type = parse_builtin_type_string(effective_type);
 	if (builtin_type != Variant::NIL) {
 		classification.kind = ExportTypeKind::BUILTIN;
@@ -1126,6 +1226,21 @@ static void apply_export_type_classification(PropertyInfo &property, const Expor
 			if (element_property.type != Variant::NIL) {
 				property.hint = PROPERTY_HINT_ARRAY_TYPE;
 				property.hint_string = array_element_hint_string(element_property);
+			}
+			return;
+		}
+		case ExportTypeKind::DICTIONARY: {
+			if (property.hint != PROPERTY_HINT_NONE || !classification.key_type || !classification.element_type ||
+					classification.key_type->kind == ExportTypeKind::UNKNOWN || classification.element_type->kind == ExportTypeKind::UNKNOWN) {
+				return;
+			}
+			PropertyInfo key_property;
+			PropertyInfo value_property;
+			apply_export_type_classification(key_property, *classification.key_type);
+			apply_export_type_classification(value_property, *classification.element_type);
+			if (key_property.type != Variant::NIL && value_property.type != Variant::NIL) {
+				property.hint = PROPERTY_HINT_TYPE_STRING;
+				property.hint_string = dictionary_element_hint_string(key_property) + ";" + dictionary_element_hint_string(value_property);
 			}
 			return;
 		}

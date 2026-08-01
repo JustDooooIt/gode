@@ -17,10 +17,12 @@ const GODOT_OK = 0;
 const VARIANT_TYPE_NIL = 0;
 const VARIANT_TYPE_FLOAT = 3;
 const VARIANT_TYPE_STRING = 4;
+const VARIANT_TYPE_DICTIONARY = 27;
 const VARIANT_TYPE_ARRAY = 28;
 const VARIANT_TYPE_OBJECT = 24;
 const PROPERTY_HINT_NONE = 0;
 const PROPERTY_HINT_ENUM = 2;
+const PROPERTY_HINT_TYPE_STRING = 23;
 const PROPERTY_HINT_ARRAY_TYPE = 31;
 const PROPERTY_HINT_RESOURCE_TYPE = 17;
 const PROPERTY_HINT_NODE_TYPE = 34;
@@ -88,6 +90,12 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 
 	@Export()
 	editor_generic_number_array: Array<number> = [];
+
+	@Export()
+	editor_map: Map<string, number> = new Map();
+
+	@Export()
+	editor_resource_map: Map<string, RuntimeArrayResource> = new Map();
 
 	@Export()
 	editor_readonly_custom_resource_array: ReadonlyArray<RuntimeArrayResource> = [];
@@ -269,6 +277,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"editor_number_array",
 				"editor_custom_resource_array",
 				"editor_generic_number_array",
+				"editor_map",
+				"editor_resource_map",
 				"editor_readonly_custom_resource_array",
 				"editor_string_enum",
 				"editor_string_enum_array",
@@ -299,6 +309,14 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assertArrayExportMetadata("editor_number_array", `${VARIANT_TYPE_FLOAT}:`);
 			assertArrayExportMetadata("editor_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("editor_generic_number_array", `${VARIANT_TYPE_FLOAT}:`);
+			const mapProperty = getExportProperty("editor_map");
+			nodeAssert.equal(Number(mapProperty.type), VARIANT_TYPE_DICTIONARY);
+			nodeAssert.equal(Number(mapProperty.hint), PROPERTY_HINT_TYPE_STRING);
+			nodeAssert.equal(String(mapProperty.hint_string), `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_FLOAT}:`);
+			const resourceMapProperty = getExportProperty("editor_resource_map");
+			nodeAssert.equal(Number(resourceMapProperty.type), VARIANT_TYPE_DICTIONARY);
+			nodeAssert.equal(Number(resourceMapProperty.hint), PROPERTY_HINT_TYPE_STRING);
+			nodeAssert.equal(String(resourceMapProperty.hint_string), `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("editor_readonly_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("static_number_array", `${VARIANT_TYPE_FLOAT}:`);
 			assertArrayExportMetadata("static_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
