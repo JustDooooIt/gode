@@ -9,6 +9,11 @@ using namespace gode;
 
 TypeScriptSaver *TypeScriptSaver::singleton = nullptr;
 
+static bool is_typescript_script_path(const String &path) {
+	const String lower = path.to_lower();
+	return (lower.ends_with(".ts") || lower.ends_with(".tsx")) && !lower.ends_with(".d.ts");
+}
+
 TypeScriptSaver *TypeScriptSaver::get_singleton() {
 	if (singleton) {
 		return singleton;
@@ -46,9 +51,7 @@ bool TypeScriptSaver::_recognize(const Ref<Resource> &p_resource) const {
 	if (!p_resource.is_valid()) {
 		return false;
 	}
-	String path = p_resource->get_path();
-	String ext = path.get_extension().to_lower();
-	return ext == "ts" || ext == "tsx";
+	return is_typescript_script_path(p_resource->get_path());
 }
 
 PackedStringArray TypeScriptSaver::_get_recognized_extensions(const Ref<Resource> &p_resource) const {
@@ -59,6 +62,5 @@ PackedStringArray TypeScriptSaver::_get_recognized_extensions(const Ref<Resource
 }
 
 bool TypeScriptSaver::_recognize_path(const Ref<Resource> &p_resource, const String &p_path) const {
-	String ext = p_path.get_extension().to_lower();
-	return ext == String("ts") || ext == String("tsx");
+	return is_typescript_script_path(p_path);
 }

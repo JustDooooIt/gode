@@ -28,6 +28,11 @@ bool should_cache_loaded_script(int32_t p_cache_mode) {
 			p_cache_mode != ResourceLoader::CacheMode::CACHE_MODE_IGNORE_DEEP;
 }
 
+bool is_typescript_script_path(const String &path) {
+	const String lower = path.to_lower();
+	return (lower.ends_with(".ts") || lower.ends_with(".tsx")) && !lower.ends_with(".d.ts");
+}
+
 String normalize_load_path(const String &p_path, const String &p_original_path) {
 	String path = p_path.is_empty() ? p_original_path : p_path;
 	path = path.replace("\\", "/").simplify_path();
@@ -714,8 +719,7 @@ PackedStringArray TypeScriptLoader::_get_recognized_extensions() const {
 }
 
 bool TypeScriptLoader::_recognize_path(const String &p_path, const StringName &p_type) const {
-	String ext = p_path.get_extension().to_lower();
-	return ext == String("ts") || ext == String("tsx");
+	return is_typescript_script_path(p_path);
 }
 
 bool TypeScriptLoader::_handles_type(const StringName &p_type) const {
@@ -723,14 +727,16 @@ bool TypeScriptLoader::_handles_type(const StringName &p_type) const {
 }
 
 String TypeScriptLoader::_get_resource_type(const String &p_path) const {
-	String ext = p_path.get_extension().to_lower();
-	if (ext == String("ts") || ext == String("tsx")) {
+	if (is_typescript_script_path(p_path)) {
 		return String(TypeScriptScript::get_class_static());
 	}
 	return String();
 }
 
 String TypeScriptLoader::_get_resource_script_class(const String &p_path) const {
+	if (!is_typescript_script_path(p_path)) {
+		return String();
+	}
 	const String path = normalize_load_path(p_path, String());
 	String source_string = FileAccess::get_file_as_string(path);
 	if (FileAccess::get_open_error() != OK) {
@@ -764,6 +770,9 @@ int64_t TypeScriptLoader::_get_resource_uid(const String &p_path) const {
 
 PackedStringArray TypeScriptLoader::_get_dependencies(const String &p_path, bool p_add_types) const {
 	PackedStringArray dependencies;
+	if (!is_typescript_script_path(p_path)) {
+		return dependencies;
+	}
 	const String path = normalize_load_path(p_path, String());
 	String source_string = FileAccess::get_file_as_string(path);
 	if (FileAccess::get_open_error() != OK) {
@@ -800,7 +809,7 @@ PackedStringArray TypeScriptLoader::_get_dependencies(const String &p_path, bool
 }
 
 Error TypeScriptLoader::_rename_dependencies(const String &p_path, const Dictionary &p_renames) const {
-	if (p_renames.is_empty()) {
+	if (!is_typescript_script_path(p_path) || p_renames.is_empty()) {
 		return Error::OK;
 	}
 
@@ -880,6 +889,9 @@ bool TypeScriptLoader::_exists(const String &p_path) const {
 
 PackedStringArray TypeScriptLoader::_get_classes_used(const String &p_path) const {
 	PackedStringArray classes;
+	if (!is_typescript_script_path(p_path)) {
+		return classes;
+	}
 	const String path = normalize_load_path(p_path, String());
 	String source_string = FileAccess::get_file_as_string(path);
 	if (FileAccess::get_open_error() != OK) {
@@ -914,6 +926,9 @@ PackedStringArray TypeScriptLoader::_get_classes_used(const String &p_path) cons
 Variant TypeScriptLoader::_load(const String &p_path, const String &p_original_path, bool p_use_sub_threads, int32_t p_cache_mode) const {
 	String load_path = normalize_load_path(p_path, p_original_path);
 	String read_path = p_original_path.is_empty() ? load_path : p_original_path;
+	if (!is_typescript_script_path(load_path) || !is_typescript_script_path(read_path)) {
+		return Error::ERR_FILE_UNRECOGNIZED;
+	}
 	StringName cache_key(load_path);
 
 	if (p_cache_mode == ResourceLoader::CacheMode::CACHE_MODE_REUSE && scripts.has(cache_key)) {

@@ -1806,12 +1806,12 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 							if (ts_node_is_null(val)) {
 								continue;
 							}
-								std::string key_str = strip_quotes(source.substr(ts_node_start_byte(key), ts_node_end_byte(key) - ts_node_start_byte(key)));
-								if (key_str == "hint") {
-									parse_property_hint_value(val, source, export_hint);
-								} else if (key_str == "hint_string") {
-									parse_metadata_string_value(val, source, export_hint_string);
-								}
+							std::string key_str = strip_quotes(source.substr(ts_node_start_byte(key), ts_node_end_byte(key) - ts_node_start_byte(key)));
+							if (key_str == "hint") {
+								parse_property_hint_value(val, source, export_hint);
+							} else if (key_str == "hint_string") {
+								parse_metadata_string_value(val, source, export_hint_string);
+							}
 						}
 					} else {
 						// @Export(hint) or @Export(hint, "hint_string").
