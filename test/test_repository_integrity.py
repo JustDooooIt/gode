@@ -2012,11 +2012,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_generated_builtin_constructors_match_typescript_contract(self):
 		from generator.builtin_classes_generator import napi_match_expr
-		from generator.dts_generator import godot_type_to_ts, sanitize_name
+		from generator.dts_generator import DtsGenerator
 		from generator.utils.type_mappings import js_class_name
 
 		api = load_extension_api()
 		dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
+		dts_generator = DtsGenerator.__new__(DtsGenerator)
 
 		def class_body(dts_name: str) -> str:
 			body = find_dts_class_body(dts, dts_name, exported=True)
@@ -2034,10 +2035,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 			for ctor in cls.get("constructors", []):
 				args = ctor.get("arguments", [])
-				params = ", ".join(
-					f"{sanitize_name(arg['name'])}: {godot_type_to_ts(arg['type'], is_input=True)}"
-					for arg in args
-				)
+				param_overrides = dts_generator._builtin_constructor_param_overrides(js_class_name(class_name), args)
+				params = dts_generator._format_params(args, param_overrides) if args else ""
 				if f"constructor({params});" not in body:
 					mismatches.append(f"{class_name} constructor({params}) missing dts declaration")
 
@@ -2443,6 +2442,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("export type VariantArgument = null | undefined | boolean | number | bigint | string", godot_dts)
 		self.assertIn("Map<VariantArgument, VariantArgument>", godot_dts)
 		self.assertIn("GDDictionary | { [key: string]: VariantArgument } | Map<VariantArgument, VariantArgument>", godot_dts)
+		self.assertIn("export class GDDictionary<K extends VariantArgument = VariantArgument, V extends VariantArgument = VariantArgument>", godot_dts)
+		self.assertIn("constructor(from_gd: GDDictionary<K, V> | { [key: string]: V } | Map<K, V>);", godot_dts)
+		self.assertIn("export class GDArray<T extends VariantArgument = VariantArgument>", godot_dts)
+		self.assertIn("get(index: number | bigint): T;", godot_dts)
 		self.assertIn("count: number | bigint", godot_dts)
 		self.assertNotIn("  const Color: typeof GodotModule.Color;", globals_dts)
 		self.assertNotIn("  const Engine: GodotModule.Engine;", globals_dts)
