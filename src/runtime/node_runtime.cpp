@@ -31,11 +31,11 @@ static node::IsolateData *isolate_data = nullptr;
 v8::Isolate *NodeRuntime::isolate = nullptr;
 node::Environment *NodeRuntime::env = nullptr;
 v8::Global<v8::Context> NodeRuntime::node_context;
-thread_local napi_env NodeRuntime::thread_local_env = nullptr;
+napi_env NodeRuntime::napi_environment = nullptr;
 
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
 	node_runtime_bridge::preload_node_dll_stub();
-	NodeRuntime::thread_local_env = env;
+	NodeRuntime::napi_environment = env;
 	gode::register_builtin(env, exports);
 	gode::register_classes(env, exports);
 	gode::GD::init(env, exports);
@@ -177,14 +177,14 @@ Napi::Value NodeRuntime::compile_script(const std::string &code, const std::stri
 		init_once();
 	}
 
-	if (thread_local_env == nullptr) {
-		godot::UtilityFunctions::printerr("[compile_script] Error: thread_local_env is not set");
+	if (napi_environment == nullptr) {
+		godot::UtilityFunctions::printerr("[compile_script] Error: napi_environment is not set");
 		return Napi::Value();
 	}
 
 	v8::Locker locker(isolate);
 	v8::Isolate::Scope isolate_scope(isolate);
-	Napi::Env napi_env(thread_local_env);
+	Napi::Env napi_env(napi_environment);
 	Napi::EscapableHandleScope handle_scope(napi_env);
 
 	v8::Local<v8::Context> context = node_context.Get(isolate);
@@ -258,7 +258,7 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 
 	if (promise->State() == v8::Promise::kRejected) {
 		v8::Local<v8::Value> error = promise->Result();
-		Napi::Value js_error(thread_local_env, reinterpret_cast<napi_value>(*error));
+		Napi::Value js_error(napi_environment, reinterpret_cast<napi_value>(*error));
 		log_js_error("NodeRuntime ESM compile rejected", js_error_to_string(js_error));
 		return v8::Local<v8::Value>();
 	}
@@ -342,7 +342,7 @@ Napi::Function NodeRuntime::get_default_class(Napi::Value module_exports) {
 }
 
 godot::Variant NodeRuntime::eval_expression(const std::string &expr) {
-	if (!node_initialized || !env) {
+	if (!node_initialized || !env || napi_environment == nullptr) {
 		return godot::Variant();
 	}
 
@@ -372,9 +372,9 @@ godot::Variant NodeRuntime::eval_expression(const std::string &expr) {
 	}
 
 	v8::Local<v8::Value> result = maybe_result.ToLocalChecked();
-	Napi::Value napi_result(thread_local_env, reinterpret_cast<napi_value>(*result));
+	Napi::Value napi_result(napi_environment, reinterpret_cast<napi_value>(*result));
 	godot::Variant converted = napi_to_godot(napi_result);
-	if (log_and_clear_pending_js_exception(thread_local_env, "NodeRuntime eval expression result conversion")) {
+	if (log_and_clear_pending_js_exception(napi_environment, "NodeRuntime eval expression result conversion")) {
 		return godot::Variant();
 	}
 	return converted;
@@ -421,10 +421,10 @@ void NodeRuntime::shutdown() {
 		node::Stop(env);
 		node::FreeEnvironment(env);
 		env = nullptr;
+		napi_environment = nullptr;
 	}
 
 	node_context.Reset();
-
 	if (isolate_data) {
 		node::FreeIsolateData(isolate_data);
 		isolate_data = nullptr;

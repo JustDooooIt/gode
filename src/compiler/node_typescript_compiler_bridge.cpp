@@ -32,7 +32,7 @@ godot::Dictionary NodeRuntime::compile_typescript_project(const godot::Array &fi
 		init_once();
 	}
 
-	if (thread_local_env == nullptr) {
+	if (napi_environment == nullptr) {
 		return make_typescript_compile_failure("Node runtime is not ready for TypeScript compilation.");
 	}
 
@@ -56,22 +56,22 @@ godot::Dictionary NodeRuntime::compile_typescript_project(const godot::Array &fi
 		return make_typescript_compile_failure("TypeScript compiler bootstrap function was not registered.");
 	}
 
-	Napi::Env napi_env(thread_local_env);
+	Napi::Env napi_env(napi_environment);
 	Napi::Value js_files = godot_to_napi(napi_env, files);
 	if (napi_env.IsExceptionPending()) {
-		log_and_clear_pending_js_exception(thread_local_env, "NodeRuntime TypeScript source conversion");
+		log_and_clear_pending_js_exception(napi_environment, "NodeRuntime TypeScript source conversion");
 		return make_typescript_compile_failure("Failed to convert TypeScript source files for Node.");
 	}
 
 	Napi::Function fn(napi_env, reinterpret_cast<napi_value>(*fn_val));
 	Napi::Value result_value = fn.Call(napi_env.Global(), { js_files });
 	if (try_catch.HasCaught() || napi_env.IsExceptionPending()) {
-		log_and_clear_pending_js_exception(thread_local_env, "NodeRuntime TypeScript compile");
+		log_and_clear_pending_js_exception(napi_environment, "NodeRuntime TypeScript compile");
 		return make_typescript_compile_failure("TypeScript compiler threw an exception.");
 	}
 
 	godot::Variant converted = napi_to_godot(result_value);
-	if (log_and_clear_pending_js_exception(thread_local_env, "NodeRuntime TypeScript result conversion")) {
+	if (log_and_clear_pending_js_exception(napi_environment, "NodeRuntime TypeScript result conversion")) {
 		return make_typescript_compile_failure("Failed to convert TypeScript compiler result.");
 	}
 	if (converted.get_type() != godot::Variant::DICTIONARY) {
