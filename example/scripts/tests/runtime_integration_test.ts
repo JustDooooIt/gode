@@ -8,7 +8,11 @@ import vm from "node:vm";
 import { Color, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, Resource, ResourceLoader, ResourceSaver, type VariantArgument, Vector2, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
+import type RuntimeExternalResource from "./runtime_external_resource.js";
+import type RuntimeResourceAlias from "./runtime_array_resource.js";
 import * as RuntimeBaseModule from "./runtime_base_test.js";
+import type { RuntimeImportedGenericArray, RuntimeImportedGenericDictionary, RuntimeImportedLevel, RuntimeImportedResourceMap as ImportedResourceMapAlias, RuntimeImportedSingleLevel } from "./runtime_export_types.js";
+import type * as RuntimeExportTypes from "./runtime_export_types.js";
 import { buildRuntimePayload, moduleMarker, waitForEventLoopTurn } from "./runtime_helpers.js";
 
 v8.setFlagsFromString("--expose-gc");
@@ -62,6 +66,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 		"static_custom_resource_array": { "type": "ReadonlyArray<RuntimeArrayResource>", "default": [] as const },
 		"static_record_dictionary": { "type": "Record<string, number>", "default": { staticValue: 3 } as const },
 		"static_resource_dictionary": { "type": "GDDictionary<string, RuntimeArrayResource>", "default": {} as const },
+		"static_imported_resource_array": { "type": "RuntimeExportTypes.RuntimeImportedResourceArray", "default": [] as const },
+		"static_imported_generic_dictionary": { "type": "RuntimeImportedGenericDictionary<RuntimeArrayResource>", "default": {} as const },
+		"static_imported_generic_external_array": { "type": "RuntimeImportedGenericArray<RuntimeExternalResource>", "default": [] as const },
 	} satisfies ExportMap;
 
 	label = "runtime" as string;
@@ -74,6 +81,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	static_custom_resource_array = [] as ReadonlyArray<RuntimeArrayResource>;
 	static_record_dictionary = { staticValue: 3 } as Record<string, number>;
 	static_resource_dictionary = {} as Record<string, RuntimeArrayResource>;
+	static_imported_resource_array = [] as RuntimeExportTypes.RuntimeImportedResourceArray;
+	static_imported_generic_dictionary = {} as Record<string, RuntimeArrayResource>;
+	static_imported_generic_external_array = new GDArray() as RuntimeImportedGenericArray<RuntimeExternalResource>;
 
 	@Export()
 	resource_slot: Resource | null = null;
@@ -121,7 +131,31 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	editor_string_enum: RuntimeEditorStringEnum = "idle";
 
 	@Export()
+	editor_imported_string_enum: RuntimeImportedLevel = "alpha";
+
+	@Export()
+	editor_imported_single_string_enum: RuntimeImportedSingleLevel = "solo";
+
+	@Export()
 	editor_string_enum_array: Array<RuntimeEditorStringEnum> = ["idle"];
+
+	@Export()
+	editor_imported_default_alias_resource_array: Array<RuntimeResourceAlias> = [];
+
+	@Export()
+	editor_imported_resource_map: ImportedResourceMapAlias = new Map();
+
+	@Export()
+	editor_imported_generic_resource_array: RuntimeImportedGenericArray<RuntimeArrayResource> = new GDArray() as RuntimeImportedGenericArray<RuntimeArrayResource>;
+
+	@Export()
+	editor_imported_generic_external_resource_array: RuntimeImportedGenericArray<RuntimeExternalResource> = new GDArray() as RuntimeImportedGenericArray<RuntimeExternalResource>;
+
+	@Export()
+	editor_imported_generic_resource_dictionary: RuntimeImportedGenericDictionary<RuntimeArrayResource> = new GDDictionary() as RuntimeImportedGenericDictionary<RuntimeArrayResource>;
+
+	@Export()
+	editor_namespace_alias_resource_array: RuntimeExportTypes.RuntimeImportedResourceArray = [];
 
 	@Export()
 	editor_mixed_union: "automatic" | number = "automatic";
@@ -238,24 +272,24 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				}
 				return property;
 			};
-			const assertObjectExportMetadata = (name: string, hint: number, hintString: string) => {
+			const assertObjectExportMetadata = (name: string, hint: number, hint_string: string) => {
 				const property = getExportProperty(name);
 				nodeAssert.equal(Number(property.type), VARIANT_TYPE_OBJECT);
 				nodeAssert.equal(Number(property.hint), hint);
-				nodeAssert.equal(String(property.hint_string), hintString);
-				nodeAssert.equal(String(property.class_name), hintString);
+				nodeAssert.equal(String(property.hint_string), hint_string);
+				nodeAssert.equal(String(property.class_name), hint_string);
 			};
-			const assertArrayExportMetadata = (name: string, hintString: string) => {
+			const assertArrayExportMetadata = (name: string, hint_string: string) => {
 				const property = getExportProperty(name);
 				nodeAssert.equal(Number(property.type), VARIANT_TYPE_ARRAY);
 				nodeAssert.equal(Number(property.hint), PROPERTY_HINT_ARRAY_TYPE);
-				nodeAssert.equal(String(property.hint_string), hintString);
+				nodeAssert.equal(String(property.hint_string), hint_string);
 			};
-			const assertDictionaryExportMetadata = (name: string, hintString: string) => {
+			const assertDictionaryExportMetadata = (name: string, hint_string: string) => {
 				const property = getExportProperty(name);
 				nodeAssert.equal(Number(property.type), VARIANT_TYPE_DICTIONARY);
 				nodeAssert.equal(Number(property.hint), PROPERTY_HINT_TYPE_STRING);
-				nodeAssert.equal(String(property.hint_string), hintString);
+				nodeAssert.equal(String(property.hint_string), hint_string);
 			};
 			const findPackedScenePropertyValue = (scene: PackedScene, propertyName: string): VariantArgument => {
 				const state = scene.get_state();
@@ -278,6 +312,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assert(this.property_can_revert("static_custom_resource_array"), "static exported custom Resource Array property cannot revert");
 			assert(this.property_can_revert("static_record_dictionary"), "static exported Record Dictionary property cannot revert");
 			assert(this.property_can_revert("static_resource_dictionary"), "static exported Resource Dictionary property cannot revert");
+			assert(this.property_can_revert("static_imported_resource_array"), "static exported imported Resource Array property cannot revert");
+			assert(this.property_can_revert("static_imported_generic_dictionary"), "static exported imported generic Dictionary property cannot revert");
+			assert(this.property_can_revert("static_imported_generic_external_array"), "static exported imported generic external Resource Array property cannot revert");
 			nodeAssert.equal(this.property_get_revert("label"), "runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_label"), "base-runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_count"), 11);
@@ -287,6 +324,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.deepEqual(this.property_get_revert("static_custom_resource_array"), []);
 			nodeAssert.deepEqual(this.property_get_revert("static_record_dictionary"), { staticValue: 3 });
 			nodeAssert.deepEqual(this.property_get_revert("static_resource_dictionary"), {});
+			nodeAssert.deepEqual(this.property_get_revert("static_imported_resource_array"), []);
+			nodeAssert.deepEqual(this.property_get_revert("static_imported_generic_dictionary"), {});
+			nodeAssert.deepEqual(this.property_get_revert("static_imported_generic_external_array"), []);
 			const offset = this.property_get_revert("spawn_offset") as Vector3;
 			assert(offset.x === 4 && offset.y === 5 && offset.z === 6, "Vector3 revert value was not preserved");
 
@@ -317,7 +357,15 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"editor_generic_resource_array",
 				"editor_readonly_custom_resource_array",
 				"editor_string_enum",
+				"editor_imported_string_enum",
+				"editor_imported_single_string_enum",
 				"editor_string_enum_array",
+				"editor_imported_default_alias_resource_array",
+				"editor_imported_resource_map",
+				"editor_imported_generic_resource_array",
+				"editor_imported_generic_external_resource_array",
+				"editor_imported_generic_resource_dictionary",
+				"editor_namespace_alias_resource_array",
 				"editor_mixed_union",
 				"editor_mixed_object_union",
 				"editor_explicit_hint_enum",
@@ -327,6 +375,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"static_custom_resource_array",
 				"static_record_dictionary",
 				"static_resource_dictionary",
+				"static_imported_resource_array",
+				"static_imported_generic_dictionary",
+				"static_imported_generic_external_array",
 				"inherited_label",
 				"inherited_count",
 			];
@@ -354,14 +405,31 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assertDictionaryExportMetadata("editor_record_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_FLOAT}:`);
 			assertDictionaryExportMetadata("editor_resource_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("editor_readonly_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_imported_default_alias_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertDictionaryExportMetadata("editor_imported_resource_map", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_imported_generic_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_imported_generic_external_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeExternalResource`);
+			assertDictionaryExportMetadata("editor_imported_generic_resource_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("editor_namespace_alias_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("static_number_array", `${VARIANT_TYPE_FLOAT}:`);
 			assertArrayExportMetadata("static_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertDictionaryExportMetadata("static_record_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_FLOAT}:`);
 			assertDictionaryExportMetadata("static_resource_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("static_imported_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertDictionaryExportMetadata("static_imported_generic_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			assertArrayExportMetadata("static_imported_generic_external_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeExternalResource`);
 			const stringEnumProperty = getExportProperty("editor_string_enum");
 			nodeAssert.equal(Number(stringEnumProperty.type), VARIANT_TYPE_STRING);
 			nodeAssert.equal(Number(stringEnumProperty.hint), PROPERTY_HINT_ENUM);
 			nodeAssert.equal(String(stringEnumProperty.hint_string), "idle,running,done");
+			const importedStringEnumProperty = getExportProperty("editor_imported_string_enum");
+			nodeAssert.equal(Number(importedStringEnumProperty.type), VARIANT_TYPE_STRING);
+			nodeAssert.equal(Number(importedStringEnumProperty.hint), PROPERTY_HINT_ENUM);
+			nodeAssert.equal(String(importedStringEnumProperty.hint_string), "alpha,beta");
+			const importedSingleStringEnumProperty = getExportProperty("editor_imported_single_string_enum");
+			nodeAssert.equal(Number(importedSingleStringEnumProperty.type), VARIANT_TYPE_STRING);
+			nodeAssert.equal(Number(importedSingleStringEnumProperty.hint), PROPERTY_HINT_ENUM);
+			nodeAssert.equal(String(importedSingleStringEnumProperty.hint_string), "solo");
 			assertArrayExportMetadata("editor_string_enum_array", `${VARIANT_TYPE_STRING}/${PROPERTY_HINT_ENUM}:idle,running,done`);
 			for (const name of ["editor_mixed_union", "editor_mixed_object_union"]) {
 				const mixedUnionProperty = getExportProperty(name);
