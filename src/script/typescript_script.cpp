@@ -633,11 +633,13 @@ static std::string unwrap_type_text_parentheses(const std::string &type_text) {
 	return unwrapped;
 }
 
-static std::vector<std::string> split_top_level_union_types(const std::string &type_text) {
+static bool split_top_level_type_parts(const std::string &type_text, char separator, std::vector<std::string> &r_parts) {
 	std::vector<std::string> parts;
 	std::string current;
 	int angle_depth = 0;
 	int paren_depth = 0;
+	int bracket_depth = 0;
+	int brace_depth = 0;
 	char quote = '\0';
 	bool escaped = false;
 	for (char c : type_text) {
@@ -655,133 +657,6 @@ static std::vector<std::string> split_top_level_union_types(const std::string &t
 		if (c == '"' || c == '\'') {
 			quote = c;
 			current.push_back(c);
-			continue;
-		}
-		if (c == '<') {
-			angle_depth++;
-		} else if (c == '>' && angle_depth > 0) {
-			angle_depth--;
-		} else if (c == '(') {
-			paren_depth++;
-		} else if (c == ')' && paren_depth > 0) {
-			paren_depth--;
-		}
-
-		if (c == '|' && angle_depth == 0 && paren_depth == 0) {
-			parts.push_back(trim_type_text(current));
-			current.clear();
-			continue;
-		}
-		current.push_back(c);
-	}
-	parts.push_back(trim_type_text(current));
-	return parts;
-}
-
-static std::string unwrap_nullable_type_text(const std::string &type_text) {
-	std::string trimmed = trim_type_text(type_text);
-	if (trimmed.rfind("readonly ", 0) == 0) {
-		trimmed = trim_type_text(trimmed.substr(strlen("readonly ")));
-	}
-	trimmed = unwrap_type_text_parentheses(trimmed);
-
-	std::vector<std::string> union_types = split_top_level_union_types(trimmed);
-	for (const std::string &part : union_types) {
-		if (part != "null" && part != "undefined" && part != "void") {
-			return part;
-		}
-	}
-	return trimmed;
-}
-
-static std::string canonical_type_name(const std::string &type_str) {
-	std::string type_name = unwrap_nullable_type_text(type_str);
-	if (type_name == "GDArray") {
-		return "Array";
-	}
-	if (type_name == "GDDictionary") {
-		return "Dictionary";
-	}
-	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
-		return "Array";
-	}
-	const std::string class_name = string_to_utf8(class_name_tail(String(type_name.c_str())));
-	if (class_name == "ReadonlyArray") {
-		return "Array";
-	}
-	if (class_name == "Map") {
-		return "Dictionary";
-	}
-	return class_name;
-}
-
-static std::string array_element_type_text(const std::string &type_str) {
-	const std::string type_name = unwrap_nullable_type_text(type_str);
-	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
-		return trim_type_text(type_name.substr(0, type_name.size() - 2));
-	}
-
-	const size_t generic_start = type_name.find('<');
-	if (generic_start == std::string::npos || type_name.back() != '>') {
-		return std::string();
-	}
-	const std::string container_name = string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str())));
-	if (container_name != "Array" && container_name != "ReadonlyArray") {
-		return std::string();
-	}
-
-	int angle_depth = 0;
-	for (size_t i = generic_start + 1; i + 1 < type_name.size(); i++) {
-		const char c = type_name[i];
-		if (c == '<') {
-			angle_depth++;
-		} else if (c == '>') {
-			if (angle_depth == 0) {
-				return std::string();
-			}
-			angle_depth--;
-		} else if (c == ',' && angle_depth == 0) {
-			return std::string();
-		}
-	}
-	if (angle_depth != 0) {
-		return std::string();
-	}
-	return trim_type_text(type_name.substr(generic_start + 1, type_name.size() - generic_start - 2));
-}
-
-static bool dictionary_element_type_text(const std::string &type_str, std::string &r_key_type, std::string &r_value_type) {
-	const std::string type_name = unwrap_nullable_type_text(type_str);
-	const size_t generic_start = type_name.find('<');
-	if (generic_start == std::string::npos || type_name.back() != '>') {
-		return false;
-	}
-	const std::string container_name = string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str())));
-	if (container_name != "Map") {
-		return false;
-	}
-
-	int angle_depth = 0;
-	int paren_depth = 0;
-	int bracket_depth = 0;
-	int brace_depth = 0;
-	char quote = '\0';
-	bool escaped = false;
-	size_t separator = std::string::npos;
-	for (size_t i = generic_start + 1; i + 1 < type_name.size(); i++) {
-		const char c = type_name[i];
-		if (quote != '\0') {
-			if (escaped) {
-				escaped = false;
-			} else if (c == '\\') {
-				escaped = true;
-			} else if (c == quote) {
-				quote = '\0';
-			}
-			continue;
-		}
-		if (c == '"' || c == '\'') {
-			quote = c;
 			continue;
 		}
 		if (c == '<') {
@@ -812,19 +687,115 @@ static bool dictionary_element_type_text(const std::string &type_str, std::strin
 				return false;
 			}
 			brace_depth--;
-		} else if (c == ',' && angle_depth == 0 && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
-			if (separator != std::string::npos) {
-				return false;
-			}
-			separator = i;
+		}
+
+		if (c == separator && angle_depth == 0 && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+			parts.push_back(trim_type_text(current));
+			current.clear();
+			continue;
+		}
+		current.push_back(c);
+	}
+	if (quote != '\0' || angle_depth != 0 || paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+		return false;
+	}
+	parts.push_back(trim_type_text(current));
+	r_parts = parts;
+	return true;
+}
+
+static std::vector<std::string> split_top_level_union_types(const std::string &type_text) {
+	std::vector<std::string> parts;
+	if (!split_top_level_type_parts(type_text, '|', parts)) {
+		parts.clear();
+		parts.push_back(trim_type_text(type_text));
+	}
+	return parts;
+}
+
+static std::string unwrap_nullable_type_text(const std::string &type_text) {
+	std::string trimmed = trim_type_text(type_text);
+	if (trimmed.rfind("readonly ", 0) == 0) {
+		trimmed = trim_type_text(trimmed.substr(strlen("readonly ")));
+	}
+	trimmed = unwrap_type_text_parentheses(trimmed);
+
+	std::vector<std::string> union_types = split_top_level_union_types(trimmed);
+	for (const std::string &part : union_types) {
+		if (part != "null" && part != "undefined" && part != "void") {
+			return part;
 		}
 	}
-	if (quote != '\0' || angle_depth != 0 || paren_depth != 0 || bracket_depth != 0 || brace_depth != 0 || separator == std::string::npos) {
+	return trimmed;
+}
+
+struct ContainerTypeText {
+	std::string name;
+	std::vector<std::string> arguments;
+};
+
+static std::string canonical_container_type_name(const std::string &container_name) {
+	if (container_name == "Array" || container_name == "ReadonlyArray" || container_name == "GDArray") {
+		return "Array";
+	}
+	if (container_name == "Dictionary" || container_name == "GDDictionary" ||
+			container_name == "Map" || container_name == "ReadonlyMap" || container_name == "Record") {
+		return "Dictionary";
+	}
+	return container_name;
+}
+
+static bool parse_container_type_text(const std::string &type_str, ContainerTypeText &r_container) {
+	const std::string type_name = unwrap_nullable_type_text(type_str);
+	if (type_name.empty()) {
+		return false;
+	}
+	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
+		r_container.name = "Array";
+		r_container.arguments.clear();
+		r_container.arguments.push_back(trim_type_text(type_name.substr(0, type_name.size() - 2)));
+		return !r_container.arguments.front().empty();
+	}
+
+	const size_t generic_start = type_name.find('<');
+	if (generic_start == std::string::npos) {
+		r_container.name = canonical_container_type_name(string_to_utf8(class_name_tail(String(type_name.c_str()))));
+		r_container.arguments.clear();
+		return true;
+	}
+	if (type_name.back() != '>') {
 		return false;
 	}
 
-	r_key_type = trim_type_text(type_name.substr(generic_start + 1, separator - generic_start - 1));
-	r_value_type = trim_type_text(type_name.substr(separator + 1, type_name.size() - separator - 2));
+	r_container.name = canonical_container_type_name(string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str()))));
+	const std::string payload = type_name.substr(generic_start + 1, type_name.size() - generic_start - 2);
+	return split_top_level_type_parts(payload, ',', r_container.arguments);
+}
+
+static std::string canonical_type_name(const std::string &type_str) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container)) {
+		return string_to_utf8(class_name_tail(String(unwrap_nullable_type_text(type_str).c_str())));
+	}
+	return container.name;
+}
+
+static std::string array_element_type_text(const std::string &type_str) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container) || container.name != "Array" || container.arguments.size() != 1) {
+		return std::string();
+	}
+	return container.arguments.front();
+}
+
+static bool dictionary_element_type_text(const std::string &type_str, std::string &r_key_type, std::string &r_value_type) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container) || container.name != "Dictionary" || container.arguments.size() != 2) {
+		return false;
+	}
+
+	r_key_type = container.arguments[0];
+	r_value_type = container.arguments[1];
 	return !r_key_type.empty() && !r_value_type.empty();
 }
 
