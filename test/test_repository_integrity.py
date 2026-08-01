@@ -574,6 +574,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("cached_scripts.reserve(scripts.size());", source)
 		self.assertIn("script->reload_source_code(source_code, true);", source)
 		self.assertIn("should_cache_loaded_script", source)
+		self.assertIn("bool is_typescript_script_path", source)
+		self.assertIn('!lower.ends_with(".d.ts")', source)
 		self.assertIn("CACHE_MODE_IGNORE", source)
 		self.assertIn("CACHE_MODE_IGNORE_DEEP", source)
 		self.assertIn("FileAccess::get_open_error() != OK", source)
@@ -588,6 +590,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("scripts[cache_key] = Ref(script);", source)
 		self.assertIn('p_type == StringName("Script")', source)
 		self.assertIn("p_type == TypeScriptScript::get_class_static()", source)
+		self.assertIn("return is_typescript_script_path(p_path);", source)
 		self.assertIn("return String(TypeScriptScript::get_class_static());", source)
 		resource_type_body = source[
 			source.index("String TypeScriptLoader::_get_resource_type") :
@@ -653,6 +656,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("Error TypeScriptLoader::_rename_dependencies(const String &p_path, const Dictionary &p_renames) const {\n\treturn Error::OK;\n}", source)
 
 		load_body = source[source.index("Variant TypeScriptLoader::_load") :]
+		self.assertIn("return Error::ERR_FILE_UNRECOGNIZED;", load_body)
+		self.assertLess(load_body.index("ERR_FILE_UNRECOGNIZED"), load_body.index("FileAccess::get_file_as_string"))
 		set_path_index = load_body.index("script->set_path(load_path);")
 		set_source_index = load_body.index("script->_set_source_code(source_code);")
 		self.assertLess(set_path_index, set_source_index)
@@ -781,11 +786,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			'strcmp(node_type, "member_expression")',
 			'strcmp(node_type, "generic_type")',
 			"class_name_tail",
-			"ObjectExportKind",
+			"ExportTypeKind",
+			"ExportTypeClassification",
+			"type_text_from_annotation",
+			"find_type_alias_value_text",
 			"canonical_type_name",
 			"godot_class_name_from_type",
 			"classify_engine_object_class",
 			"resolve_typescript_object_kind",
+			"classify_export_type",
+			"apply_export_type_classification",
 			"configure_property_type",
 			"finalize_explicit_object_hint",
 			"PROPERTY_HINT_RESOURCE_TYPE",
@@ -895,6 +905,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("const VARIANT_TYPE_OBJECT = 24;", runtime_test)
 		self.assertIn("const PROPERTY_HINT_RESOURCE_TYPE = 17;", runtime_test)
 		self.assertIn("const PROPERTY_HINT_NODE_TYPE = 34;", runtime_test)
+		self.assertIn('type RuntimeEditorStringEnum = "idle" | \'running\' | null | "done";', runtime_test)
+		self.assertIn('editor_string_enum: RuntimeEditorStringEnum = "idle";', runtime_test)
+		self.assertIn('editor_string_enum_array: Array<RuntimeEditorStringEnum> = ["idle"];', runtime_test)
+		self.assertIn('editor_mixed_union: "automatic" | number = "automatic";', runtime_test)
+		self.assertIn("editor_mixed_object_union!: Resource | Node;", runtime_test)
+		self.assertIn('nodeAssert.equal(String(stringEnumProperty.hint_string), "idle,running,done");', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_string_enum_array", `${VARIANT_TYPE_STRING}/${PROPERTY_HINT_ENUM}:idle,running,done`);', runtime_test)
+		self.assertIn('nodeAssert.equal(String(explicitHintEnumProperty.hint_string), "manual enum hint");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("resource_slot", PROPERTY_HINT_RESOURCE_TYPE, "Resource");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("image_slot", PROPERTY_HINT_RESOURCE_TYPE, "Image");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("node_slot", PROPERTY_HINT_NODE_TYPE, "Node");', runtime_test)
