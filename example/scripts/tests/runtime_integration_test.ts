@@ -44,7 +44,7 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	} as const;
 
 	static exports = {
-		"label": { "type": "String", "hint": 20, "hintString": "runtime label" },
+		"label": { "type": "String", "hint": 20, "hint_string": "runtime label" },
 		"enabled": { "type": "bool", "default": true as const },
 		"count": { "type": "int", "default": 7 as const },
 		"spawn_offset": { "type": "Vector3" },

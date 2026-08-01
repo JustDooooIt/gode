@@ -1791,7 +1791,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 					TSNode first_arg = unwrap_metadata_expression(ts_node_named_child(args, 0));
 					const char *first_type = ts_node_type(first_arg);
 					if (strcmp(first_type, "object") == 0) {
-						// @Export({ hint: N, hintString: "..." })
+						// @Export({ hint: N, hint_string: "..." })
 						for (uint32_t pi = 0; pi < ts_node_named_child_count(first_arg); pi++) {
 							TSNode pair = ts_node_named_child(first_arg, pi);
 							if (strcmp(ts_node_type(pair), "pair") != 0) {
@@ -1809,12 +1809,12 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 								std::string key_str = strip_quotes(source.substr(ts_node_start_byte(key), ts_node_end_byte(key) - ts_node_start_byte(key)));
 								if (key_str == "hint") {
 									parse_property_hint_value(val, source, export_hint);
-								} else if (key_str == "hintString") {
+								} else if (key_str == "hint_string") {
 									parse_metadata_string_value(val, source, export_hint_string);
 								}
 						}
 					} else {
-						// @Export(hint) or @Export(hint, "hintString").
+						// @Export(hint) or @Export(hint, "hint_string").
 						parse_property_hint_value(first_arg, source, export_hint);
 						if (nargs >= 2) {
 							TSNode second_arg = unwrap_metadata_expression(ts_node_named_child(args, 1));
@@ -2063,7 +2063,7 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, con
 				if (parse_property_hint_value(fval, source, parsed_hint)) {
 					pi.hint = parsed_hint;
 				}
-			} else if (field_key == "hintString") {
+			} else if (field_key == "hint_string") {
 				parse_metadata_string_value(fval, source, pi.hint_string);
 			} else if (field_key == "default") {
 				default_node = fval;
