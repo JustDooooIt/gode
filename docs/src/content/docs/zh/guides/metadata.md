@@ -25,7 +25,7 @@ export default class Spawner extends Node3D {
 }
 ```
 
-`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。导出描述也可以包含 `hint` 表示 Godot Inspector hint 类型、`hint_string` 表示该 hint 的参数字符串，以及 Godot Variant 兼容的 `default` 值。
+`type` 使用 Godot Variant 类型名，例如 `"String"`、`"int"`、`"float"`、`"bool"`、`"Vector3"` 和 `"Object"`。类型化集合支持 `Array<T>`、`ReadonlyArray<T>`、`T[]`、`GDArray<T>`、`Dictionary<K, V>`、`GDDictionary<K, V>`、`Map<K, V>`、`ReadonlyMap<K, V>` 和 `Record<K, V>`，也支持导入 type alias 和泛型 type alias。导出描述也可以包含 `hint` 表示 Godot Inspector hint 类型、`hint_string` 表示该 hint 的参数字符串，以及 Godot Variant 兼容的 `default` 值。
 
 ## Tool 脚本
 
@@ -64,18 +64,18 @@ export default class Menu extends Node {
 
 ## RPC 元数据
 
-需要通过 Godot 多人 RPC 调用的方法，必须在 `static rpcConfig` 中声明：
+需要通过 Godot 多人 RPC 调用的方法，必须在 `static rpc_config` 中声明：
 
 ```ts
 import { CharacterBody3D } from "godot";
 
 export default class Robot extends CharacterBody3D {
-  static rpcConfig = {
-    hit: { mode: "authority", callLocal: true },
+  static rpc_config = {
+    hit: { rpc_mode: "authority", call_local: true },
     play_effect: {
-      mode: "any_peer",
-      callLocal: true,
-      transferMode: "reliable",
+      rpc_mode: "any_peer",
+      call_local: true,
+      transfer_mode: "reliable",
       channel: 0,
     },
   } satisfies RpcConfig;
@@ -90,7 +90,7 @@ export default class Robot extends CharacterBody3D {
 }
 ```
 
-支持的 `mode` 值包括 `"authority"`、`"any_peer"` 和 `"disabled"`。支持的 `transferMode` 值包括 `"reliable"`、`"unreliable"` 和 `"unreliable_ordered"`。省略字段会使用 Godot 默认值。
+支持的 `rpc_mode` 值包括 `"authority"`、`"any_peer"` 和 `"disabled"`。支持的 `transfer_mode` 值包括 `"reliable"`、`"unreliable"` 和 `"unreliable_ordered"`。省略字段会使用 Godot 默认值。
 
 脚本级 RPC metadata 通过 `Script.get_rpc_config()` 暴露。`Node.get_node_rpc_config()` 只返回运行时通过 `Node.rpc_config()` 设置的配置。
 
