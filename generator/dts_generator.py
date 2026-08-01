@@ -199,6 +199,7 @@ class DtsGenerator(CodeGenerator):
         project_root  = os.path.dirname(generator_dir)
 
         output_dir = os.path.join(project_root, 'example', 'addons', 'gode', 'types')
+        godot_ignore_path = os.path.join(output_dir, '.gdignore')
         godot_output_path = os.path.join(output_dir, 'godot.d.ts')
         globals_output_path = os.path.join(output_dir, 'globals.d.ts')
 
@@ -206,6 +207,10 @@ class DtsGenerator(CodeGenerator):
 
         os.makedirs(output_dir, exist_ok=True)
 
+        self.write_file_if_changed(
+            godot_ignore_path,
+            '# TypeScript declarations are compiler inputs, not Godot resources.\n.d.ts\n',
+        )
         godot_lines = self._generate(api)
         globals_lines = self._generate_globals(api)
 
