@@ -12,6 +12,17 @@ void register_builtin(Napi::Env env, Napi::Object exports) {
     {% for item in builtins %}
     {{ item.class_name }}Binding::init(env, exports);
     {% endfor %}
+
+    // Register global enums as runtime objects so they remain usable when
+    // TypeScript isolatedModules disables ambient const enum access.
+    {% for enum in global_enums %}
+    Napi::Object {{ enum.variable_name }} = Napi::Object::New(env);
+    {% for value in enum['values'] %}
+    {{ enum.variable_name }}.Set("{{ value['name'] }}", Napi::Number::New(env, {{ value['value'] }}));
+    {{ enum.variable_name }}.Set(Napi::Number::New(env, {{ value['value'] }}), Napi::String::New(env, "{{ value['name'] }}"));
+    {% endfor %}
+    exports.Set("{{ enum.name }}", {{ enum.variable_name }});
+    {% endfor %}
 }
 
 void reset_builtin_references() {

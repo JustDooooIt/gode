@@ -605,7 +605,7 @@ class DtsGenerator(CodeGenerator):
 
         lines = []
         for source_name, alias_name in VARIANT_ENUM_ALIASES.items():
-            lines += self._gen_enum(global_enums[source_name], indent=1, export=True, const=True, name=alias_name)
+            lines += self._gen_enum(global_enums[source_name], indent=1, export=True, name=alias_name)
             lines.append('')
         return lines
 
@@ -708,7 +708,7 @@ class DtsGenerator(CodeGenerator):
         for enum in api.get('global_enums', []):
             if enum['name'] in SKIP_GLOBAL_ENUMS:
                 continue
-            lines += self._gen_enum(enum, indent=1, export=True, const=True)
+            lines += self._gen_enum(enum, indent=1, export=True)
             lines.append('')
 
         # Variant enums are exported under JS-friendly aliases since VariantBinding is not generated.

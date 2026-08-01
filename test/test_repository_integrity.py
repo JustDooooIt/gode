@@ -534,6 +534,19 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("constructor.Reset();", register_builtin_template)
 		self.assertIn("constructor.Reset();", register_classes_template)
 
+	def test_generated_global_enums_have_runtime_exports(self):
+		builtin_source = (ROOT / "src/generated/register_builtin.gen.cpp").read_text(encoding="utf-8")
+		register_generator = (ROOT / "generator/register_generator.py").read_text(encoding="utf-8")
+		register_template = (ROOT / "generator/templates/register_builtin.cpp.jinja2").read_text(encoding="utf-8")
+		godot_dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
+
+		self.assertIn("'global_enums': global_enums", register_generator)
+		self.assertIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_template)
+		for enum_name in ("PropertyHint", "VariantType", "VariantOperator"):
+			self.assertIn(f'exports.Set("{enum_name}"', builtin_source)
+			self.assertIn(f"    export enum {enum_name} {{", godot_dts)
+			self.assertNotIn(f"    export const enum {enum_name} {{", godot_dts)
+
 	def test_value_convert_registry_and_cache_are_restart_safe(self):
 		header = (ROOT / "include/runtime/value_convert.h").read_text(encoding="utf-8")
 		source = (ROOT / "src/runtime/value_convert.cpp").read_text(encoding="utf-8")
@@ -2518,8 +2531,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("  function Signal(...args: any[]): any;", globals_dts)
 		self.assertIn("  function Tool(...args: any[]): any;", globals_dts)
 		self.assertNotIn("GodotModule.", globals_dts)
-		self.assertIn("    export const enum VariantType {", godot_dts)
-		self.assertNotIn("    export const VariantType: typeof VariantType;", godot_dts)
+		self.assertIn("    export enum VariantType {", godot_dts)
+		self.assertNotIn("    export const enum VariantType {", godot_dts)
 		self.assertIn("    export class PhysicsServer3DExtension extends __GodotSingletonBases.PhysicsServer3D {", godot_dts)
 
 	def test_generated_dts_has_no_duplicate_class_member_declarations(self):
@@ -2562,7 +2575,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		def dts_enum_values(enum_name: str) -> list[tuple[str, int]]:
 			match = re.search(
-				rf"^\s*export const enum {re.escape(enum_name)} \{{\n(?P<body>.*?)^\s*\}}",
+				rf"^\s*export enum {re.escape(enum_name)} \{{\n(?P<body>.*?)^\s*\}}",
 				godot_dts,
 				re.DOTALL | re.MULTILINE,
 			)

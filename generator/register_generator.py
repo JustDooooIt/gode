@@ -1,10 +1,11 @@
 from .base_generator import CodeGenerator
+from .dts_generator import SKIP_GLOBAL_ENUMS, VARIANT_ENUM_ALIASES
 from .utils.api_data import load_extension_api_json
 from .utils.string_utils import to_snake_case
 
 class RegisterGenerator(CodeGenerator):
     def run(self):
-        api_data = load_extension_api_json(required_keys=("builtin_classes", "classes"))
+        api_data = load_extension_api_json(required_keys=("builtin_classes", "classes", "global_enums"))
 
         builtins = []
         classes = []
@@ -35,9 +36,25 @@ class RegisterGenerator(CodeGenerator):
                 'include': f"classes/{snake_name}_binding.gen.h"
             })
 
+        global_enums = []
+        for enum_def in api_data['global_enums']:
+            source_name = enum_def['name']
+            if source_name in SKIP_GLOBAL_ENUMS:
+                if source_name not in VARIANT_ENUM_ALIASES:
+                    continue
+                export_name = VARIANT_ENUM_ALIASES[source_name]
+            else:
+                export_name = source_name
+            global_enums.append({
+                'name': export_name,
+                'variable_name': to_snake_case(export_name),
+                'values': enum_def.get('values', []),
+            })
+
         context = {
             'builtins': builtins,
-            'classes': [] # We don't want to register classes globally anymore
+            'classes': [], # We don't want to register classes globally anymore
+            'global_enums': global_enums,
         }
 
         # Generate Header
