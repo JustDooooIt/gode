@@ -151,7 +151,7 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
         # typedarray is always represented as a JS generic array on the TypeScript side.
         element_ts = godot_type_to_ts(element_type, is_input=is_input, singleton_class_names=singleton_class_names)
         typed_array = f'Array<{element_ts}>'
-        return f'GDArray | {typed_array}' if is_input else typed_array
+        return f'GDArray<{element_ts}> | {typed_array}' if is_input else typed_array
 
     if type_str.startswith('typeddictionary::'):
         key_type, value_type = parse_typeddictionary_types(type_str)
@@ -166,8 +166,8 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
             typed_container = f'Map<{key_input_ts if is_input else key_ts}, {value_ts}>'
 
         if is_input and key_ts == 'string':
-            return f'GDDictionary | {typed_container} | Map<{key_input_ts}, {value_ts}>'
-        return f'GDDictionary | {typed_container}' if is_input else typed_container
+            return f'GDDictionary<{key_input_ts}, {value_ts}> | {typed_container} | Map<{key_input_ts}, {value_ts}>'
+        return f'GDDictionary<{key_input_ts}, {value_ts}> | {typed_container}' if is_input else typed_container
 
     if type_str.endswith('*'):
         return godot_type_to_ts(type_str[:-1], is_input, singleton_class_names, meta)
@@ -645,9 +645,9 @@ class DtsGenerator(CodeGenerator):
         lines.append('  type RpcMode = "authority" | "any_peer" | "disabled" | number;')
         lines.append('  type RpcTransferMode = "reliable" | "unreliable" | "unreliable_ordered" | number;')
         lines.append('  interface RpcEntry {')
-        lines.append('    mode?: RpcMode;')
-        lines.append('    transferMode?: RpcTransferMode;')
-        lines.append('    callLocal?: boolean;')
+        lines.append('    rpc_mode?: RpcMode;')
+        lines.append('    transfer_mode?: RpcTransferMode;')
+        lines.append('    call_local?: boolean;')
         lines.append('    channel?: number;')
         lines.append('  }')
         lines.append('  type RpcConfig = Record<string, RpcEntry>;')
