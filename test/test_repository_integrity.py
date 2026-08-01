@@ -300,6 +300,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_node_runtime_public_v8_entries_hold_locker_and_safe_scopes(self):
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
+		header = (ROOT / "include/runtime/node_runtime.h").read_text(encoding="utf-8")
+
+		self.assertIn("static napi_env napi_environment;", header)
+		self.assertNotIn("thread_local napi_env", header)
+		self.assertIn("napi_env NodeRuntime::napi_environment = nullptr;", source)
+		self.assertNotIn("thread_local_env", source)
 
 		def method_body(name: str) -> str:
 			marker = f"NodeRuntime::{name}"
@@ -1772,7 +1778,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		self.assertIn('log_and_clear_pending_js_exception(env, context + " return conversion")', instance_source)
 		self.assertIn('log_and_clear_pending_js_exception(env, "JS Callable return conversion")', callable_source)
-		self.assertIn('log_and_clear_pending_js_exception(thread_local_env, "NodeRuntime eval expression result conversion")', node_runtime_source)
+		self.assertIn('log_and_clear_pending_js_exception(napi_environment, "NodeRuntime eval expression result conversion")', node_runtime_source)
 		self.assertNotIn("r_error.error = GDEXTENSION_CALL_OK;\n\t\tr_error.argument = 0;\n\t\tr_error.expected = 0;\n\t\tif (result.IsPromise())", instance_source)
 		self.assertNotIn("r_return_value = napi_to_godot(result);\n\t\tr_call_error.error = GDEXTENSION_CALL_OK", callable_source)
 

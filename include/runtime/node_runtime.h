@@ -17,7 +17,7 @@ public:
 	static v8::Isolate *isolate;
 	static node::Environment *env;
 	static v8::Global<v8::Context> node_context;
-	static thread_local napi_env thread_local_env;
+	static napi_env napi_environment;
 
 	static void init_once();
 	static bool is_running();
