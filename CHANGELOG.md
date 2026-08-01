@@ -7,7 +7,6 @@
 - Added export metadata support for string literal union aliases and typed Array/Dictionary aliases, including imported and generic aliases.
 - Prevented bundled `.d.ts` files from being loaded as Godot resources.
 - Added generic TypeScript declarations for `GDArray<T>` and `GDDictionary<K, V>`.
-- Added `main` branch push triggers for the Build and Test workflows so CI runs again after PRs are merged.
 
 ## 2.3.2
 

@@ -7,7 +7,6 @@
 - 增加字符串字面量 union、类型化 Array/Dictionary、导入 alias 和泛型 alias 的导出 metadata 支持。
 - 防止内置 `.d.ts` 声明文件被 Godot 当作资源加载。
 - 为 `GDArray<T>` 和 `GDDictionary<K, V>` 增加泛型 TypeScript 声明。
-- 为 Build 和 Test 工作流增加 `main` 分支 push 触发，使 PR 合并后会再次运行 CI。
 
 ## 2.3.2
 
