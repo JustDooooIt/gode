@@ -1,8 +1,18 @@
+## 2.3.3
+
+- 修复 TypeScript 脚本资源注册和导出 metadata 上下文处理。
+- Breaking：TypeScript 导出 metadata 统一使用 `hint_string`，RPC metadata 统一使用 `static rpc_config` 以及 `rpc_mode`、`transfer_mode`、`call_local`。
+- 修复 Node-API environment 生命周期处理：TypeScript 编译和运行时调用会在 runtime 停止后拒绝进入，而不是继续进入失效的 N-API environment。
+- 加固 TypeScript 资源路径处理，覆盖脚本加载、保存和依赖重命名流程。
+- 增加字符串字面量 union、类型化 Array/Dictionary、导入 alias 和泛型 alias 的导出 metadata 支持。
+- 防止内置 `.d.ts` 声明文件被 Godot 当作资源加载。
+- 为 `GDArray<T>` 和 `GDDictionary<K, V>` 增加泛型 TypeScript 声明。
+- 为 Build 和 Test 工作流增加 `main` 分支 push 触发，使 PR 合并后会再次运行 CI。
+
 ## 2.3.2
 
 - 将 GitHub Actions 的 artifact 下载步骤更新到 `actions/download-artifact@v8`，消除 release package 和 packaged-plugin smoke test 下载 artifact 时的 Node.js 20 弃用警告。
 - 修复 TypeScript 导出的 Object/Resource/Node 属性：script instance state 保存现在会返回已存储的导出值，Resource 和 Node 的 Inspector hint 会从类型化导出中推断，`static exports` 的默认值也会在 descriptor 类型确定后再解析，不再受字段顺序影响。
-- Breaking：TypeScript 导出 metadata 现在使用 `hint_string`。RPC metadata 仍使用 `static rpcConfig` 以及 `transferMode`、`callLocal`。
 - 改进 generated binding 的构建体验：generator 输入未变化时会跳过 configure-time codegen，通过仅针对 generated C++ 的 unity build 批量编译源码，并在可用时自动使用 `sccache` 或 `ccache`。
 - 修复 libnode 静态链接：各平台构建会强制完整加载 libnode archive，不再依赖链接器默认的按需 archive member 选择。
 
@@ -14,7 +24,7 @@
 ## 2.3.0
 
 - 改进内置 TypeScript 编译器：读取 `tsconfig.json` 的 `include`、`exclude`、`baseUrl`、`paths` 和解析后的 root files，通过 TypeScript `matchFiles` 处理 `res://` 虚拟路径，只为 program 实际包含的源文件生成输出，默认启用 TSX 的 `jsx: react`，项目源文件读取失败时明确报错而不是静默跳过，拒绝规整后越过 `res://` 根目录的 module specifier，并在 emit transformer 阶段将项目内路径别名 import/export 重写为运行时可解析的相对 `.js` 路径。
-- 改进 TypeScript metadata parser：外部 interface 和父类属性收集支持 `.tsx`、`.d.ts`、`index.ts(x)`、`index.d.ts` 以及 `.js/.jsx/.mjs/.cjs` specifier 到 TypeScript 源文件的映射，相对 import 路径会按 loader 规则规整并在没有对应 TypeScript 源时回退到真实 JS/CJS/JSX 或无后缀文件，可解析 `class Foo ...; export default Foo` 或 `export { Foo as default }` 这类拆分 default export 声明的默认脚本类，并会在解析静态 `signals`、`rpc_config`、`exports`、`@Export()` 选项和导出属性默认值前解包 `as const`、`satisfies`、非空断言、类型断言和括号这类 TypeScript-only metadata 表达式，同时一致处理 metadata 对象中的 quoted keys，并保留来自 `@Export()` 选项和 `static exports` 的 Inspector `hint`/`hintString`/`hint_string` metadata，还将 `static exports` 的 `default` descriptor 按 Godot Variant 兼容值暴露到类型声明；父脚本继承可识别 default import、named import alias 和 namespace import，`extends godot.Node` 或简单泛型基类也会解析出正确的 Godot base type，并在文件读取或 tree-sitter parser 初始化/解析失败时报告或跳过对应输入；数字默认值改为不抛异常的统一解析，支持数字分隔符和 `0b`/`0o`/`0x` 整数字面量，无效 RPC config 的 mode、transfer mode、boolean 或 channel 值也不再被静默转换成 `0`/`false`。
+- 改进 TypeScript metadata parser：外部 interface 和父类属性收集支持 `.tsx`、`.d.ts`、`index.ts(x)`、`index.d.ts` 以及 `.js/.jsx/.mjs/.cjs` specifier 到 TypeScript 源文件的映射，相对 import 路径会按 loader 规则规整并在没有对应 TypeScript 源时回退到真实 JS/CJS/JSX 或无后缀文件，可解析 `class Foo ...; export default Foo` 或 `export { Foo as default }` 这类拆分 default export 声明的默认脚本类，并会在解析静态 `signals`、`rpc_config`、`exports`、`@Export()` 选项和导出属性默认值前解包 `as const`、`satisfies`、非空断言、类型断言和括号这类 TypeScript-only metadata 表达式，同时一致处理 metadata 对象中的 quoted keys，并保留来自 `@Export()` 选项和 `static exports` 的 Inspector `hint` 和 `hint_string` metadata，还将 `static exports` 的 `default` descriptor 按 Godot Variant 兼容值暴露到类型声明；父脚本继承可识别 default import、named import alias 和 namespace import，`extends godot.Node` 或简单泛型基类也会解析出正确的 Godot base type，并在文件读取或 tree-sitter parser 初始化/解析失败时报告或跳过对应输入；数字默认值改为不抛异常的统一解析，支持数字分隔符和 `0b`/`0o`/`0x` 整数字面量，无效 RPC config 值也不再被静默转换成 `0`/`false`。
 - 增加 TypeScript 编译和导出 manifest，基于输入修改时间、当前输入集合签名和已存在输出复用上次编译结果，并将编译桥脚本与内置 TypeScript runtime 的内容哈希纳入签名；同时记录、校验实际 emit 的输出映射，对路径边界做规整校验、拒绝父目录片段，并拒绝无效的 public `.ts`/`.tsx` 源路径请求，`compile_script()`、脚本加载和导出运行时只接受当前 manifest 明确包含的有效输出，重新编译后会清理已失效的旧 `.js`/`.js.map` 缓存产物，避免执行或保留已被 `tsconfig` 排除的旧产物。
 - 加固 TypeScript 和 npm runtime snapshot 导出流程：编译产物路径缺失、输出映射不完整、脚本/依赖文件读取失败或导出配置读取失败时会立即中止导出，避免生成缺少脚本文件、依赖文件或仍带 manifest 的半成品包；npm snapshot 的 include/exclude 路径会规整到 `res://`，拒绝父目录片段和非资源 scheme，`package.json` 读取失败也会明确告警。
 - 加固 TypeScript 资源加载器：读取 `.ts`/`.tsx` 文件失败时返回 `ERR_CANT_OPEN`，加载脚本会在源码编译前绑定规整后的资源路径，并让自维护脚本缓存使用规整后的资源路径作为 key，同时遵循 Godot `CACHE_MODE_IGNORE` / `CACHE_MODE_IGNORE_DEEP`，避免缓存本应忽略的加载结果；default export 类名和基类（包括拆分 default export）以及 `godot` named imports 现在会按 tree-sitter 实际 import clause 节点直接从源码报告且不会启动 Node，资源依赖也直接从 TypeScript import/export specifier 中发现，不会触发编译，Godot dependency rename 只会改写匹配到的相对 import/export/dynamic-import specifier，并为 TypeScript 源文件保留运行时 `.js` 输出 specifier 风格。
