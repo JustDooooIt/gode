@@ -298,9 +298,80 @@ static TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_co
 	return {};
 }
 
-static std::string find_type_alias_value_text(TSNode root_node, uint32_t child_count, const std::string &source, const StringName &name) {
+struct TypeAliasDefinition {
+	std::string value;
+	std::vector<std::string> type_parameters;
+};
+
+static bool type_alias_definition_is_valid(const TypeAliasDefinition &definition) {
+	return !definition.value.empty();
+}
+
+static bool is_ascii_identifier_start(char c) {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '$';
+}
+
+static bool is_ascii_identifier_continue(char c) {
+	return is_ascii_identifier_start(c) || (c >= '0' && c <= '9');
+}
+
+static std::string type_parameter_name_from_node(TSNode parameter_node, const std::string &source) {
+	TSNode name_node = ts_node_child_by_field_name(parameter_node, "name", 4);
+	if (!ts_node_is_null(name_node)) {
+		return node_text(source, name_node);
+	}
+
+	for (uint32_t i = 0; i < ts_node_named_child_count(parameter_node); i++) {
+		TSNode child = ts_node_named_child(parameter_node, i);
+		const char *child_type = ts_node_type(child);
+		if (strcmp(child_type, "type_identifier") == 0 || strcmp(child_type, "identifier") == 0) {
+			return node_text(source, child);
+		}
+	}
+
+	std::string text = node_text(source, parameter_node);
+	for (size_t i = 0; i < text.size(); i++) {
+		if (!is_ascii_identifier_start(text[i])) {
+			continue;
+		}
+		size_t end = i + 1;
+		while (end < text.size() && is_ascii_identifier_continue(text[end])) {
+			end++;
+		}
+		return text.substr(i, end - i);
+	}
+	return std::string();
+}
+
+static std::vector<std::string> type_alias_parameter_names(TSNode alias_node, const std::string &source) {
+	std::vector<std::string> parameters;
+	TSNode params_node = ts_node_child_by_field_name(alias_node, "type_parameters", 15);
+	if (ts_node_is_null(params_node)) {
+		for (uint32_t i = 0; i < ts_node_child_count(alias_node); i++) {
+			TSNode child = ts_node_child(alias_node, i);
+			if (strcmp(ts_node_type(child), "type_parameters") == 0) {
+				params_node = child;
+				break;
+			}
+		}
+	}
+	if (ts_node_is_null(params_node)) {
+		return parameters;
+	}
+
+	for (uint32_t i = 0; i < ts_node_named_child_count(params_node); i++) {
+		std::string parameter_name = type_parameter_name_from_node(ts_node_named_child(params_node, i), source);
+		if (!parameter_name.empty()) {
+			parameters.push_back(parameter_name);
+		}
+	}
+	return parameters;
+}
+
+static TypeAliasDefinition find_type_alias_definition(TSNode root_node, uint32_t child_count, const std::string &source, const StringName &name) {
+	TypeAliasDefinition definition;
 	if (name.is_empty()) {
-		return std::string();
+		return definition;
 	}
 
 	for (uint32_t i = 0; i < child_count; i++) {
@@ -326,19 +397,35 @@ static std::string find_type_alias_value_text(TSNode root_node, uint32_t child_c
 			continue;
 		}
 		TSNode value_node = ts_node_child_by_field_name(alias_node, "value", 5);
-		return node_text(source, value_node);
+		definition.value = node_text(source, value_node);
+		definition.type_parameters = type_alias_parameter_names(alias_node, source);
+		return definition;
 	}
-	return std::string();
+	return definition;
 }
 
-static bool import_specifier_binds_name(TSNode import_specifier, const std::string &source, const StringName &name) {
+struct ImportedSymbolResolution {
+	String path;
+	StringName imported_name;
+	bool default_import = false;
+};
+
+static bool import_specifier_resolves_name(TSNode import_specifier, const std::string &source, const StringName &local_name, StringName &r_imported_name) {
 	TSNode alias_node = ts_node_child_by_field_name(import_specifier, "alias", 5);
+	TSNode name_node = ts_node_child_by_field_name(import_specifier, "name", 4);
 	if (!ts_node_is_null(alias_node)) {
-		return node_text_matches_name(alias_node, source, name);
+		if (!node_text_matches_name(alias_node, source, local_name) || ts_node_is_null(name_node)) {
+			return false;
+		}
+		r_imported_name = StringName(node_text(source, name_node).c_str());
+		return true;
 	}
 
-	TSNode name_node = ts_node_child_by_field_name(import_specifier, "name", 4);
-	return node_text_matches_name(name_node, source, name);
+	if (!node_text_matches_name(name_node, source, local_name)) {
+		return false;
+	}
+	r_imported_name = local_name;
+	return true;
 }
 
 static bool namespace_import_binds_qualifier(TSNode namespace_import, const std::string &source, const StringName &qualifier) {
@@ -348,39 +435,6 @@ static bool namespace_import_binds_qualifier(TSNode namespace_import, const std:
 	for (uint32_t i = 0; i < ts_node_named_child_count(namespace_import); i++) {
 		if (node_text_matches_name(ts_node_named_child(namespace_import, i), source, qualifier)) {
 			return true;
-		}
-	}
-	return false;
-}
-
-static bool import_clause_binds_name(TSNode clause, const std::string &source, const StringName &name, const StringName &qualifier = StringName()) {
-	if (name.is_empty() || ts_node_is_null(clause)) {
-		return false;
-	}
-
-	for (uint32_t i = 0; i < ts_node_named_child_count(clause); i++) {
-		TSNode child = ts_node_named_child(clause, i);
-		const char *child_type = ts_node_type(child);
-		if (strcmp(child_type, "namespace_import") == 0) {
-			if (namespace_import_binds_qualifier(child, source, qualifier)) {
-				return true;
-			}
-			continue;
-		}
-		if (!qualifier.is_empty()) {
-			continue;
-		}
-		if (strcmp(child_type, "identifier") == 0) {
-			if (node_text_matches_name(child, source, name)) {
-				return true;
-			}
-		} else if (strcmp(child_type, "named_imports") == 0) {
-			for (uint32_t j = 0; j < ts_node_named_child_count(child); j++) {
-				TSNode imported = ts_node_named_child(child, j);
-				if (strcmp(ts_node_type(imported), "import_specifier") == 0 && import_specifier_binds_name(imported, source, name)) {
-					return true;
-				}
-			}
 		}
 	}
 	return false;
@@ -396,9 +450,10 @@ static TSNode import_clause_from_statement(TSNode import_statement) {
 	return {};
 }
 
-static String resolve_imported_class_path(const String &file_path, const std::string &source, TSNode root_node, uint32_t child_count, const StringName &class_name, const StringName &class_qualifier = StringName()) {
-	if (class_name.is_empty()) {
-		return String();
+static ImportedSymbolResolution resolve_imported_symbol(const String &file_path, const std::string &source, TSNode root_node, uint32_t child_count, const StringName &local_name, const StringName &qualifier = StringName(), bool include_dts = false) {
+	ImportedSymbolResolution resolution;
+	if (local_name.is_empty()) {
+		return resolution;
 	}
 
 	for (uint32_t i = 0; i < child_count; i++) {
@@ -407,9 +462,50 @@ static String resolve_imported_class_path(const String &file_path, const std::st
 			continue;
 		}
 		TSNode clause = import_clause_from_statement(child);
-		if (!import_clause_binds_name(clause, source, class_name, class_qualifier)) {
+		if (ts_node_is_null(clause)) {
 			continue;
 		}
+
+		bool matched = false;
+		StringName imported_name;
+		bool default_import = false;
+		for (uint32_t j = 0; j < ts_node_named_child_count(clause); j++) {
+			TSNode clause_child = ts_node_named_child(clause, j);
+			const char *child_type = ts_node_type(clause_child);
+			if (strcmp(child_type, "namespace_import") == 0) {
+				if (namespace_import_binds_qualifier(clause_child, source, qualifier)) {
+					matched = true;
+					imported_name = local_name;
+					break;
+				}
+				continue;
+			}
+			if (!qualifier.is_empty()) {
+				continue;
+			}
+			if (strcmp(child_type, "identifier") == 0) {
+				if (node_text_matches_name(clause_child, source, local_name)) {
+					matched = true;
+					default_import = true;
+					break;
+				}
+			} else if (strcmp(child_type, "named_imports") == 0) {
+				for (uint32_t k = 0; k < ts_node_named_child_count(clause_child); k++) {
+					TSNode imported = ts_node_named_child(clause_child, k);
+					if (strcmp(ts_node_type(imported), "import_specifier") == 0 && import_specifier_resolves_name(imported, source, local_name, imported_name)) {
+						matched = true;
+						break;
+					}
+				}
+				if (matched) {
+					break;
+				}
+			}
+		}
+		if (!matched) {
+			continue;
+		}
+
 		TSNode src = ts_node_child_by_field_name(child, "source", 6);
 		if (ts_node_is_null(src)) {
 			continue;
@@ -417,9 +513,18 @@ static String resolve_imported_class_path(const String &file_path, const std::st
 		uint32_t ss = ts_node_start_byte(src);
 		uint32_t se = ts_node_end_byte(src);
 		std::string import_path = source.substr(ss + 1, se - ss - 2);
-		return resolve_imported_typescript_path(file_path, import_path, false);
+		resolution.path = resolve_imported_typescript_path(file_path, import_path, include_dts);
+		resolution.imported_name = imported_name;
+		resolution.default_import = default_import;
+		if (!resolution.path.is_empty()) {
+			return resolution;
+		}
 	}
-	return String();
+	return resolution;
+}
+
+static String resolve_imported_class_path(const String &file_path, const std::string &source, TSNode root_node, uint32_t child_count, const StringName &class_name, const StringName &class_qualifier = StringName()) {
+	return resolve_imported_symbol(file_path, source, root_node, child_count, class_name, class_qualifier, false).path;
 }
 
 static std::string normalize_numeric_literal(std::string text) {
@@ -577,6 +682,69 @@ struct ExportTypeClassification {
 	std::unique_ptr<ExportTypeClassification> element_type;
 };
 
+struct TypeParameterBinding {
+	std::string name;
+	std::string argument;
+	String file_path;
+	const std::string *source = nullptr;
+	TSNode root_node = {};
+	uint32_t child_count = 0;
+	std::vector<TypeParameterBinding> bindings;
+};
+
+static const TypeParameterBinding *find_type_parameter_binding(const std::vector<TypeParameterBinding> *bindings, const std::string &name) {
+	if (!bindings || name.empty()) {
+		return nullptr;
+	}
+	for (auto it = bindings->rbegin(); it != bindings->rend(); ++it) {
+		if (it->name == name) {
+			return &(*it);
+		}
+	}
+	return nullptr;
+}
+
+static bool build_type_parameter_bindings(
+		const std::vector<std::string> &parameters,
+		const std::vector<std::string> &arguments,
+		const String &file_path,
+		const std::string &source,
+		TSNode root_node,
+		uint32_t child_count,
+		const std::vector<TypeParameterBinding> *existing_bindings,
+		std::vector<TypeParameterBinding> &r_bindings) {
+	r_bindings.clear();
+	if (parameters.empty()) {
+		return arguments.empty();
+	}
+	if (parameters.size() != arguments.size()) {
+		return false;
+	}
+	for (size_t i = 0; i < parameters.size(); i++) {
+		TypeParameterBinding binding;
+		binding.name = parameters[i];
+		binding.argument = arguments[i];
+		binding.file_path = file_path;
+		binding.source = &source;
+		binding.root_node = root_node;
+		binding.child_count = child_count;
+		if (existing_bindings) {
+			binding.bindings = *existing_bindings;
+		}
+		r_bindings.push_back(binding);
+	}
+	return true;
+}
+
+static ExportTypeClassification classify_export_type(
+		const std::string &type_str,
+		const String &file_path,
+		const std::string &source,
+		TSNode root_node,
+		uint32_t child_count,
+		int alias_depth = 0,
+		const std::vector<TypeParameterBinding> *type_parameter_bindings = nullptr);
+
 static std::string string_to_utf8(const String &value) {
 	CharString utf8 = value.utf8();
 	return std::string(utf8.get_data());
@@ -633,11 +801,13 @@ static std::string unwrap_type_text_parentheses(const std::string &type_text) {
 	return unwrapped;
 }
 
-static std::vector<std::string> split_top_level_union_types(const std::string &type_text) {
+static bool split_top_level_type_parts(const std::string &type_text, char separator, std::vector<std::string> &r_parts) {
 	std::vector<std::string> parts;
 	std::string current;
 	int angle_depth = 0;
 	int paren_depth = 0;
+	int bracket_depth = 0;
+	int brace_depth = 0;
 	char quote = '\0';
 	bool escaped = false;
 	for (char c : type_text) {
@@ -655,133 +825,6 @@ static std::vector<std::string> split_top_level_union_types(const std::string &t
 		if (c == '"' || c == '\'') {
 			quote = c;
 			current.push_back(c);
-			continue;
-		}
-		if (c == '<') {
-			angle_depth++;
-		} else if (c == '>' && angle_depth > 0) {
-			angle_depth--;
-		} else if (c == '(') {
-			paren_depth++;
-		} else if (c == ')' && paren_depth > 0) {
-			paren_depth--;
-		}
-
-		if (c == '|' && angle_depth == 0 && paren_depth == 0) {
-			parts.push_back(trim_type_text(current));
-			current.clear();
-			continue;
-		}
-		current.push_back(c);
-	}
-	parts.push_back(trim_type_text(current));
-	return parts;
-}
-
-static std::string unwrap_nullable_type_text(const std::string &type_text) {
-	std::string trimmed = trim_type_text(type_text);
-	if (trimmed.rfind("readonly ", 0) == 0) {
-		trimmed = trim_type_text(trimmed.substr(strlen("readonly ")));
-	}
-	trimmed = unwrap_type_text_parentheses(trimmed);
-
-	std::vector<std::string> union_types = split_top_level_union_types(trimmed);
-	for (const std::string &part : union_types) {
-		if (part != "null" && part != "undefined" && part != "void") {
-			return part;
-		}
-	}
-	return trimmed;
-}
-
-static std::string canonical_type_name(const std::string &type_str) {
-	std::string type_name = unwrap_nullable_type_text(type_str);
-	if (type_name == "GDArray") {
-		return "Array";
-	}
-	if (type_name == "GDDictionary") {
-		return "Dictionary";
-	}
-	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
-		return "Array";
-	}
-	const std::string class_name = string_to_utf8(class_name_tail(String(type_name.c_str())));
-	if (class_name == "ReadonlyArray") {
-		return "Array";
-	}
-	if (class_name == "Map") {
-		return "Dictionary";
-	}
-	return class_name;
-}
-
-static std::string array_element_type_text(const std::string &type_str) {
-	const std::string type_name = unwrap_nullable_type_text(type_str);
-	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
-		return trim_type_text(type_name.substr(0, type_name.size() - 2));
-	}
-
-	const size_t generic_start = type_name.find('<');
-	if (generic_start == std::string::npos || type_name.back() != '>') {
-		return std::string();
-	}
-	const std::string container_name = string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str())));
-	if (container_name != "Array" && container_name != "ReadonlyArray") {
-		return std::string();
-	}
-
-	int angle_depth = 0;
-	for (size_t i = generic_start + 1; i + 1 < type_name.size(); i++) {
-		const char c = type_name[i];
-		if (c == '<') {
-			angle_depth++;
-		} else if (c == '>') {
-			if (angle_depth == 0) {
-				return std::string();
-			}
-			angle_depth--;
-		} else if (c == ',' && angle_depth == 0) {
-			return std::string();
-		}
-	}
-	if (angle_depth != 0) {
-		return std::string();
-	}
-	return trim_type_text(type_name.substr(generic_start + 1, type_name.size() - generic_start - 2));
-}
-
-static bool dictionary_element_type_text(const std::string &type_str, std::string &r_key_type, std::string &r_value_type) {
-	const std::string type_name = unwrap_nullable_type_text(type_str);
-	const size_t generic_start = type_name.find('<');
-	if (generic_start == std::string::npos || type_name.back() != '>') {
-		return false;
-	}
-	const std::string container_name = string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str())));
-	if (container_name != "Map") {
-		return false;
-	}
-
-	int angle_depth = 0;
-	int paren_depth = 0;
-	int bracket_depth = 0;
-	int brace_depth = 0;
-	char quote = '\0';
-	bool escaped = false;
-	size_t separator = std::string::npos;
-	for (size_t i = generic_start + 1; i + 1 < type_name.size(); i++) {
-		const char c = type_name[i];
-		if (quote != '\0') {
-			if (escaped) {
-				escaped = false;
-			} else if (c == '\\') {
-				escaped = true;
-			} else if (c == quote) {
-				quote = '\0';
-			}
-			continue;
-		}
-		if (c == '"' || c == '\'') {
-			quote = c;
 			continue;
 		}
 		if (c == '<') {
@@ -812,19 +855,115 @@ static bool dictionary_element_type_text(const std::string &type_str, std::strin
 				return false;
 			}
 			brace_depth--;
-		} else if (c == ',' && angle_depth == 0 && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
-			if (separator != std::string::npos) {
-				return false;
-			}
-			separator = i;
+		}
+
+		if (c == separator && angle_depth == 0 && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0) {
+			parts.push_back(trim_type_text(current));
+			current.clear();
+			continue;
+		}
+		current.push_back(c);
+	}
+	if (quote != '\0' || angle_depth != 0 || paren_depth != 0 || bracket_depth != 0 || brace_depth != 0) {
+		return false;
+	}
+	parts.push_back(trim_type_text(current));
+	r_parts = parts;
+	return true;
+}
+
+static std::vector<std::string> split_top_level_union_types(const std::string &type_text) {
+	std::vector<std::string> parts;
+	if (!split_top_level_type_parts(type_text, '|', parts)) {
+		parts.clear();
+		parts.push_back(trim_type_text(type_text));
+	}
+	return parts;
+}
+
+static std::string unwrap_nullable_type_text(const std::string &type_text) {
+	std::string trimmed = trim_type_text(type_text);
+	if (trimmed.rfind("readonly ", 0) == 0) {
+		trimmed = trim_type_text(trimmed.substr(strlen("readonly ")));
+	}
+	trimmed = unwrap_type_text_parentheses(trimmed);
+
+	std::vector<std::string> union_types = split_top_level_union_types(trimmed);
+	for (const std::string &part : union_types) {
+		if (part != "null" && part != "undefined" && part != "void") {
+			return part;
 		}
 	}
-	if (quote != '\0' || angle_depth != 0 || paren_depth != 0 || bracket_depth != 0 || brace_depth != 0 || separator == std::string::npos) {
+	return trimmed;
+}
+
+struct ContainerTypeText {
+	std::string name;
+	std::vector<std::string> arguments;
+};
+
+static std::string canonical_container_type_name(const std::string &container_name) {
+	if (container_name == "Array" || container_name == "ReadonlyArray" || container_name == "GDArray") {
+		return "Array";
+	}
+	if (container_name == "Dictionary" || container_name == "GDDictionary" ||
+			container_name == "Map" || container_name == "ReadonlyMap" || container_name == "Record") {
+		return "Dictionary";
+	}
+	return container_name;
+}
+
+static bool parse_container_type_text(const std::string &type_str, ContainerTypeText &r_container) {
+	const std::string type_name = unwrap_nullable_type_text(type_str);
+	if (type_name.empty()) {
+		return false;
+	}
+	if (type_name.size() > 2 && type_name.compare(type_name.size() - 2, 2, "[]") == 0) {
+		r_container.name = "Array";
+		r_container.arguments.clear();
+		r_container.arguments.push_back(trim_type_text(type_name.substr(0, type_name.size() - 2)));
+		return !r_container.arguments.front().empty();
+	}
+
+	const size_t generic_start = type_name.find('<');
+	if (generic_start == std::string::npos) {
+		r_container.name = canonical_container_type_name(string_to_utf8(class_name_tail(String(type_name.c_str()))));
+		r_container.arguments.clear();
+		return true;
+	}
+	if (type_name.back() != '>') {
 		return false;
 	}
 
-	r_key_type = trim_type_text(type_name.substr(generic_start + 1, separator - generic_start - 1));
-	r_value_type = trim_type_text(type_name.substr(separator + 1, type_name.size() - separator - 2));
+	r_container.name = canonical_container_type_name(string_to_utf8(class_name_tail(String(type_name.substr(0, generic_start).c_str()))));
+	const std::string payload = type_name.substr(generic_start + 1, type_name.size() - generic_start - 2);
+	return split_top_level_type_parts(payload, ',', r_container.arguments);
+}
+
+static std::string canonical_type_name(const std::string &type_str) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container)) {
+		return string_to_utf8(class_name_tail(String(unwrap_nullable_type_text(type_str).c_str())));
+	}
+	return container.name;
+}
+
+static std::string array_element_type_text(const std::string &type_str) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container) || container.name != "Array" || container.arguments.size() != 1) {
+		return std::string();
+	}
+	return container.arguments.front();
+}
+
+static bool dictionary_element_type_text(const std::string &type_str, std::string &r_key_type, std::string &r_value_type) {
+	ContainerTypeText container;
+	if (!parse_container_type_text(type_str, container) || container.name != "Dictionary" || container.arguments.size() != 2) {
+		return false;
+	}
+
+	r_key_type = container.arguments[0];
+	r_value_type = container.arguments[1];
 	return !r_key_type.empty() && !r_value_type.empty();
 }
 
@@ -998,7 +1137,12 @@ static StringName qualifier_from_type_text(const std::string &type_str) {
 	return StringName(expression.substr(0, separator).strip_edges());
 }
 
-static ExportTypeKind resolve_typescript_object_kind(
+struct ExportObjectResolution {
+	ExportTypeKind kind = ExportTypeKind::UNKNOWN;
+	StringName class_name;
+};
+
+static ExportObjectResolution resolve_typescript_object_kind(
 		const String &file_path,
 		const std::string &source,
 		TSNode root_node,
@@ -1007,22 +1151,26 @@ static ExportTypeKind resolve_typescript_object_kind(
 		const StringName &class_qualifier,
 		int depth,
 		std::unordered_set<std::string> &visited) {
+	ExportObjectResolution resolution;
 	if (class_name.is_empty() || depth > 8) {
-		return ExportTypeKind::UNKNOWN;
+		return resolution;
 	}
 
 	ExportTypeKind engine_kind = classify_engine_object_class(class_name);
 	if (engine_kind != ExportTypeKind::UNKNOWN) {
-		return engine_kind;
+		resolution.kind = engine_kind;
+		resolution.class_name = class_name;
+		return resolution;
 	}
 
 	const std::string visit_key = string_to_utf8(file_path) + "::" + string_to_utf8(String(class_qualifier)) + "." + string_to_utf8(String(class_name));
 	if (visited.find(visit_key) != visited.end()) {
-		return ExportTypeKind::UNKNOWN;
+		return resolution;
 	}
 	visited.insert(visit_key);
 
 	TSNode class_node = {};
+	StringName lookup_class_name = class_name;
 	if (class_qualifier.is_empty()) {
 		class_node = find_class_declaration_by_name(root_node, child_count, source, class_name);
 	}
@@ -1035,47 +1183,55 @@ static ExportTypeKind resolve_typescript_object_kind(
 	uint32_t next_child_count = child_count;
 
 	if (ts_node_is_null(class_node)) {
-		String imported_path = resolve_imported_class_path(file_path, source, root_node, child_count, class_name, class_qualifier);
-		if (imported_path.is_empty()) {
-			return ExportTypeKind::UNKNOWN;
+		ImportedSymbolResolution imported = resolve_imported_symbol(file_path, source, root_node, child_count, class_name, class_qualifier, false);
+		if (imported.path.is_empty()) {
+			return resolution;
 		}
 
-		String imported_source = FileAccess::get_file_as_string(imported_path);
+		String imported_source = FileAccess::get_file_as_string(imported.path);
 		if (FileAccess::get_open_error() != OK) {
-			return ExportTypeKind::UNKNOWN;
+			return resolution;
 		}
 
-		next_file_path = imported_path;
+		next_file_path = imported.path;
 		next_source = imported_source.utf8().get_data();
 		external_parser = ts_parser_new();
 		if (!external_parser) {
-			return ExportTypeKind::UNKNOWN;
+			return resolution;
 		}
 		if (!ts_parser_set_language(external_parser, tree_sitter_typescript())) {
 			ts_parser_delete(external_parser);
-			return ExportTypeKind::UNKNOWN;
+			return resolution;
 		}
 		external_tree = ts_parser_parse_string(external_parser, nullptr, next_source.c_str(), next_source.length());
 		if (!external_tree) {
 			ts_parser_delete(external_parser);
-			return ExportTypeKind::UNKNOWN;
+			return resolution;
 		}
 
 		next_root_node = ts_tree_root_node(external_tree);
 		next_child_count = ts_node_child_count(next_root_node);
-		class_node = find_class_declaration_by_name(next_root_node, next_child_count, next_source, class_name);
-		if (ts_node_is_null(class_node) && class_qualifier.is_empty()) {
+		lookup_class_name = imported.imported_name.is_empty() ? class_name : imported.imported_name;
+		class_node = find_class_declaration_by_name(next_root_node, next_child_count, next_source, lookup_class_name);
+		if (ts_node_is_null(class_node) && imported.default_import) {
 			class_node = find_default_class(next_root_node, next_child_count, next_source);
 		}
 	}
 
-	ExportTypeKind result = ExportTypeKind::UNKNOWN;
 	if (!ts_node_is_null(class_node)) {
+		StringName resolved_class_name = class_name_from_class_node(class_node, next_source);
+		if (resolved_class_name.is_empty()) {
+			resolved_class_name = lookup_class_name;
+		}
 		TSNode base_node = extends_class_node_from_class(class_node);
 		if (!ts_node_is_null(base_node)) {
 			StringName base_name = class_name_from_extends_node(base_node, next_source);
 			StringName base_qualifier = qualifier_from_extends_node(base_node, next_source);
-			result = resolve_typescript_object_kind(next_file_path, next_source, next_root_node, next_child_count, base_name, base_qualifier, depth + 1, visited);
+			ExportObjectResolution base_resolution = resolve_typescript_object_kind(next_file_path, next_source, next_root_node, next_child_count, base_name, base_qualifier, depth + 1, visited);
+			if (base_resolution.kind != ExportTypeKind::UNKNOWN) {
+				resolution.kind = base_resolution.kind;
+				resolution.class_name = resolved_class_name;
+			}
 		}
 	}
 
@@ -1085,7 +1241,7 @@ static ExportTypeKind resolve_typescript_object_kind(
 	if (external_parser) {
 		ts_parser_delete(external_parser);
 	}
-	return result;
+	return resolution;
 }
 
 static bool is_nullish_type_text(const std::string &type_text) {
@@ -1098,13 +1254,79 @@ static bool is_string_literal_type_text(const std::string &type_text) {
 					(type_text.front() == '\'' && type_text.back() == '\''));
 }
 
+static bool classify_type_alias_reference(
+		const std::string &type_str,
+		const String &file_path,
+		const std::string &source,
+		TSNode root_node,
+		uint32_t child_count,
+		int alias_depth,
+		const std::vector<TypeParameterBinding> *type_parameter_bindings,
+		ExportTypeClassification &r_classification) {
+	ContainerTypeText alias_reference;
+	if (!parse_container_type_text(type_str, alias_reference) || alias_reference.name.empty()) {
+		return false;
+	}
+
+	const StringName alias_name(alias_reference.name.c_str());
+	TypeAliasDefinition alias_definition = find_type_alias_definition(root_node, child_count, source, alias_name);
+	if (type_alias_definition_is_valid(alias_definition)) {
+		std::vector<TypeParameterBinding> alias_bindings;
+		if (build_type_parameter_bindings(alias_definition.type_parameters, alias_reference.arguments, file_path, source, root_node, child_count, type_parameter_bindings, alias_bindings)) {
+			r_classification = classify_export_type(alias_definition.value, file_path, source, root_node, child_count, alias_depth + 1, &alias_bindings);
+		}
+		return true;
+	}
+
+	const ImportedSymbolResolution imported = resolve_imported_symbol(file_path, source, root_node, child_count, alias_name, qualifier_from_type_text(type_str), true);
+	if (imported.path.is_empty() || imported.imported_name.is_empty()) {
+		return false;
+	}
+
+	String imported_source = FileAccess::get_file_as_string(imported.path);
+	if (FileAccess::get_open_error() != OK) {
+		return false;
+	}
+	std::string imported_source_text = imported_source.utf8().get_data();
+
+	TSParser *external_parser = ts_parser_new();
+	if (!external_parser) {
+		return false;
+	}
+	if (!ts_parser_set_language(external_parser, tree_sitter_typescript())) {
+		ts_parser_delete(external_parser);
+		return false;
+	}
+	TSTree *external_tree = ts_parser_parse_string(external_parser, nullptr, imported_source_text.c_str(), imported_source_text.length());
+	if (!external_tree) {
+		ts_parser_delete(external_parser);
+		return false;
+	}
+
+	TSNode external_root = ts_tree_root_node(external_tree);
+	const uint32_t external_child_count = ts_node_child_count(external_root);
+	alias_definition = find_type_alias_definition(external_root, external_child_count, imported_source_text, imported.imported_name);
+	const bool found = type_alias_definition_is_valid(alias_definition);
+	if (found) {
+		std::vector<TypeParameterBinding> alias_bindings;
+		if (build_type_parameter_bindings(alias_definition.type_parameters, alias_reference.arguments, file_path, source, root_node, child_count, type_parameter_bindings, alias_bindings)) {
+			r_classification = classify_export_type(alias_definition.value, imported.path, imported_source_text, external_root, external_child_count, alias_depth + 1, &alias_bindings);
+		}
+	}
+
+	ts_tree_delete(external_tree);
+	ts_parser_delete(external_parser);
+	return found;
+}
+
 static ExportTypeClassification classify_export_type(
 		const std::string &type_str,
 		const String &file_path,
 		const std::string &source,
 		TSNode root_node,
 		uint32_t child_count,
-		int alias_depth = 0) {
+		int alias_depth,
+		const std::vector<TypeParameterBinding> *type_parameter_bindings) {
 	ExportTypeClassification classification;
 	if (alias_depth > 8) {
 		return classification;
@@ -1125,12 +1347,14 @@ static ExportTypeClassification classify_export_type(
 	if (effective_types.empty()) {
 		return classification;
 	}
-	if (effective_types.size() > 1) {
-		for (const std::string &part : effective_types) {
-			if (!is_string_literal_type_text(part)) {
-				return classification;
-			}
+	bool all_string_literals = true;
+	for (const std::string &part : effective_types) {
+		if (!is_string_literal_type_text(part)) {
+			all_string_literals = false;
+			break;
 		}
+	}
+	if (all_string_literals) {
 		classification.kind = ExportTypeKind::STRING_ENUM;
 		classification.variant_type = Variant::STRING;
 		for (const std::string &part : effective_types) {
@@ -1138,14 +1362,21 @@ static ExportTypeClassification classify_export_type(
 		}
 		return classification;
 	}
-
-	const std::string &effective_type = effective_types.front();
-	if (is_string_literal_type_text(effective_type)) {
+	if (effective_types.size() > 1) {
 		return classification;
 	}
-	const std::string alias_value = find_type_alias_value_text(root_node, child_count, source, StringName(effective_type.c_str()));
-	if (!alias_value.empty()) {
-		return classify_export_type(alias_value, file_path, source, root_node, child_count, alias_depth + 1);
+
+	const std::string &effective_type = effective_types.front();
+	const TypeParameterBinding *type_parameter = find_type_parameter_binding(type_parameter_bindings, effective_type);
+	if (type_parameter && type_parameter->source) {
+		return classify_export_type(type_parameter->argument, type_parameter->file_path, *type_parameter->source, type_parameter->root_node, type_parameter->child_count, alias_depth + 1, &type_parameter->bindings);
+	}
+	ExportTypeClassification alias_classification;
+	if (classify_type_alias_reference(effective_type, file_path, source, root_node, child_count, alias_depth, type_parameter_bindings, alias_classification)) {
+		return alias_classification;
+	}
+	if (is_string_literal_type_text(effective_type)) {
+		return classification;
 	}
 
 	if (canonical_type_name(effective_type) == "Array") {
@@ -1153,7 +1384,7 @@ static ExportTypeClassification classify_export_type(
 		classification.variant_type = Variant::ARRAY;
 		const std::string element_type_str = array_element_type_text(effective_type);
 		if (!element_type_str.empty()) {
-			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(element_type_str, file_path, source, root_node, child_count, alias_depth));
+			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(element_type_str, file_path, source, root_node, child_count, alias_depth, type_parameter_bindings));
 		}
 		return classification;
 	}
@@ -1164,8 +1395,8 @@ static ExportTypeClassification classify_export_type(
 		std::string key_type_str;
 		std::string value_type_str;
 		if (dictionary_element_type_text(effective_type, key_type_str, value_type_str)) {
-			classification.key_type = std::make_unique<ExportTypeClassification>(classify_export_type(key_type_str, file_path, source, root_node, child_count, alias_depth));
-			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(value_type_str, file_path, source, root_node, child_count, alias_depth));
+			classification.key_type = std::make_unique<ExportTypeClassification>(classify_export_type(key_type_str, file_path, source, root_node, child_count, alias_depth, type_parameter_bindings));
+			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(value_type_str, file_path, source, root_node, child_count, alias_depth, type_parameter_bindings));
 		}
 		return classification;
 	}
@@ -1182,9 +1413,14 @@ static ExportTypeClassification classify_export_type(
 		return classification;
 	}
 	ExportTypeKind object_kind = classify_engine_object_class(type_class_name);
+	StringName resolved_class_name = type_class_name;
 	if (object_kind == ExportTypeKind::UNKNOWN) {
 		std::unordered_set<std::string> visited;
-		object_kind = resolve_typescript_object_kind(file_path, source, root_node, child_count, type_class_name, qualifier_from_type_text(effective_type), 0, visited);
+		ExportObjectResolution object_resolution = resolve_typescript_object_kind(file_path, source, root_node, child_count, type_class_name, qualifier_from_type_text(effective_type), 0, visited);
+		object_kind = object_resolution.kind;
+		if (!object_resolution.class_name.is_empty()) {
+			resolved_class_name = object_resolution.class_name;
+		}
 	}
 	if (object_kind == ExportTypeKind::UNKNOWN) {
 		return classification;
@@ -1192,7 +1428,7 @@ static ExportTypeClassification classify_export_type(
 
 	classification.kind = object_kind;
 	classification.variant_type = Variant::OBJECT;
-	classification.class_name = type_class_name;
+	classification.class_name = resolved_class_name;
 	return classification;
 }
 
@@ -1863,11 +2099,11 @@ static bool parse_bool_literal(const std::string &text, bool &r_value) {
 }
 
 static bool parse_rpc_mode(const std::string &mode, int &r_mode) {
-	if (mode == "any_peer" || mode == "any") {
+	if (mode == "any_peer") {
 		r_mode = 1;
 		return true;
 	}
-	if (mode == "authority" || mode == "master") {
+	if (mode == "authority") {
 		r_mode = 2;
 		return true;
 	}
@@ -2033,7 +2269,7 @@ static void parse_static_metadata(const std::string &name, TSNode value, const s
 		return;
 	}
 
-	if (name == "rpcConfig" && strcmp(ts_node_type(value), "object") == 0) {
+	if (name == "rpc_config" && strcmp(ts_node_type(value), "object") == 0) {
 		for (uint32_t i = 0; i < ts_node_named_child_count(value); i++) {
 			TSNode pair = ts_node_named_child(value, i);
 			if (strcmp(ts_node_type(pair), "pair") != 0) {
@@ -2055,17 +2291,17 @@ static void parse_static_metadata(const std::string &name, TSNode value, const s
 					std::string key = strip_quotes(node_text(source, ts_node_child_by_field_name(cfg_pair, "key", 3)));
 					TSNode val = unwrap_metadata_expression(ts_node_child_by_field_name(cfg_pair, "value", 5));
 					std::string val_text = strip_quotes(node_text(source, val));
-					if (key == "mode") {
+					if (key == "rpc_mode") {
 						int parsed_mode = 0;
 						if (parse_rpc_mode(val_text, parsed_mode)) {
 							cfg["rpc_mode"] = parsed_mode;
 						}
-					} else if (key == "transferMode") {
+					} else if (key == "transfer_mode") {
 						int parsed_mode = 0;
 						if (parse_transfer_mode(val_text, parsed_mode)) {
 							cfg["transfer_mode"] = parsed_mode;
 						}
-					} else if (key == "callLocal") {
+					} else if (key == "call_local") {
 						bool parsed_bool = false;
 						if (parse_bool_literal(val_text, parsed_bool)) {
 							cfg["call_local"] = parsed_bool;

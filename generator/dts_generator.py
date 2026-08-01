@@ -151,7 +151,7 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
         # typedarray is always represented as a JS generic array on the TypeScript side.
         element_ts = godot_type_to_ts(element_type, is_input=is_input, singleton_class_names=singleton_class_names)
         typed_array = f'Array<{element_ts}>'
-        return f'GDArray | {typed_array}' if is_input else typed_array
+        return f'GDArray<{element_ts}> | {typed_array}' if is_input else typed_array
 
     if type_str.startswith('typeddictionary::'):
         key_type, value_type = parse_typeddictionary_types(type_str)
@@ -166,8 +166,8 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
             typed_container = f'Map<{key_input_ts if is_input else key_ts}, {value_ts}>'
 
         if is_input and key_ts == 'string':
-            return f'GDDictionary | {typed_container} | Map<{key_input_ts}, {value_ts}>'
-        return f'GDDictionary | {typed_container}' if is_input else typed_container
+            return f'GDDictionary<{key_input_ts}, {value_ts}> | {typed_container} | Map<{key_input_ts}, {value_ts}>'
+        return f'GDDictionary<{key_input_ts}, {value_ts}> | {typed_container}' if is_input else typed_container
 
     if type_str.endswith('*'):
         return godot_type_to_ts(type_str[:-1], is_input, singleton_class_names, meta)
@@ -241,6 +241,80 @@ class DtsGenerator(CodeGenerator):
 
     def _type_to_ts_with_meta(self, type_str: str, is_input: bool = False, meta: str = '') -> str:
         return godot_type_to_ts(type_str, is_input, getattr(self, '_singleton_class_names', frozenset()), meta)
+
+    def _builtin_type_parameters(self, ts_name: str) -> str:
+        if ts_name == 'GDArray':
+            return '<T extends VariantArgument = VariantArgument>'
+        if ts_name == 'GDDictionary':
+            return '<K extends VariantArgument = VariantArgument, V extends VariantArgument = VariantArgument>'
+        return ''
+
+    def _array_like_type(self) -> str:
+        return 'GDArray<T> | T[]'
+
+    def _dictionary_like_type(self) -> str:
+        return 'GDDictionary<K, V> | { [key: string]: V } | Map<K, V>'
+
+    def _builtin_constructor_param_overrides(self, ts_name: str, arguments: list) -> dict:
+        if ts_name == 'GDArray':
+            overrides = {}
+            for arg in arguments:
+                if arg['type'] == 'Array':
+                    overrides[arg['name']] = self._array_like_type()
+            return overrides
+        if ts_name == 'GDDictionary':
+            overrides = {}
+            for arg in arguments:
+                if arg['type'] == 'Dictionary':
+                    overrides[arg['name']] = self._dictionary_like_type()
+            return overrides
+        return {}
+
+    def _builtin_method_param_overrides(self, ts_name: str, method_name: str, arguments: list) -> dict:
+        if ts_name == 'GDArray':
+            overrides = {}
+            for arg in arguments:
+                if arg['type'] == 'Array':
+                    overrides[arg['name']] = self._array_like_type()
+                elif arg['type'] == 'Variant' and arg['name'] in {
+                    'value', 'what',
+                }:
+                    overrides[arg['name']] = 'T'
+            return overrides
+        if ts_name == 'GDDictionary':
+            overrides = {}
+            for arg in arguments:
+                if arg['type'] == 'Dictionary':
+                    overrides[arg['name']] = self._dictionary_like_type()
+                elif arg['name'] == 'keys':
+                    overrides[arg['name']] = 'GDArray<K> | K[]'
+                elif arg['name'] == 'key':
+                    overrides[arg['name']] = 'K'
+                elif arg['name'] == 'value':
+                    overrides[arg['name']] = 'V'
+                elif arg['name'] == 'default':
+                    overrides[arg['name']] = 'V'
+            return overrides
+        return {}
+
+    def _builtin_method_return_override(self, ts_name: str, method_name: str) -> str:
+        if ts_name == 'GDArray':
+            if method_name in {'get', 'front', 'back', 'pick_random', 'pop_back', 'pop_front', 'pop_at', 'max', 'min'}:
+                return 'T'
+            if method_name in {'duplicate', 'duplicate_deep', 'slice', 'filter'}:
+                return 'T[]'
+        if ts_name == 'GDDictionary':
+            if method_name in {'merged', 'duplicate', 'duplicate_deep'}:
+                return '{ [key: string]: V } | Map<K, V>'
+            if method_name == 'find_key':
+                return 'K'
+            if method_name == 'keys':
+                return 'K[]'
+            if method_name == 'values':
+                return 'V[]'
+            if method_name in {'get', 'get_or_add'}:
+                return 'V'
+        return ''
 
     def _enum_type_ref(self, owner_name: str, enum_name: str) -> str:
         enum_name = sanitize_name(enum_name)
@@ -324,13 +398,14 @@ class DtsGenerator(CodeGenerator):
     def _gen_builtin(self, cls_data: dict, ts_name: str, indent: int) -> list:
         ind  = self._ind(indent)
         ind2 = self._ind(indent + 1)
-        lines = [f'{ind}export class {ts_name} {{']
+        lines = [f'{ind}export class {ts_name}{self._builtin_type_parameters(ts_name)} {{']
         body_seen = set()
 
         # Constructors
         for ctor in cls_data.get('constructors', []):
             args = ctor.get('arguments', [])
-            params = self._format_params(args) if args else ''
+            param_overrides = self._builtin_constructor_param_overrides(ts_name, args)
+            params = self._format_params(args, param_overrides) if args else ''
             self._append_unique_line(lines, body_seen, f'{ind2}constructor({params});')
 
         # Members (instance properties)
@@ -353,8 +428,11 @@ class DtsGenerator(CodeGenerator):
             if method_conflicts_with_builtin_member(method['name'], member_names):
                 continue
             name   = member_name(method['name'])
-            ret    = self._type_to_ts_with_meta(method.get('return_type', 'void'), meta=(method.get('return_value') or {}).get('meta', ''))
-            params = self._format_params(method.get('arguments', []))
+            ret    = self._builtin_method_return_override(ts_name, method['name'])
+            if not ret:
+                ret = self._type_to_ts_with_meta(method.get('return_type', 'void'), meta=(method.get('return_value') or {}).get('meta', ''))
+            args = method.get('arguments', [])
+            params = self._format_params(args, self._builtin_method_param_overrides(ts_name, method['name'], args))
             static = 'static ' if method.get('is_static') else ''
             if method.get('is_vararg'):
                 params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
@@ -567,9 +645,9 @@ class DtsGenerator(CodeGenerator):
         lines.append('  type RpcMode = "authority" | "any_peer" | "disabled" | number;')
         lines.append('  type RpcTransferMode = "reliable" | "unreliable" | "unreliable_ordered" | number;')
         lines.append('  interface RpcEntry {')
-        lines.append('    mode?: RpcMode;')
-        lines.append('    transferMode?: RpcTransferMode;')
-        lines.append('    callLocal?: boolean;')
+        lines.append('    rpc_mode?: RpcMode;')
+        lines.append('    transfer_mode?: RpcTransferMode;')
+        lines.append('    call_local?: boolean;')
         lines.append('    channel?: number;')
         lines.append('  }')
         lines.append('  type RpcConfig = Record<string, RpcEntry>;')

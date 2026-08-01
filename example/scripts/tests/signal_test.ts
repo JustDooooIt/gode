@@ -43,8 +43,8 @@ export default class SignalTest extends Node {
 		"spawn_offset": { "type": "Vector3" },
 	} satisfies ExportMap;
 
-	static rpcConfig = {
-		run_test: { mode: "authority", transferMode: "reliable", callLocal: true, channel: 0 },
+	static rpc_config = {
+		run_test: { rpc_mode: "authority", transfer_mode: "reliable", call_local: true, channel: 0 },
 	} satisfies RpcConfig;
 
 	threshold = 3 as const;
@@ -69,11 +69,11 @@ export default class SignalTest extends Node {
 
 			const script = this.get_script() as { get_rpc_config(): VariantArgument };
 			const rpcMetadata = dictionaryValue(script.get_rpc_config(), "run_test");
-			assert(rpcMetadata !== undefined, "rpcConfig metadata was not registered");
-			assert(Number(dictionaryValue(rpcMetadata, "rpc_mode")) === 2, "rpcConfig mode was not preserved");
-			assert(Number(dictionaryValue(rpcMetadata, "transfer_mode")) === 2, "rpcConfig transfer mode was not preserved");
-			assert(Boolean(dictionaryValue(rpcMetadata, "call_local")) === true, "rpcConfig callLocal was not preserved");
-			assert(Number(dictionaryValue(rpcMetadata, "channel")) === 0, "rpcConfig channel was not preserved");
+			assert(rpcMetadata !== undefined, "rpc_config metadata was not registered");
+			assert(Number(dictionaryValue(rpcMetadata, "rpc_mode")) === 2, "rpc_config rpc_mode was not preserved");
+			assert(Number(dictionaryValue(rpcMetadata, "transfer_mode")) === 2, "rpc_config transfer_mode was not preserved");
+			assert(Boolean(dictionaryValue(rpcMetadata, "call_local")) === true, "rpc_config call_local was not preserved");
+			assert(Number(dictionaryValue(rpcMetadata, "channel")) === 0, "rpc_config channel was not preserved");
 
 			const received: VariantArgument[] = [];
 			this.connect("completed", (payload: VariantArgument) => {

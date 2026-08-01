@@ -53,6 +53,16 @@ func _run_next() -> void:
 		if current_test.get("editor_generic_number_array") != [1, 2.5]:
 			_fail("RuntimeIntegrationTest generic typed export Array did not round-trip through ScriptInstance")
 			return
+		current_test.set("editor_record_dictionary", {"from_gdscript": 8})
+		if current_test.get("editor_record_dictionary") != {"from_gdscript": 8}:
+			_fail("RuntimeIntegrationTest typed string-key Dictionary did not round-trip through ScriptInstance")
+			return
+		var int_key_dictionary := {}
+		int_key_dictionary[7] = "seven"
+		current_test.set("editor_int_key_map", int_key_dictionary)
+		if current_test.get("editor_int_key_map").get(7) != "seven":
+			_fail("RuntimeIntegrationTest typed int-key Dictionary did not round-trip through ScriptInstance")
+			return
 		current_test.set("static_number_array", [4, 5.5])
 		if current_test.get("static_number_array") != [4, 5.5]:
 			_fail("RuntimeIntegrationTest static export Array did not round-trip through ScriptInstance")

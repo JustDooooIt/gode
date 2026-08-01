@@ -67,22 +67,22 @@ class GeneratorOutputTests(unittest.TestCase):
 		self.assertEqual("number", godot_type_to_ts("int", is_input=False, meta="int32"))
 		self.assertEqual("NodePath | string", godot_type_to_ts("NodePath", is_input=True))
 		self.assertEqual("NodePath", godot_type_to_ts("NodePath", is_input=False))
-		self.assertEqual("GDArray | Array<Node>", godot_type_to_ts("typedarray::Node", is_input=True))
-		self.assertEqual("GDArray | Array<NodePath | string>", godot_type_to_ts("typedarray::NodePath", is_input=True))
+		self.assertEqual("GDArray<Node> | Array<Node>", godot_type_to_ts("typedarray::Node", is_input=True))
+		self.assertEqual("GDArray<NodePath | string> | Array<NodePath | string>", godot_type_to_ts("typedarray::NodePath", is_input=True))
 		self.assertEqual(
 			"Array<{ [key: string]: VariantArgument } | Map<VariantArgument, VariantArgument>>",
 			godot_type_to_ts("typedarray::27/0:"),
 		)
 		self.assertEqual(
-			"GDDictionary | Map<number | bigint, GDString | StringName | string>",
+			"GDDictionary<number | bigint, GDString | StringName | string> | Map<number | bigint, GDString | StringName | string>",
 			godot_type_to_ts("typeddictionary::int;String", is_input=True),
 		)
 		self.assertEqual(
-			"GDDictionary | Record<string, number | bigint> | Map<GDString | StringName | string, number | bigint>",
+			"GDDictionary<GDString | StringName | string, number | bigint> | Record<string, number | bigint> | Map<GDString | StringName | string, number | bigint>",
 			godot_type_to_ts("typeddictionary::String;int", is_input=True),
 		)
 		self.assertEqual(
-			"GDDictionary | Record<string, NodePath | string> | Map<GDString | StringName | string, NodePath | string>",
+			"GDDictionary<GDString | StringName | string, NodePath | string> | Record<string, NodePath | string> | Map<GDString | StringName | string, NodePath | string>",
 			godot_type_to_ts("typeddictionary::String;NodePath", is_input=True),
 		)
 		self.assertEqual(

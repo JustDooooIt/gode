@@ -772,8 +772,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"extends_class_node_from_class",
 			"resolve_imported_class_path",
 			"import_clause_from_statement",
-			"import_clause_binds_name",
-			"import_specifier_binds_name",
+			"ImportedSymbolResolution",
+			"resolve_imported_symbol",
+			"import_specifier_resolves_name",
 			"namespace_import_binds_qualifier",
 			'ts_node_child_by_field_name(import_specifier, "alias", 5)',
 			'strcmp(child_type, "namespace_import")',
@@ -788,8 +789,15 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"class_name_tail",
 			"ExportTypeKind",
 			"ExportTypeClassification",
+			"ExportObjectResolution",
+			"TypeParameterBinding",
+			"find_type_parameter_binding",
+			"build_type_parameter_bindings",
+			"if (effective_types.size() > 1)",
 			"type_text_from_annotation",
-			"find_type_alias_value_text",
+			"find_type_alias_definition",
+			"type_alias_parameter_names",
+			"classify_type_alias_reference",
 			"canonical_type_name",
 			"godot_class_name_from_type",
 			"classify_engine_object_class",
@@ -815,8 +823,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"is_relative_module_specifier",
 			'path_join(String(import_path.c_str())).replace("\\\\", "/").simplify_path()',
 			"return FileAccess::file_exists(base) ? base : String();",
-			"resolve_imported_typescript_path(file_path, import_path, false)",
-			"resolve_imported_typescript_path(file_path, import_path, true)",
+			"resolve_imported_typescript_path(file_path, import_path, include_dts)",
+			"resolve_imported_symbol(file_path, source, root_node, child_count, class_name, class_qualifier, false).path",
+			"resolve_imported_symbol(file_path, source, root_node, child_count, alias_name, qualifier_from_type_text(type_str), true)",
 			"base_class_qualifier = qualifier_from_extends_node(base_class_node, source);",
 			"base_script_path = resolve_imported_class_path(get_path(), source, root_node, child_count, base_class_name, base_class_qualifier);",
 			"collect_parent_properties(base_class_name, base_class_qualifier, source, root_node, child_count, get_path(), properties, property_list, property_defaults);",
@@ -850,16 +859,18 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		):
 			self.assertIn(token, source)
 		self.assertNotIn('path_join(String(import_path.c_str()) + ".ts")', source)
-		self.assertIn('name == "rpcConfig"', source)
-		self.assertIn('key == "transferMode"', source)
-		self.assertIn('key == "callLocal"', source)
+		self.assertIn('name == "rpc_config"', source)
+		self.assertIn('key == "transfer_mode"', source)
+		self.assertIn('key == "call_local"', source)
 		self.assertIn('key_str == "hint_string"', source)
 		self.assertIn('field_key == "hint_string"', source)
-		self.assertNotIn('name == "rpc_config"', source)
+		self.assertNotIn('name == "rpcConfig"', source)
 		self.assertNotIn('name == "rpcs"', source)
-		self.assertNotIn('key == "transfer_mode"', source)
-		self.assertNotIn('key == "call_local"', source)
-		self.assertNotIn('key == "rpc_mode"', source)
+		self.assertNotIn('key == "transferMode"', source)
+		self.assertNotIn('key == "callLocal"', source)
+		self.assertNotIn('key == "mode"', source)
+		self.assertNotIn('mode == "any"', source)
+		self.assertNotIn('mode == "master"', source)
 		self.assertNotIn('key_str == "hintString"', source)
 		self.assertNotIn('field_key == "hintString"', source)
 		self.assertNotIn("std::stoi(", source)
@@ -868,6 +879,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 		runtime_base = (ROOT / "example/scripts/tests/runtime_base_test.ts").read_text(encoding="utf-8")
+		runtime_export_types = (ROOT / "example/scripts/tests/runtime_export_types.ts").read_text(encoding="utf-8")
+		runtime_external_resource = (ROOT / "example/scripts/tests/runtime_external_resource.ts").read_text(encoding="utf-8")
 		self.assertIn("class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase", runtime_test)
 		self.assertIn("export default RuntimeIntegrationTest;", runtime_test)
 		self.assertIn("static signals = {", runtime_test)
@@ -878,6 +891,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('"count": { "type": "int", "default": 7 as const }', runtime_test)
 		self.assertIn('"static_resource_default_first": { "default": null, "type": "Resource" }', runtime_test)
 		self.assertIn('"static_image": { "type": "Image", "default": null }', runtime_test)
+		self.assertIn('"static_imported_resource_array": { "type": "RuntimeExportTypes.RuntimeImportedResourceArray", "default": [] as const }', runtime_test)
+		self.assertIn('"static_imported_generic_dictionary": { "type": "RuntimeImportedGenericDictionary<RuntimeArrayResource>", "default": {} as const }', runtime_test)
+		self.assertIn('"static_imported_generic_external_array": { "type": "RuntimeImportedGenericArray<RuntimeExternalResource>", "default": [] as const }', runtime_test)
+		self.assertIn("static_imported_generic_external_array = new GDArray() as RuntimeImportedGenericArray<RuntimeExternalResource>;", runtime_test)
 		self.assertIn("__gode_load_esm", runtime_test)
 		self.assertIn("__gode_compile_esm", runtime_test)
 		self.assertIn("runtime_pending_retry_fixture.js", runtime_test)
@@ -907,11 +924,30 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("const PROPERTY_HINT_NODE_TYPE = 34;", runtime_test)
 		self.assertIn('type RuntimeEditorStringEnum = "idle" | \'running\' | null | "done";', runtime_test)
 		self.assertIn('editor_string_enum: RuntimeEditorStringEnum = "idle";', runtime_test)
+		self.assertIn('editor_imported_string_enum: RuntimeImportedLevel = "alpha";', runtime_test)
+		self.assertIn('editor_imported_single_string_enum: RuntimeImportedSingleLevel = "solo";', runtime_test)
 		self.assertIn('editor_string_enum_array: Array<RuntimeEditorStringEnum> = ["idle"];', runtime_test)
+		self.assertIn('editor_imported_default_alias_resource_array: Array<RuntimeResourceAlias> = [];', runtime_test)
+		self.assertIn('editor_imported_resource_map: ImportedResourceMapAlias = new Map();', runtime_test)
+		self.assertIn('editor_imported_generic_resource_array: RuntimeImportedGenericArray<RuntimeArrayResource> = new GDArray() as RuntimeImportedGenericArray<RuntimeArrayResource>;', runtime_test)
+		self.assertIn('editor_imported_generic_external_resource_array: RuntimeImportedGenericArray<RuntimeExternalResource> = new GDArray() as RuntimeImportedGenericArray<RuntimeExternalResource>;', runtime_test)
+		self.assertIn('editor_imported_generic_resource_dictionary: RuntimeImportedGenericDictionary<RuntimeArrayResource> = new GDDictionary() as RuntimeImportedGenericDictionary<RuntimeArrayResource>;', runtime_test)
+		self.assertIn('editor_namespace_alias_resource_array: RuntimeExportTypes.RuntimeImportedResourceArray = [];', runtime_test)
 		self.assertIn('editor_mixed_union: "automatic" | number = "automatic";', runtime_test)
 		self.assertIn("editor_mixed_object_union!: Resource | Node;", runtime_test)
 		self.assertIn('nodeAssert.equal(String(stringEnumProperty.hint_string), "idle,running,done");', runtime_test)
+		self.assertIn('nodeAssert.equal(String(importedStringEnumProperty.hint_string), "alpha,beta");', runtime_test)
+		self.assertIn('nodeAssert.equal(String(importedSingleStringEnumProperty.hint_string), "solo");', runtime_test)
 		self.assertIn('assertArrayExportMetadata("editor_string_enum_array", `${VARIANT_TYPE_STRING}/${PROPERTY_HINT_ENUM}:idle,running,done`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_imported_default_alias_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertDictionaryExportMetadata("editor_imported_resource_map", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_imported_generic_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_imported_generic_external_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeExternalResource`);', runtime_test)
+		self.assertIn('assertDictionaryExportMetadata("editor_imported_generic_resource_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_namespace_alias_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("static_imported_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertDictionaryExportMetadata("static_imported_generic_dictionary", `${VARIANT_TYPE_STRING}:;${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);', runtime_test)
+		self.assertIn('assertArrayExportMetadata("static_imported_generic_external_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeExternalResource`);', runtime_test)
 		self.assertIn('nodeAssert.equal(String(explicitHintEnumProperty.hint_string), "manual enum hint");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("resource_slot", PROPERTY_HINT_RESOURCE_TYPE, "Resource");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("image_slot", PROPERTY_HINT_RESOURCE_TYPE, "Image");', runtime_test)
@@ -928,6 +964,13 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('nodeAssert.equal(String(inheritedLabelProperty.hint_string), "base label");', runtime_test)
 		self.assertIn("export { RuntimeIntegrationBase };", runtime_base)
 		self.assertIn("export default RuntimeIntegrationBase;", runtime_base)
+		self.assertIn('export type RuntimeImportedLevel = "alpha" | "beta";', runtime_export_types)
+		self.assertIn('export type RuntimeImportedSingleLevel = "solo" | null;', runtime_export_types)
+		self.assertIn("export type RuntimeImportedResourceArray = Array<RuntimeArrayResource>;", runtime_export_types)
+		self.assertIn("export type RuntimeImportedResourceMap = ReadonlyMap<string, RuntimeArrayResource>;", runtime_export_types)
+		self.assertIn("export type RuntimeImportedGenericArray<T extends VariantArgument> = GDArray<T>;", runtime_export_types)
+		self.assertIn("export type RuntimeImportedGenericDictionary<T extends VariantArgument> = GDDictionary<string, T>;", runtime_export_types)
+		self.assertIn("export default class RuntimeExternalResource extends Resource", runtime_external_resource)
 		dependency_scan_test = (ROOT / "example/scripts/tests/dependency_scan_test.ts").read_text(encoding="utf-8")
 		self.assertIn('import(dynamicSpecifier, { with: { type: "./signal_test" } } as any)', dependency_scan_test)
 		self.assertIn('import("./runtime_helpers.js", { with: { type: "json" } } as any)', dependency_scan_test)
@@ -942,8 +985,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("} as const;", signal_test)
 		self.assertIn("} satisfies ExportMap;", signal_test)
 		self.assertIn('"threshold": { "type": "int", "hint": 1, "hint_string": "0,10,1", "default": 3 as const }', signal_test)
-		self.assertIn("static rpcConfig = {", signal_test)
-		self.assertIn('run_test: { mode: "authority", transferMode: "reliable", callLocal: true, channel: 0 }', signal_test)
+		self.assertIn("static rpc_config = {", signal_test)
+		self.assertIn('run_test: { rpc_mode: "authority", transfer_mode: "reliable", call_local: true, channel: 0 }', signal_test)
 		self.assertIn("} satisfies RpcConfig;", signal_test)
 		self.assertIn("const script = this.get_script() as { get_rpc_config(): VariantArgument };", signal_test)
 		self.assertIn('const rpcMetadata = dictionaryValue(script.get_rpc_config(), "run_test");', signal_test)
@@ -2012,11 +2055,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_generated_builtin_constructors_match_typescript_contract(self):
 		from generator.builtin_classes_generator import napi_match_expr
-		from generator.dts_generator import godot_type_to_ts, sanitize_name
+		from generator.dts_generator import DtsGenerator
 		from generator.utils.type_mappings import js_class_name
 
 		api = load_extension_api()
 		dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
+		dts_generator = DtsGenerator.__new__(DtsGenerator)
 
 		def class_body(dts_name: str) -> str:
 			body = find_dts_class_body(dts, dts_name, exported=True)
@@ -2034,10 +2078,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 			for ctor in cls.get("constructors", []):
 				args = ctor.get("arguments", [])
-				params = ", ".join(
-					f"{sanitize_name(arg['name'])}: {godot_type_to_ts(arg['type'], is_input=True)}"
-					for arg in args
-				)
+				param_overrides = dts_generator._builtin_constructor_param_overrides(js_class_name(class_name), args)
+				params = dts_generator._format_params(args, param_overrides) if args else ""
 				if f"constructor({params});" not in body:
 					mismatches.append(f"{class_name} constructor({params}) missing dts declaration")
 
@@ -2443,6 +2485,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("export type VariantArgument = null | undefined | boolean | number | bigint | string", godot_dts)
 		self.assertIn("Map<VariantArgument, VariantArgument>", godot_dts)
 		self.assertIn("GDDictionary | { [key: string]: VariantArgument } | Map<VariantArgument, VariantArgument>", godot_dts)
+		self.assertIn("export class GDDictionary<K extends VariantArgument = VariantArgument, V extends VariantArgument = VariantArgument>", godot_dts)
+		self.assertIn("constructor(from_gd: GDDictionary<K, V> | { [key: string]: V } | Map<K, V>);", godot_dts)
+		self.assertIn("export class GDArray<T extends VariantArgument = VariantArgument>", godot_dts)
+		self.assertIn("get(index: number | bigint): T;", godot_dts)
 		self.assertIn("count: number | bigint", godot_dts)
 		self.assertNotIn("  const Color: typeof GodotModule.Color;", globals_dts)
 		self.assertNotIn("  const Engine: GodotModule.Engine;", globals_dts)
@@ -2451,10 +2497,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("hintString?:", globals_dts)
 		self.assertIn('  type RpcMode = "authority" | "any_peer" | "disabled" | number;', globals_dts)
 		self.assertIn('  type RpcTransferMode = "reliable" | "unreliable" | "unreliable_ordered" | number;', globals_dts)
-		self.assertIn("    transferMode?: RpcTransferMode;", globals_dts)
-		self.assertIn("    callLocal?: boolean;", globals_dts)
-		self.assertNotIn("transfer_mode?:", globals_dts)
-		self.assertNotIn("call_local?:", globals_dts)
+		self.assertIn("    rpc_mode?: RpcMode;", globals_dts)
+		self.assertIn("    transfer_mode?: RpcTransferMode;", globals_dts)
+		self.assertIn("    call_local?: boolean;", globals_dts)
+		self.assertNotIn("transferMode?:", globals_dts)
+		self.assertNotIn("callLocal?:", globals_dts)
 		export_options_body = globals_dts[
 			globals_dts.index("  interface ExportOptions {") :
 			globals_dts.index("  function Export(hint: number, hint_string?: string): any;")
