@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
-import { Color, Engine, GD, GDArray, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, Resource, ResourceLoader, ResourceSaver, type VariantArgument, Vector2, Vector2i, Vector3 } from "godot";
+import { Color, Engine, GD, GDArray, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, Resource, ResourceLoader, ResourceSaver, type VariantArgument, Vector2, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import * as RuntimeBaseModule from "./runtime_base_test.js";
@@ -21,6 +21,7 @@ const VARIANT_TYPE_DICTIONARY = 27;
 const VARIANT_TYPE_ARRAY = 28;
 const VARIANT_TYPE_OBJECT = 24;
 const PROPERTY_HINT_NONE = 0;
+const PROPERTY_HINT_RANGE = 1;
 const PROPERTY_HINT_ENUM = 2;
 const PROPERTY_HINT_TYPE_STRING = 23;
 const PROPERTY_HINT_ARRAY_TYPE = 31;
@@ -114,6 +115,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 
 	@Export({ hint: 20, hint_string: "manual enum hint" })
 	editor_explicit_hint_enum: "first" | "second" = "first";
+
+	@Export({ hint: PropertyHint.PROPERTY_HINT_RANGE, hint_string: "0.1,16,0.1,or_greater" })
+	editor_range = 1;
 
 	run_test(): void {
 		void this.run();
@@ -285,6 +289,7 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"editor_mixed_union",
 				"editor_mixed_object_union",
 				"editor_explicit_hint_enum",
+				"editor_range",
 				"static_resource_default_first",
 				"static_image",
 				"static_number_array",
@@ -334,6 +339,10 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(Number(explicitHintEnumProperty.type), VARIANT_TYPE_STRING);
 			nodeAssert.equal(Number(explicitHintEnumProperty.hint), 20);
 			nodeAssert.equal(String(explicitHintEnumProperty.hint_string), "manual enum hint");
+			const rangeProperty = getExportProperty("editor_range");
+			nodeAssert.equal(Number(rangeProperty.type), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(rangeProperty.hint), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(rangeProperty.hint_string), "0.1,16,0.1,or_greater");
 
 			const exportedResource = new Resource();
 			exportedResource.resource_name = "PersistentRuntimeResource";
