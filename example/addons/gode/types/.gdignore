@@ -1,0 +1,2 @@
+# TypeScript declarations are compiler inputs, not Godot resources.
+.d.ts

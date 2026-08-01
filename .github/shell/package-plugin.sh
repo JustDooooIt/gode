@@ -53,6 +53,7 @@ required_files=(
 	"runtime/event_loop.gd"
 	"runtime/export_plugin.gd"
 	"runtime/typescript_compiler.js"
+	"types/.gdignore"
 	"types/globals.d.ts"
 	"types/godot.d.ts"
 )
