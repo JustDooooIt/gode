@@ -786,11 +786,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			'strcmp(node_type, "member_expression")',
 			'strcmp(node_type, "generic_type")',
 			"class_name_tail",
-			"ObjectExportKind",
+			"ExportTypeKind",
+			"ExportTypeClassification",
+			"type_text_from_annotation",
+			"find_type_alias_value_text",
 			"canonical_type_name",
 			"godot_class_name_from_type",
 			"classify_engine_object_class",
 			"resolve_typescript_object_kind",
+			"classify_export_type",
+			"apply_export_type_classification",
 			"configure_property_type",
 			"finalize_explicit_object_hint",
 			"PROPERTY_HINT_RESOURCE_TYPE",
@@ -900,6 +905,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("const VARIANT_TYPE_OBJECT = 24;", runtime_test)
 		self.assertIn("const PROPERTY_HINT_RESOURCE_TYPE = 17;", runtime_test)
 		self.assertIn("const PROPERTY_HINT_NODE_TYPE = 34;", runtime_test)
+		self.assertIn('type RuntimeEditorStringEnum = "idle" | \'running\' | null | "done";', runtime_test)
+		self.assertIn('editor_string_enum: RuntimeEditorStringEnum = "idle";', runtime_test)
+		self.assertIn('editor_string_enum_array: Array<RuntimeEditorStringEnum> = ["idle"];', runtime_test)
+		self.assertIn('editor_mixed_union: "automatic" | number = "automatic";', runtime_test)
+		self.assertIn("editor_mixed_object_union!: Resource | Node;", runtime_test)
+		self.assertIn('nodeAssert.equal(String(stringEnumProperty.hint_string), "idle,running,done");', runtime_test)
+		self.assertIn('assertArrayExportMetadata("editor_string_enum_array", `${VARIANT_TYPE_STRING}/${PROPERTY_HINT_ENUM}:idle,running,done`);', runtime_test)
+		self.assertIn('nodeAssert.equal(String(explicitHintEnumProperty.hint_string), "manual enum hint");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("resource_slot", PROPERTY_HINT_RESOURCE_TYPE, "Resource");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("image_slot", PROPERTY_HINT_RESOURCE_TYPE, "Image");', runtime_test)
 		self.assertIn('assertObjectExportMetadata("node_slot", PROPERTY_HINT_NODE_TYPE, "Node");', runtime_test)

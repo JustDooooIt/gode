@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <unordered_set>
 
 using namespace godot;
@@ -297,6 +298,39 @@ static TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_co
 	return {};
 }
 
+static std::string find_type_alias_value_text(TSNode root_node, uint32_t child_count, const std::string &source, const StringName &name) {
+	if (name.is_empty()) {
+		return std::string();
+	}
+
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		TSNode alias_node = {};
+		if (strcmp(ts_node_type(child), "type_alias_declaration") == 0) {
+			alias_node = child;
+		} else if (strcmp(ts_node_type(child), "export_statement") == 0) {
+			for (uint32_t j = 0; j < ts_node_named_child_count(child); j++) {
+				TSNode exported_child = ts_node_named_child(child, j);
+				if (strcmp(ts_node_type(exported_child), "type_alias_declaration") == 0) {
+					alias_node = exported_child;
+					break;
+				}
+			}
+		}
+		if (ts_node_is_null(alias_node)) {
+			continue;
+		}
+
+		TSNode name_node = ts_node_child_by_field_name(alias_node, "name", 4);
+		if (!node_text_matches_name(name_node, source, name)) {
+			continue;
+		}
+		TSNode value_node = ts_node_child_by_field_name(alias_node, "value", 5);
+		return node_text(source, value_node);
+	}
+	return std::string();
+}
+
 static bool import_specifier_binds_name(TSNode import_specifier, const std::string &source, const StringName &name) {
 	TSNode alias_node = ts_node_child_by_field_name(import_specifier, "alias", 5);
 	if (!ts_node_is_null(alias_node)) {
@@ -525,11 +559,22 @@ static bool parse_numeric_default(const std::string &text, Variant::Type propert
 	return true;
 }
 
-enum class ObjectExportKind {
-	NONE,
+enum class ExportTypeKind {
+	UNKNOWN,
+	BUILTIN,
+	ARRAY,
+	STRING_ENUM,
 	OBJECT,
 	RESOURCE,
 	NODE,
+};
+
+struct ExportTypeClassification {
+	ExportTypeKind kind = ExportTypeKind::UNKNOWN;
+	Variant::Type variant_type = Variant::NIL;
+	StringName class_name;
+	std::vector<std::string> string_enum_values;
+	std::unique_ptr<ExportTypeClassification> element_type;
 };
 
 static std::string string_to_utf8(const String &value) {
@@ -541,12 +586,77 @@ static std::string trim_type_text(const std::string &type_text) {
 	return string_to_utf8(String(type_text.c_str()).strip_edges());
 }
 
+static std::string type_text_from_annotation(TSNode type_node, const std::string &source) {
+	std::string type_text = trim_type_text(node_text(source, type_node));
+	if (!type_text.empty() && type_text.front() == ':') {
+		type_text = trim_type_text(type_text.substr(1));
+	}
+	return type_text;
+}
+
+static std::string unwrap_type_text_parentheses(const std::string &type_text) {
+	std::string unwrapped = trim_type_text(type_text);
+	while (unwrapped.size() >= 2 && unwrapped.front() == '(' && unwrapped.back() == ')') {
+		int paren_depth = 0;
+		char quote = '\0';
+		bool escaped = false;
+		bool encloses_entire_type = true;
+		for (size_t i = 0; i < unwrapped.size(); i++) {
+			const char c = unwrapped[i];
+			if (quote != '\0') {
+				if (escaped) {
+					escaped = false;
+				} else if (c == '\\') {
+					escaped = true;
+				} else if (c == quote) {
+					quote = '\0';
+				}
+				continue;
+			}
+			if (c == '"' || c == '\'') {
+				quote = c;
+			} else if (c == '(') {
+				paren_depth++;
+			} else if (c == ')') {
+				paren_depth--;
+				if (paren_depth == 0 && i + 1 < unwrapped.size()) {
+					encloses_entire_type = false;
+					break;
+				}
+			}
+		}
+		if (!encloses_entire_type || paren_depth != 0 || quote != '\0') {
+			break;
+		}
+		unwrapped = trim_type_text(unwrapped.substr(1, unwrapped.size() - 2));
+	}
+	return unwrapped;
+}
+
 static std::vector<std::string> split_top_level_union_types(const std::string &type_text) {
 	std::vector<std::string> parts;
 	std::string current;
 	int angle_depth = 0;
 	int paren_depth = 0;
+	char quote = '\0';
+	bool escaped = false;
 	for (char c : type_text) {
+		if (quote != '\0') {
+			current.push_back(c);
+			if (escaped) {
+				escaped = false;
+			} else if (c == '\\') {
+				escaped = true;
+			} else if (c == quote) {
+				quote = '\0';
+			}
+			continue;
+		}
+		if (c == '"' || c == '\'') {
+			quote = c;
+			current.push_back(c);
+			continue;
+		}
 		if (c == '<') {
 			angle_depth++;
 		} else if (c == '>' && angle_depth > 0) {
@@ -573,9 +683,7 @@ static std::string unwrap_nullable_type_text(const std::string &type_text) {
 	if (trimmed.rfind("readonly ", 0) == 0) {
 		trimmed = trim_type_text(trimmed.substr(strlen("readonly ")));
 	}
-	while (trimmed.size() >= 2 && trimmed.front() == '(' && trimmed.back() == ')') {
-		trimmed = trim_type_text(trimmed.substr(1, trimmed.size() - 2));
-	}
+	trimmed = unwrap_type_text_parentheses(trimmed);
 
 	std::vector<std::string> union_types = split_top_level_union_types(trimmed);
 	for (const std::string &part : union_types) {
@@ -643,37 +751,37 @@ static StringName godot_class_name_from_type(const std::string &type_str) {
 	return StringName(type_name.c_str());
 }
 
-static ObjectExportKind classify_engine_object_class(const StringName &class_name) {
+static ExportTypeKind classify_engine_object_class(const StringName &class_name) {
 	if (class_name.is_empty()) {
-		return ObjectExportKind::NONE;
+		return ExportTypeKind::UNKNOWN;
 	}
 	if (class_name == StringName("Resource")) {
-		return ObjectExportKind::RESOURCE;
+		return ExportTypeKind::RESOURCE;
 	}
 	if (class_name == StringName("Node")) {
-		return ObjectExportKind::NODE;
+		return ExportTypeKind::NODE;
 	}
 	if (class_name == StringName("Object") || class_name == StringName("RefCounted")) {
-		return ObjectExportKind::OBJECT;
+		return ExportTypeKind::OBJECT;
 	}
 
 	ClassDBSingleton *class_db = ClassDBSingleton::get_singleton();
 	if (!class_db || !class_db->class_exists(class_name)) {
-		return ObjectExportKind::NONE;
+		return ExportTypeKind::UNKNOWN;
 	}
 	if (class_db->is_parent_class(class_name, StringName("Resource"))) {
-		return ObjectExportKind::RESOURCE;
+		return ExportTypeKind::RESOURCE;
 	}
 	if (class_db->is_parent_class(class_name, StringName("Node"))) {
-		return ObjectExportKind::NODE;
+		return ExportTypeKind::NODE;
 	}
 	if (class_db->is_parent_class(class_name, StringName("Object"))) {
-		return ObjectExportKind::OBJECT;
+		return ExportTypeKind::OBJECT;
 	}
-	return ObjectExportKind::NONE;
+	return ExportTypeKind::UNKNOWN;
 }
 
-static Variant::Type parse_type_string(const std::string &type_str) {
+static Variant::Type parse_builtin_type_string(const std::string &type_str) {
 	const std::string type_name = canonical_type_name(type_str);
 	if (type_name == "bool" || type_name == "boolean" || type_name == "Boolean") {
 		return Variant::BOOL;
@@ -714,7 +822,15 @@ static Variant::Type parse_type_string(const std::string &type_str) {
 	if (type_name == "Array") {
 		return Variant::ARRAY;
 	}
-	if (classify_engine_object_class(godot_class_name_from_type(type_name)) != ObjectExportKind::NONE) {
+	return Variant::NIL;
+}
+
+static Variant::Type parse_type_string(const std::string &type_str) {
+	const Variant::Type builtin_type = parse_builtin_type_string(type_str);
+	if (builtin_type != Variant::NIL) {
+		return builtin_type;
+	}
+	if (classify_engine_object_class(godot_class_name_from_type(type_str)) != ExportTypeKind::UNKNOWN) {
 		return Variant::OBJECT;
 	}
 	return Variant::NIL;
@@ -759,13 +875,6 @@ static TSNode unwrap_metadata_expression(TSNode node) {
 
 static bool parse_default_value(TSNode value_node, const std::string &source, Variant::Type property_type, Variant &r_value);
 static TSNode find_default_class(TSNode root_node, uint32_t child_count, const std::string &source);
-static void configure_property_type(
-		PropertyInfo &property,
-		const std::string &type_str,
-		const String &file_path,
-		const std::string &source,
-		TSNode root_node,
-		uint32_t child_count);
 
 // PROPERTY_HINT_ARRAY_TYPE encodes the element PropertyInfo as
 // "VariantType/PropertyHint:hint_string". Passing only a class name makes the
@@ -801,7 +910,7 @@ static StringName qualifier_from_type_text(const std::string &type_str) {
 	return StringName(expression.substr(0, separator).strip_edges());
 }
 
-static ObjectExportKind resolve_typescript_object_kind(
+static ExportTypeKind resolve_typescript_object_kind(
 		const String &file_path,
 		const std::string &source,
 		TSNode root_node,
@@ -811,17 +920,17 @@ static ObjectExportKind resolve_typescript_object_kind(
 		int depth,
 		std::unordered_set<std::string> &visited) {
 	if (class_name.is_empty() || depth > 8) {
-		return ObjectExportKind::NONE;
+		return ExportTypeKind::UNKNOWN;
 	}
 
-	ObjectExportKind engine_kind = classify_engine_object_class(class_name);
-	if (engine_kind != ObjectExportKind::NONE) {
+	ExportTypeKind engine_kind = classify_engine_object_class(class_name);
+	if (engine_kind != ExportTypeKind::UNKNOWN) {
 		return engine_kind;
 	}
 
 	const std::string visit_key = string_to_utf8(file_path) + "::" + string_to_utf8(String(class_qualifier)) + "." + string_to_utf8(String(class_name));
 	if (visited.find(visit_key) != visited.end()) {
-		return ObjectExportKind::NONE;
+		return ExportTypeKind::UNKNOWN;
 	}
 	visited.insert(visit_key);
 
@@ -840,28 +949,28 @@ static ObjectExportKind resolve_typescript_object_kind(
 	if (ts_node_is_null(class_node)) {
 		String imported_path = resolve_imported_class_path(file_path, source, root_node, child_count, class_name, class_qualifier);
 		if (imported_path.is_empty()) {
-			return ObjectExportKind::NONE;
+			return ExportTypeKind::UNKNOWN;
 		}
 
 		String imported_source = FileAccess::get_file_as_string(imported_path);
 		if (FileAccess::get_open_error() != OK) {
-			return ObjectExportKind::NONE;
+			return ExportTypeKind::UNKNOWN;
 		}
 
 		next_file_path = imported_path;
 		next_source = imported_source.utf8().get_data();
 		external_parser = ts_parser_new();
 		if (!external_parser) {
-			return ObjectExportKind::NONE;
+			return ExportTypeKind::UNKNOWN;
 		}
 		if (!ts_parser_set_language(external_parser, tree_sitter_typescript())) {
 			ts_parser_delete(external_parser);
-			return ObjectExportKind::NONE;
+			return ExportTypeKind::UNKNOWN;
 		}
 		external_tree = ts_parser_parse_string(external_parser, nullptr, next_source.c_str(), next_source.length());
 		if (!external_tree) {
 			ts_parser_delete(external_parser);
-			return ObjectExportKind::NONE;
+			return ExportTypeKind::UNKNOWN;
 		}
 
 		next_root_node = ts_tree_root_node(external_tree);
@@ -872,7 +981,7 @@ static ObjectExportKind resolve_typescript_object_kind(
 		}
 	}
 
-	ObjectExportKind result = ObjectExportKind::NONE;
+	ExportTypeKind result = ExportTypeKind::UNKNOWN;
 	if (!ts_node_is_null(class_node)) {
 		TSNode base_node = extends_class_node_from_class(class_node);
 		if (!ts_node_is_null(base_node)) {
@@ -891,6 +1000,161 @@ static ObjectExportKind resolve_typescript_object_kind(
 	return result;
 }
 
+static bool is_nullish_type_text(const std::string &type_text) {
+	return type_text == "null" || type_text == "undefined" || type_text == "void";
+}
+
+static bool is_string_literal_type_text(const std::string &type_text) {
+	return type_text.size() >= 2 &&
+			((type_text.front() == '"' && type_text.back() == '"') ||
+					(type_text.front() == '\'' && type_text.back() == '\''));
+}
+
+static ExportTypeClassification classify_export_type(
+		const std::string &type_str,
+		const String &file_path,
+		const std::string &source,
+		TSNode root_node,
+		uint32_t child_count,
+		int alias_depth = 0) {
+	ExportTypeClassification classification;
+	if (alias_depth > 8) {
+		return classification;
+	}
+	std::string normalized = trim_type_text(type_str);
+	if (normalized.rfind("readonly ", 0) == 0) {
+		normalized = trim_type_text(normalized.substr(strlen("readonly ")));
+	}
+	normalized = unwrap_type_text_parentheses(normalized);
+
+	std::vector<std::string> effective_types;
+	for (const std::string &part : split_top_level_union_types(normalized)) {
+		const std::string effective_part = unwrap_type_text_parentheses(part);
+		if (!is_nullish_type_text(effective_part)) {
+			effective_types.push_back(effective_part);
+		}
+	}
+	if (effective_types.empty()) {
+		return classification;
+	}
+	if (effective_types.size() > 1) {
+		for (const std::string &part : effective_types) {
+			if (!is_string_literal_type_text(part)) {
+				return classification;
+			}
+		}
+		classification.kind = ExportTypeKind::STRING_ENUM;
+		classification.variant_type = Variant::STRING;
+		for (const std::string &part : effective_types) {
+			classification.string_enum_values.push_back(strip_quotes(part));
+		}
+		return classification;
+	}
+
+	const std::string &effective_type = effective_types.front();
+	if (is_string_literal_type_text(effective_type)) {
+		return classification;
+	}
+	const std::string alias_value = find_type_alias_value_text(root_node, child_count, source, StringName(effective_type.c_str()));
+	if (!alias_value.empty()) {
+		return classify_export_type(alias_value, file_path, source, root_node, child_count, alias_depth + 1);
+	}
+
+	if (canonical_type_name(effective_type) == "Array") {
+		classification.kind = ExportTypeKind::ARRAY;
+		classification.variant_type = Variant::ARRAY;
+		const std::string element_type_str = array_element_type_text(effective_type);
+		if (!element_type_str.empty()) {
+			classification.element_type = std::make_unique<ExportTypeClassification>(classify_export_type(element_type_str, file_path, source, root_node, child_count, alias_depth));
+		}
+		return classification;
+	}
+
+	const Variant::Type builtin_type = parse_builtin_type_string(effective_type);
+	if (builtin_type != Variant::NIL) {
+		classification.kind = ExportTypeKind::BUILTIN;
+		classification.variant_type = builtin_type;
+		return classification;
+	}
+
+	const StringName type_class_name = godot_class_name_from_type(effective_type);
+	if (type_class_name.is_empty()) {
+		return classification;
+	}
+	ExportTypeKind object_kind = classify_engine_object_class(type_class_name);
+	if (object_kind == ExportTypeKind::UNKNOWN) {
+		std::unordered_set<std::string> visited;
+		object_kind = resolve_typescript_object_kind(file_path, source, root_node, child_count, type_class_name, qualifier_from_type_text(effective_type), 0, visited);
+	}
+	if (object_kind == ExportTypeKind::UNKNOWN) {
+		return classification;
+	}
+
+	classification.kind = object_kind;
+	classification.variant_type = Variant::OBJECT;
+	classification.class_name = type_class_name;
+	return classification;
+}
+
+static void apply_export_type_classification(PropertyInfo &property, const ExportTypeClassification &classification) {
+	property.type = classification.variant_type;
+	switch (classification.kind) {
+		case ExportTypeKind::UNKNOWN:
+		case ExportTypeKind::BUILTIN:
+			return;
+		case ExportTypeKind::STRING_ENUM: {
+			if (property.hint != PROPERTY_HINT_NONE) {
+				return;
+			}
+			property.hint = PROPERTY_HINT_ENUM;
+			for (size_t i = 0; i < classification.string_enum_values.size(); i++) {
+				if (i > 0) {
+					property.hint_string += ",";
+				}
+				property.hint_string += String(classification.string_enum_values[i].c_str());
+			}
+			return;
+		}
+		case ExportTypeKind::ARRAY: {
+			if (property.hint != PROPERTY_HINT_NONE || !classification.element_type || classification.element_type->kind == ExportTypeKind::UNKNOWN) {
+				return;
+			}
+			PropertyInfo element_property;
+			element_property.type = Variant::NIL;
+			element_property.hint = PROPERTY_HINT_NONE;
+			apply_export_type_classification(element_property, *classification.element_type);
+			if (element_property.type != Variant::NIL) {
+				property.hint = PROPERTY_HINT_ARRAY_TYPE;
+				property.hint_string = array_element_hint_string(element_property);
+			}
+			return;
+		}
+		case ExportTypeKind::OBJECT:
+		case ExportTypeKind::RESOURCE:
+		case ExportTypeKind::NODE:
+			break;
+	}
+
+	if (property.class_name.is_empty()) {
+		property.class_name = classification.class_name;
+	}
+	if (property.hint == PROPERTY_HINT_NONE) {
+		if (classification.kind == ExportTypeKind::RESOURCE) {
+			property.hint = PROPERTY_HINT_RESOURCE_TYPE;
+			property.hint_string = String(classification.class_name);
+		} else if (classification.kind == ExportTypeKind::NODE) {
+			property.hint = PROPERTY_HINT_NODE_TYPE;
+			property.hint_string = String(classification.class_name);
+		}
+	}
+	if ((property.hint == PROPERTY_HINT_RESOURCE_TYPE || property.hint == PROPERTY_HINT_NODE_TYPE) && property.hint_string.is_empty()) {
+		property.hint_string = String(classification.class_name);
+	}
+	if (property.hint == PROPERTY_HINT_RESOURCE_TYPE && !property.hint_string.is_empty()) {
+		property.class_name = StringName(property.hint_string);
+	}
+}
+
 static void configure_property_type(
 		PropertyInfo &property,
 		const std::string &type_str,
@@ -898,59 +1162,8 @@ static void configure_property_type(
 		const std::string &source,
 		TSNode root_node,
 		uint32_t child_count) {
-	property.type = parse_type_string(type_str);
-	if (property.type == Variant::ARRAY) {
-		const std::string element_type_str = array_element_type_text(type_str);
-		if (property.hint == PROPERTY_HINT_NONE && !element_type_str.empty()) {
-			PropertyInfo element_property;
-			element_property.type = Variant::NIL;
-			element_property.hint = PROPERTY_HINT_NONE;
-			configure_property_type(element_property, element_type_str, file_path, source, root_node, child_count);
-			if (element_property.type != Variant::NIL) {
-				property.hint = PROPERTY_HINT_ARRAY_TYPE;
-				property.hint_string = array_element_hint_string(element_property);
-			}
-		}
-		return;
-	}
-	const StringName type_class_name = godot_class_name_from_type(type_str);
-	if (type_class_name.is_empty() || type_class_name == StringName("Array")) {
-		return;
-	}
-
-	ObjectExportKind object_kind = classify_engine_object_class(type_class_name);
-	if (object_kind == ObjectExportKind::NONE) {
-		std::unordered_set<std::string> visited;
-		object_kind = resolve_typescript_object_kind(file_path, source, root_node, child_count, type_class_name, qualifier_from_type_text(type_str), 0, visited);
-	}
-
-	if (property.type == Variant::NIL && object_kind != ObjectExportKind::NONE) {
-		property.type = Variant::OBJECT;
-	}
-	if (property.type != Variant::OBJECT) {
-		return;
-	}
-
-	if (property.class_name.is_empty()) {
-		property.class_name = type_class_name;
-	}
-
-	if (property.hint == PROPERTY_HINT_NONE) {
-		if (object_kind == ObjectExportKind::RESOURCE) {
-			property.hint = PROPERTY_HINT_RESOURCE_TYPE;
-			property.hint_string = String(type_class_name);
-		} else if (object_kind == ObjectExportKind::NODE) {
-			property.hint = PROPERTY_HINT_NODE_TYPE;
-			property.hint_string = String(type_class_name);
-		}
-	}
-
-	if ((property.hint == PROPERTY_HINT_RESOURCE_TYPE || property.hint == PROPERTY_HINT_NODE_TYPE) && property.hint_string.is_empty()) {
-		property.hint_string = String(type_class_name);
-	}
-	if (property.hint == PROPERTY_HINT_RESOURCE_TYPE && !property.hint_string.is_empty()) {
-		property.class_name = StringName(property.hint_string);
-	}
+	const ExportTypeClassification classification = classify_export_type(type_str, file_path, source, root_node, child_count);
+	apply_export_type_classification(property, classification);
 }
 
 static void finalize_explicit_object_hint(PropertyInfo &property) {
@@ -1038,10 +1251,7 @@ static void collect_parent_properties(
 							pi.usage = PROPERTY_USAGE_DEFAULT;
 							TSNode ftype = ts_node_child_by_field_name(field, "type", 4);
 							if (!ts_node_is_null(ftype)) {
-								ftype = ts_node_named_child(ftype, 0);
-								uint32_t ts = ts_node_start_byte(ftype);
-								uint32_t te = ts_node_end_byte(ftype);
-								std::string type_str = source.substr(ts, te - ts);
+								std::string type_str = type_text_from_annotation(ftype, source);
 								configure_property_type(pi, type_str, file_path, source, root_node, child_count);
 							}
 							properties[prop_name] = pi;
@@ -1243,16 +1453,11 @@ static void collect_interfaces_from_node(TSNode root_node, uint32_t child_count,
 
 			TSNode type_node = ts_node_child_by_field_name(member, "type", 4);
 			if (!ts_node_is_null(type_node)) {
-				TSNode inner = ts_node_named_child(type_node, 0);
-				if (!ts_node_is_null(inner)) {
-					uint32_t ts = ts_node_start_byte(inner);
-					uint32_t te = ts_node_end_byte(inner);
-					std::string type_str = source.substr(ts, te - ts);
-					configure_property_type(pi, type_str, file_path, source, root_node, child_count);
-					// Preserve the raw type name so nested object detection can use it when the type is not a known Variant.
-					if (pi.type == Variant::NIL) {
-						pi.class_name = StringName(type_str.c_str());
-					}
+				std::string type_str = type_text_from_annotation(type_node, source);
+				configure_property_type(pi, type_str, file_path, source, root_node, child_count);
+				// Preserve the raw type name so nested object detection can use it when the type is not a known Variant.
+				if (pi.type == Variant::NIL) {
+					pi.class_name = StringName(type_str.c_str());
 				}
 			}
 
@@ -1887,13 +2092,8 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 
 			std::string type_str;
 			if (!ts_node_is_null(field_type_node)) {
-				TSNode inner_type = ts_node_named_child(field_type_node, 0);
-				if (!ts_node_is_null(inner_type)) {
-					uint32_t ts = ts_node_start_byte(inner_type);
-					uint32_t te = ts_node_end_byte(inner_type);
-					type_str = source.substr(ts, te - ts);
-					configure_property_type(pi, type_str, file_path, source, root_node, child_count);
-				}
+				type_str = type_text_from_annotation(field_type_node, source);
+				configure_property_type(pi, type_str, file_path, source, root_node, child_count);
 			}
 			finalize_explicit_object_hint(pi);
 

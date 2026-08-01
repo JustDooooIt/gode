@@ -14,9 +14,13 @@ import { buildRuntimePayload, moduleMarker, waitForEventLoopTurn } from "./runti
 v8.setFlagsFromString("--expose-gc");
 const forceGarbageCollection = vm.runInNewContext("gc") as () => void;
 const GODOT_OK = 0;
+const VARIANT_TYPE_NIL = 0;
 const VARIANT_TYPE_FLOAT = 3;
+const VARIANT_TYPE_STRING = 4;
 const VARIANT_TYPE_ARRAY = 28;
 const VARIANT_TYPE_OBJECT = 24;
+const PROPERTY_HINT_NONE = 0;
+const PROPERTY_HINT_ENUM = 2;
 const PROPERTY_HINT_ARRAY_TYPE = 31;
 const PROPERTY_HINT_RESOURCE_TYPE = 17;
 const PROPERTY_HINT_NODE_TYPE = 34;
@@ -34,6 +38,7 @@ function assertApprox(actual: number, expected: number, epsilon: number, message
 
 type GodeLoadEsm = (filepath: string, source: string) => Promise<{ [key: string]: VariantArgument }>;
 type GodeCompileEsm = (source: string, filepath: string) => Promise<{ [key: string]: VariantArgument }>;
+type RuntimeEditorStringEnum = "idle" | 'running' | null | "done";
 
 class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	static signals = {
@@ -86,6 +91,21 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 
 	@Export()
 	editor_readonly_custom_resource_array: ReadonlyArray<RuntimeArrayResource> = [];
+
+	@Export()
+	editor_string_enum: RuntimeEditorStringEnum = "idle";
+
+	@Export()
+	editor_string_enum_array: Array<RuntimeEditorStringEnum> = ["idle"];
+
+	@Export()
+	editor_mixed_union: "automatic" | number = "automatic";
+
+	@Export()
+	editor_mixed_object_union!: Resource | Node;
+
+	@Export({ hint: 20, hint_string: "manual enum hint" })
+	editor_explicit_hint_enum: "first" | "second" = "first";
 
 	run_test(): void {
 		void this.run();
@@ -250,6 +270,11 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"editor_custom_resource_array",
 				"editor_generic_number_array",
 				"editor_readonly_custom_resource_array",
+				"editor_string_enum",
+				"editor_string_enum_array",
+				"editor_mixed_union",
+				"editor_mixed_object_union",
+				"editor_explicit_hint_enum",
 				"static_resource_default_first",
 				"static_image",
 				"static_number_array",
@@ -277,6 +302,20 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			assertArrayExportMetadata("editor_readonly_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
 			assertArrayExportMetadata("static_number_array", `${VARIANT_TYPE_FLOAT}:`);
 			assertArrayExportMetadata("static_custom_resource_array", `${VARIANT_TYPE_OBJECT}/${PROPERTY_HINT_RESOURCE_TYPE}:RuntimeArrayResource`);
+			const stringEnumProperty = getExportProperty("editor_string_enum");
+			nodeAssert.equal(Number(stringEnumProperty.type), VARIANT_TYPE_STRING);
+			nodeAssert.equal(Number(stringEnumProperty.hint), PROPERTY_HINT_ENUM);
+			nodeAssert.equal(String(stringEnumProperty.hint_string), "idle,running,done");
+			assertArrayExportMetadata("editor_string_enum_array", `${VARIANT_TYPE_STRING}/${PROPERTY_HINT_ENUM}:idle,running,done`);
+			for (const name of ["editor_mixed_union", "editor_mixed_object_union"]) {
+				const mixedUnionProperty = getExportProperty(name);
+				nodeAssert.equal(Number(mixedUnionProperty.type), VARIANT_TYPE_NIL);
+				nodeAssert.equal(Number(mixedUnionProperty.hint), PROPERTY_HINT_NONE);
+			}
+			const explicitHintEnumProperty = getExportProperty("editor_explicit_hint_enum");
+			nodeAssert.equal(Number(explicitHintEnumProperty.type), VARIANT_TYPE_STRING);
+			nodeAssert.equal(Number(explicitHintEnumProperty.hint), 20);
+			nodeAssert.equal(String(explicitHintEnumProperty.hint_string), "manual enum hint");
 
 			const exportedResource = new Resource();
 			exportedResource.resource_name = "PersistentRuntimeResource";
