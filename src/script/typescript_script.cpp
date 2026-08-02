@@ -12,6 +12,7 @@
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -450,6 +451,84 @@ static TSNode import_clause_from_statement(TSNode import_statement) {
 	return {};
 }
 
+static std::string import_source_from_statement(TSNode import_statement, const std::string &source) {
+	TSNode src = ts_node_child_by_field_name(import_statement, "source", 6);
+	if (ts_node_is_null(src)) {
+		return std::string();
+	}
+	return strip_quotes(node_text(source, src));
+}
+
+static bool import_statement_is_type_only(TSNode import_statement, const std::string &source) {
+	std::string text = node_text(source, import_statement);
+	while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+		text.erase(text.begin());
+	}
+	return text.rfind("import type", 0) == 0;
+}
+
+static bool godot_named_import_resolves_symbol(const std::string &source, TSNode root_node, uint32_t child_count, const std::string &local_name, const char *expected_imported_name) {
+	if (local_name.empty()) {
+		return false;
+	}
+	const StringName local_name_string(local_name.c_str());
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "import_statement") != 0 ||
+				import_statement_is_type_only(child, source) ||
+				import_source_from_statement(child, source) != "godot") {
+			continue;
+		}
+		TSNode clause = import_clause_from_statement(child);
+		if (ts_node_is_null(clause)) {
+			continue;
+		}
+		for (uint32_t j = 0; j < ts_node_named_child_count(clause); j++) {
+			TSNode clause_child = ts_node_named_child(clause, j);
+			if (strcmp(ts_node_type(clause_child), "named_imports") != 0) {
+				continue;
+			}
+			for (uint32_t k = 0; k < ts_node_named_child_count(clause_child); k++) {
+				TSNode imported = ts_node_named_child(clause_child, k);
+				StringName imported_name;
+				if (strcmp(ts_node_type(imported), "import_specifier") == 0 &&
+						import_specifier_resolves_name(imported, source, local_name_string, imported_name) &&
+						String(imported_name) == String(expected_imported_name)) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+static bool godot_namespace_import_binds_name(const std::string &source, TSNode root_node, uint32_t child_count, const std::string &namespace_name) {
+	if (namespace_name.empty()) {
+		return false;
+	}
+	const StringName namespace_name_string(namespace_name.c_str());
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "import_statement") != 0 ||
+				import_statement_is_type_only(child, source) ||
+				import_source_from_statement(child, source) != "godot") {
+			continue;
+		}
+		TSNode clause = import_clause_from_statement(child);
+		if (ts_node_is_null(clause)) {
+			continue;
+		}
+		for (uint32_t j = 0; j < ts_node_named_child_count(clause); j++) {
+			TSNode clause_child = ts_node_named_child(clause, j);
+			if (strcmp(ts_node_type(clause_child), "namespace_import") == 0 &&
+					namespace_import_binds_qualifier(clause_child, source, namespace_name_string)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 static ImportedSymbolResolution resolve_imported_symbol(const String &file_path, const std::string &source, TSNode root_node, uint32_t child_count, const StringName &local_name, const StringName &qualifier = StringName(), bool include_dts = false) {
 	ImportedSymbolResolution resolution;
 	if (local_name.is_empty()) {
@@ -506,13 +585,7 @@ static ImportedSymbolResolution resolve_imported_symbol(const String &file_path,
 			continue;
 		}
 
-		TSNode src = ts_node_child_by_field_name(child, "source", 6);
-		if (ts_node_is_null(src)) {
-			continue;
-		}
-		uint32_t ss = ts_node_start_byte(src);
-		uint32_t se = ts_node_end_byte(src);
-		std::string import_path = source.substr(ss + 1, se - ss - 2);
+		std::string import_path = import_source_from_statement(child, source);
 		resolution.path = resolve_imported_typescript_path(file_path, import_path, include_dts);
 		resolution.imported_name = imported_name;
 		resolution.default_import = default_import;
@@ -2162,31 +2235,7 @@ static bool parse_int_metadata_value(TSNode value, const std::string &source, in
 	return false;
 }
 
-static bool parse_property_hint_value(TSNode value, const std::string &source, PropertyHint &r_hint) {
-	value = unwrap_metadata_expression(value);
-	if (ts_node_is_null(value)) {
-		return false;
-	}
-
-	if (strcmp(ts_node_type(value), "number") == 0) {
-		int parsed = 0;
-		if (!parse_non_negative_int(node_text(source, value), parsed)) {
-			return false;
-		}
-		r_hint = static_cast<PropertyHint>(parsed);
-		return true;
-	}
-
-	if (strcmp(ts_node_type(value), "member_expression") != 0) {
-		return false;
-	}
-	const std::string expression = node_text(source, value);
-	constexpr const char *PROPERTY_HINT_PREFIX = "PropertyHint.";
-	if (expression.rfind(PROPERTY_HINT_PREFIX, 0) != 0) {
-		return false;
-	}
-	const std::string member_name = expression.substr(strlen(PROPERTY_HINT_PREFIX));
-
+static bool resolve_property_hint_member(const std::string &member_name, PropertyHint &r_hint) {
 #define MATCH_PROPERTY_HINT(m_hint) \
 	if (member_name == #m_hint) {      \
 		r_hint = m_hint;                 \
@@ -2238,8 +2287,72 @@ static bool parse_property_hint_value(TSNode value, const std::string &source, P
 	MATCH_PROPERTY_HINT(PROPERTY_HINT_FILE_PATH)
 	MATCH_PROPERTY_HINT(PROPERTY_HINT_MAX)
 #undef MATCH_PROPERTY_HINT
+	return false;
+}
+
+static std::vector<std::string> split_member_expression_path(const std::string &expression) {
+	std::vector<std::string> parts;
+	size_t start = 0;
+	while (start <= expression.size()) {
+		size_t end = expression.find('.', start);
+		std::string part = trim_type_text(expression.substr(start, end == std::string::npos ? std::string::npos : end - start));
+		if (part.empty()) {
+			return {};
+		}
+		parts.push_back(part);
+		if (end == std::string::npos) {
+			break;
+		}
+		start = end + 1;
+	}
+	return parts;
+}
+
+static bool property_hint_member_from_expression(TSNode value, const std::string &source, TSNode root_node, uint32_t child_count, std::string &r_member_name) {
+	if (strcmp(ts_node_type(value), "member_expression") != 0) {
+		return false;
+	}
+
+	const std::vector<std::string> path = split_member_expression_path(node_text(source, value));
+	if (path.size() == 2) {
+		if (path[0] == "PropertyHint" ||
+				godot_named_import_resolves_symbol(source, root_node, child_count, path[0], "PropertyHint")) {
+			r_member_name = path[1];
+			return true;
+		}
+		return false;
+	}
+
+	if (path.size() == 3 &&
+			path[1] == "PropertyHint" &&
+			godot_namespace_import_binds_name(source, root_node, child_count, path[0])) {
+		r_member_name = path[2];
+		return true;
+	}
 
 	return false;
+}
+
+static bool parse_property_hint_value(TSNode value, const std::string &source, TSNode root_node, uint32_t child_count, PropertyHint &r_hint) {
+	value = unwrap_metadata_expression(value);
+	if (ts_node_is_null(value)) {
+		return false;
+	}
+
+	if (strcmp(ts_node_type(value), "number") == 0) {
+		int parsed = 0;
+		if (!parse_non_negative_int(node_text(source, value), parsed)) {
+			return false;
+		}
+		r_hint = static_cast<PropertyHint>(parsed);
+		return true;
+	}
+
+	std::string member_name;
+	if (!property_hint_member_from_expression(value, source, root_node, child_count, member_name)) {
+		return false;
+	}
+	return resolve_property_hint_member(member_name, r_hint);
 }
 
 static bool parse_metadata_string_value(TSNode value, const std::string &source, String &r_value) {
@@ -2435,14 +2548,14 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 							}
 							std::string key_str = strip_quotes(source.substr(ts_node_start_byte(key), ts_node_end_byte(key) - ts_node_start_byte(key)));
 							if (key_str == "hint") {
-								parse_property_hint_value(val, source, export_hint);
+								parse_property_hint_value(val, source, root_node, child_count, export_hint);
 							} else if (key_str == "hint_string") {
 								parse_metadata_string_value(val, source, export_hint_string);
 							}
 						}
 					} else {
 						// @Export(hint) or @Export(hint, "hint_string").
-						parse_property_hint_value(first_arg, source, export_hint);
+						parse_property_hint_value(first_arg, source, root_node, child_count, export_hint);
 						if (nargs >= 2) {
 							TSNode second_arg = unwrap_metadata_expression(ts_node_named_child(args, 1));
 							parse_metadata_string_value(second_arg, source, export_hint_string);
@@ -2682,7 +2795,7 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, con
 				type_str = strip_quotes(node_text(source, fval));
 			} else if (field_key == "hint") {
 				PropertyHint parsed_hint = PROPERTY_HINT_NONE;
-				if (parse_property_hint_value(fval, source, parsed_hint)) {
+				if (parse_property_hint_value(fval, source, root_node, child_count, parsed_hint)) {
 					pi.hint = parsed_hint;
 				}
 			} else if (field_key == "hint_string") {
