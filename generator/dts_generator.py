@@ -337,14 +337,12 @@ class DtsGenerator(CodeGenerator):
 
     # ── Enum ──────────────────────────────────────────────────────────────────
 
-    def _gen_enum(self, enum_data: dict, indent: int, export: bool = False, const: bool = False, name: str = None) -> list:
+    def _gen_enum(self, enum_data: dict, indent: int, export: bool = False, name: str = None) -> list:
         ind  = self._ind(indent)
         ind2 = self._ind(indent + 1)
         prefix = ''
         if export:
             prefix += 'export '
-        if const:
-            prefix += 'const '
         enum_name = sanitize_name(name or enum_data['name'])
         lines = [f'{ind}{prefix}enum {enum_name} {{']
         for val in enum_data.get('values', []):

@@ -551,13 +551,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_template)
 		self.assertIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_classes_template)
 		self.assertIn("gode::godot_result_to_napi", register_template)
+		self.assertNotIn("const enum", godot_dts)
 		for enum_name in ("PropertyHint", "VariantType", "VariantOperator"):
 			self.assertIn(f'exports.Set("{enum_name}"', builtin_source)
 			self.assertIn(f"    export enum {enum_name} {{", godot_dts)
-			self.assertNotIn(f"    export const enum {enum_name} {{", godot_dts)
 		self.assertIn('exports.Set("ResourceLoader_CacheMode"', class_source)
 		self.assertIn("    export enum ResourceLoader_CacheMode {", godot_dts)
-		self.assertNotIn("    export const enum ResourceLoader_CacheMode {", godot_dts)
 
 	def test_value_convert_registry_and_cache_are_restart_safe(self):
 		header = (ROOT / "include/runtime/value_convert.h").read_text(encoding="utf-8")
@@ -2543,10 +2542,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("  function Signal(...args: any[]): any;", globals_dts)
 		self.assertIn("  function Tool(...args: any[]): any;", globals_dts)
 		self.assertNotIn("GodotModule.", globals_dts)
+		self.assertNotIn("const enum", godot_dts)
 		self.assertIn("    export enum VariantType {", godot_dts)
-		self.assertNotIn("    export const enum VariantType {", godot_dts)
 		self.assertIn("    export enum ResourceLoader_CacheMode {", godot_dts)
-		self.assertNotIn("    export const enum ResourceLoader_CacheMode {", godot_dts)
 		self.assertIn("    export class PhysicsServer3DExtension extends __GodotSingletonBases.PhysicsServer3D {", godot_dts)
 
 	def test_generated_dts_has_no_duplicate_class_member_declarations(self):
