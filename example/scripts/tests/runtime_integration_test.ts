@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
-import { Color, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, Resource, ResourceLoader, ResourceSaver, type VariantArgument, Vector2, Vector2i, Vector3 } from "godot";
+import * as GodotModule from "godot";
+import { Color, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, Resource, ResourceLoader, ResourceLoader_CacheMode, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import type RuntimeExternalResource from "./runtime_external_resource.js";
@@ -70,6 +71,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 		"static_imported_resource_array": { "type": "RuntimeExportTypes.RuntimeImportedResourceArray", "default": [] as const },
 		"static_imported_generic_dictionary": { "type": "RuntimeImportedGenericDictionary<RuntimeArrayResource>", "default": {} as const },
 		"static_imported_generic_external_array": { "type": "RuntimeImportedGenericArray<RuntimeExternalResource>", "default": [] as const },
+		"static_range_alias": { "type": "float", "hint": PropertyHintAlias.PROPERTY_HINT_RANGE, "hint_string": "0,8,0.5", "default": 2 as const },
+		"static_range_namespace": { "type": "float", "hint": GodotModule.PropertyHint.PROPERTY_HINT_RANGE, "hint_string": "0,4,1", "default": 3 as const },
 	} satisfies ExportMap;
 
 	label = "runtime" as string;
@@ -85,6 +88,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	static_imported_resource_array = [] as RuntimeExportTypes.RuntimeImportedResourceArray;
 	static_imported_generic_dictionary = {} as Record<string, RuntimeArrayResource>;
 	static_imported_generic_external_array = new GDArray() as RuntimeImportedGenericArray<RuntimeExternalResource>;
+	static_range_alias = 2 as number;
+	static_range_namespace = 3 as number;
 
 	@Export()
 	resource_slot: Resource | null = null;
@@ -168,7 +173,13 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	editor_explicit_hint_enum: "first" | "second" = "first";
 
 	@Export({ hint: PropertyHint.PROPERTY_HINT_RANGE, hint_string: "0.1,16,0.1,or_greater" })
-	editor_range = 1;
+	editor_range: number = 1;
+
+	@Export({ hint: PropertyHintAlias.PROPERTY_HINT_RANGE, hint_string: "0,8,0.5" })
+	editor_range_alias: number = 2;
+
+	@Export(GodotModule.PropertyHint.PROPERTY_HINT_RANGE, "0,4,1")
+	editor_range_namespace: number = 3;
 
 	run_test(): void {
 		void this.run();
@@ -191,6 +202,13 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(moduleMarker, "esm-runtime-helper");
 			nodeAssert.equal(path.posix.basename("res://scripts/tests/runtime_integration_test.ts"), "runtime_integration_test.ts");
 			nodeAssert.equal(ResourceLoader.exists(RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH, "TypeScriptScript"), true);
+			nodeAssert.equal(Number(PropertyHint.PROPERTY_HINT_RANGE), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(PropertyHint[PROPERTY_HINT_RANGE]), "PROPERTY_HINT_RANGE");
+			nodeAssert.equal(Number(PropertyHintAlias.PROPERTY_HINT_RANGE), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(Number(GodotModule.PropertyHint.PROPERTY_HINT_RANGE), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(Number(VariantType.TYPE_FLOAT), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(ResourceLoader_CacheMode.CACHE_MODE_REUSE), 1);
+			nodeAssert.equal(String(ResourceLoader_CacheMode[1]), "CACHE_MODE_REUSE");
 
 			const esmPayload = buildRuntimePayload("alpha");
 			nodeAssert.deepEqual(esmPayload.values, [1, 2, 3]);
@@ -374,6 +392,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"editor_mixed_object_union",
 				"editor_explicit_hint_enum",
 				"editor_range",
+				"editor_range_alias",
+				"editor_range_namespace",
 				"static_resource_default_first",
 				"static_image",
 				"static_number_array",
@@ -383,6 +403,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"static_imported_resource_array",
 				"static_imported_generic_dictionary",
 				"static_imported_generic_external_array",
+				"static_range_alias",
+				"static_range_namespace",
 				"inherited_label",
 				"inherited_count",
 			];
@@ -449,6 +471,22 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(Number(rangeProperty.type), VARIANT_TYPE_FLOAT);
 			nodeAssert.equal(Number(rangeProperty.hint), PROPERTY_HINT_RANGE);
 			nodeAssert.equal(String(rangeProperty.hint_string), "0.1,16,0.1,or_greater");
+			const rangeAliasProperty = getExportProperty("editor_range_alias");
+			nodeAssert.equal(Number(rangeAliasProperty.type), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(rangeAliasProperty.hint), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(rangeAliasProperty.hint_string), "0,8,0.5");
+			const rangeNamespaceProperty = getExportProperty("editor_range_namespace");
+			nodeAssert.equal(Number(rangeNamespaceProperty.type), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(rangeNamespaceProperty.hint), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(rangeNamespaceProperty.hint_string), "0,4,1");
+			const staticRangeAliasProperty = getExportProperty("static_range_alias");
+			nodeAssert.equal(Number(staticRangeAliasProperty.type), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(staticRangeAliasProperty.hint), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(staticRangeAliasProperty.hint_string), "0,8,0.5");
+			const staticRangeNamespaceProperty = getExportProperty("static_range_namespace");
+			nodeAssert.equal(Number(staticRangeNamespaceProperty.type), VARIANT_TYPE_FLOAT);
+			nodeAssert.equal(Number(staticRangeNamespaceProperty.hint), PROPERTY_HINT_RANGE);
+			nodeAssert.equal(String(staticRangeNamespaceProperty.hint_string), "0,4,1");
 
 			const exportedResource = new Resource();
 			exportedResource.resource_name = "PersistentRuntimeResource";
