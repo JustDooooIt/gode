@@ -1914,6 +1914,11 @@ static TSNode find_default_class(TSNode root_node, uint32_t child_count, const s
 	return find_class_declaration_by_name(root_node, child_count, source, exported_class_name);
 }
 
+static bool is_tool_decorator(const std::string &decorator) {
+	// Tool is declared as a decorator factory in the TypeScript definitions.
+	return decorator == "@Tool" || decorator == "@tool" || decorator == "@Tool()" || decorator == "@tool()";
+}
+
 static bool class_has_tool_decorator(TSNode class_node, const std::string &source) {
 	if (ts_node_is_null(class_node)) {
 		return false;
@@ -1924,7 +1929,7 @@ static bool class_has_tool_decorator(TSNode class_node, const std::string &sourc
 			continue;
 		}
 		std::string decorator = node_text(source, child);
-		if (decorator == "@Tool" || decorator == "@tool") {
+		if (is_tool_decorator(decorator)) {
 			return true;
 		}
 	}
@@ -1951,7 +1956,7 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 				uint32_t ds = ts_node_start_byte(en);
 				uint32_t de = ts_node_end_byte(en);
 				std::string deco = source.substr(ds, de - ds);
-				if (deco == "@Tool" || deco == "@tool") {
+				if (is_tool_decorator(deco)) {
 					return true;
 				}
 			}
@@ -1963,7 +1968,7 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 						uint32_t ds = ts_node_start_byte(cn);
 						uint32_t de = ts_node_end_byte(cn);
 						std::string deco = source.substr(ds, de - ds);
-						if (deco == "@Tool" || deco == "@tool") {
+						if (is_tool_decorator(deco)) {
 							return true;
 						}
 					}
