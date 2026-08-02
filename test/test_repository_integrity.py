@@ -544,19 +544,23 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		godot_dts = (ROOT / "example/addons/gode/types/godot.d.ts").read_text(encoding="utf-8")
 
 		self.assertIn("'global_enums': global_enums", register_generator)
-		self.assertIn("'singleton_enum_aliases': singleton_enum_aliases", register_generator)
+		self.assertNotIn("singleton_enum_aliases", register_generator)
 		self.assertIn("global_enum_export_name", binding_policy)
-		self.assertIn("singleton_enum_export_name", binding_policy)
+		self.assertNotIn("singleton_enum_export_name", binding_policy)
 		self.assertNotIn("from .dts_generator import", register_generator)
 		self.assertIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_template)
-		self.assertIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_classes_template)
+		self.assertNotIn('exports.Set("{{ enum.name }}", {{ enum.variable_name }});', register_classes_template)
 		self.assertIn("gode::godot_result_to_napi", register_template)
 		self.assertNotIn("const enum", godot_dts)
 		for enum_name in ("PropertyHint", "VariantType", "VariantOperator"):
 			self.assertIn(f'exports.Set("{enum_name}"', builtin_source)
 			self.assertIn(f"    export enum {enum_name} {{", godot_dts)
-		self.assertIn('exports.Set("ResourceLoader_CacheMode"', class_source)
-		self.assertIn("    export enum ResourceLoader_CacheMode {", godot_dts)
+		self.assertNotIn('exports.Set("ResourceLoader_CacheMode"', class_source)
+		self.assertNotIn("ResourceLoader_CacheMode", godot_dts)
+		self.assertIn("    export namespace ResourceLoader {", godot_dts)
+		self.assertIn("        export type CacheMode = 0 | 1 | 2 | 3 | 4;", godot_dts)
+		self.assertIn("            readonly CacheMode: {", godot_dts)
+		self.assertIn("            load(path: GDString | StringName | string, type_hint?: GDString | StringName | string, cache_mode?: import(\"godot\").ResourceLoader.CacheMode): Resource;", godot_dts)
 
 	def test_value_convert_registry_and_cache_are_restart_safe(self):
 		header = (ROOT / "include/runtime/value_convert.h").read_text(encoding="utf-8")
@@ -2285,19 +2289,33 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 			for enum in enums:
 				enum_name = sanitize_name(enum["name"])
-				enum_type = f"{dts_name}_{enum_name}" if is_singleton else f"{dts_name}.{enum_name}"
+				enum_type = f'import("godot").{dts_name}.{enum_name}' if is_singleton else f"{dts_name}.{enum_name}"
 				if f'func.As<Napi::Object>().Set("{enum["name"]}", enum_values);' not in source:
 					mismatches.append(f"{class_name}.{enum['name']} missing constructor enum object")
 				if f'prototype.Set("{enum["name"]}", enum_values);' not in source:
 					mismatches.append(f"{class_name}.{enum['name']} missing prototype enum object")
+				if is_singleton and re.search(rf"^\s+readonly {re.escape(enum_name)}: \{{", body, re.MULTILINE) is None:
+					mismatches.append(f"{class_name}.{enum_name} missing dts singleton enum object")
+				reverse_values = {}
 				for value in enum.get("values", []):
 					value_name = sanitize_name(value["name"])
 					if f'func.As<Napi::Object>().Set("{value["name"]}", gode::godot_result_to_napi(env,' not in source:
 						mismatches.append(f"{class_name}.{value['name']} missing constructor enum value")
 					if f'prototype.Set("{value["name"]}", gode::godot_result_to_napi(env,' not in source:
 						mismatches.append(f"{class_name}.{value['name']} missing prototype enum value")
+					if f'enum_values.Set(Napi::Number::New(env, {value["value"]}), Napi::String::New(env, "{value["name"]}"));' not in source:
+						mismatches.append(f"{class_name}.{value['name']} missing runtime enum reverse mapping")
 					if re.search(rf"^\s+{modifier} {re.escape(value_name)}: {re.escape(enum_type)};", body, re.MULTILINE) is None:
 						mismatches.append(f"{class_name}.{value_name} missing dts enum value")
+					reverse_values[value["value"]] = value["name"]
+				if is_singleton:
+					for value, value_name in reverse_values.items():
+						if re.search(
+							rf"^\s+readonly \[{re.escape(str(value))}\]: {re.escape(json.dumps(value_name))};",
+							body,
+							re.MULTILINE,
+						) is None:
+							mismatches.append(f"{class_name}.{value_name} missing dts singleton enum reverse mapping")
 
 		self.assertEqual([], mismatches)
 
@@ -2544,7 +2562,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("GodotModule.", globals_dts)
 		self.assertNotIn("const enum", godot_dts)
 		self.assertIn("    export enum VariantType {", godot_dts)
-		self.assertIn("    export enum ResourceLoader_CacheMode {", godot_dts)
+		self.assertIn("    export namespace ResourceLoader {", godot_dts)
+		self.assertIn("        export type CacheMode = 0 | 1 | 2 | 3 | 4;", godot_dts)
+		self.assertNotIn("ResourceLoader_CacheMode", godot_dts)
 		self.assertIn("    export class PhysicsServer3DExtension extends __GodotSingletonBases.PhysicsServer3D {", godot_dts)
 
 	def test_generated_dts_has_no_duplicate_class_member_declarations(self):
@@ -2560,14 +2580,17 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		for match in class_matches:
 			class_count += 1
 			seen = set()
+			nested_depth = 0
 			for line in match.group("body").splitlines():
 				declaration = line.strip()
 				if not declaration:
 					continue
-				if declaration in seen:
-					duplicates.append(f"{match.group('name')}: {declaration}")
-				else:
-					seen.add(declaration)
+				if nested_depth == 0:
+					if declaration in seen:
+						duplicates.append(f"{match.group('name')}: {declaration}")
+					else:
+						seen.add(declaration)
+				nested_depth += declaration.count("{") - declaration.count("}")
 
 		self.assertGreater(class_count, 0)
 		self.assertEqual([], duplicates)

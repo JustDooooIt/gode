@@ -157,7 +157,3 @@ def global_enum_export_name(enum_name: str) -> Optional[str]:
     if enum_name in GLOBAL_ENUM_ALIASES:
         return GLOBAL_ENUM_ALIASES[enum_name]
     return sanitize_ts_identifier(enum_name)
-
-
-def singleton_enum_export_name(owner_name: str, enum_name: str) -> str:
-    return f'{sanitize_ts_identifier(owner_name)}_{sanitize_ts_identifier(enum_name)}'

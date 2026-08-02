@@ -50,6 +50,7 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
         Napi::Object enum_values = Napi::Object::New(env);
         {% for value in enum["values"] %}
         enum_values.Set("{{ value.name }}", gode::godot_result_to_napi(env, {{ value.value }}));
+        enum_values.Set(Napi::Number::New(env, {{ value.value }}), Napi::String::New(env, "{{ value.name }}"));
         func.As<Napi::Object>().Set("{{ value.name }}", gode::godot_result_to_napi(env, {{ value.value }}));
         func.Get("prototype").As<Napi::Object>().Set("{{ value.name }}", gode::godot_result_to_napi(env, {{ value.value }}));
         {% endfor %}

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
 import * as GodotModule from "godot";
-import { Color, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, Resource, ResourceLoader, ResourceLoader_CacheMode, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3 } from "godot";
+import { Color, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, Node, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3 } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import type RuntimeExternalResource from "./runtime_external_resource.js";
@@ -207,8 +207,9 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(Number(PropertyHintAlias.PROPERTY_HINT_RANGE), PROPERTY_HINT_RANGE);
 			nodeAssert.equal(Number(GodotModule.PropertyHint.PROPERTY_HINT_RANGE), PROPERTY_HINT_RANGE);
 			nodeAssert.equal(Number(VariantType.TYPE_FLOAT), VARIANT_TYPE_FLOAT);
-			nodeAssert.equal(Number(ResourceLoader_CacheMode.CACHE_MODE_REUSE), 1);
-			nodeAssert.equal(String(ResourceLoader_CacheMode[1]), "CACHE_MODE_REUSE");
+			const cacheMode: ResourceLoader.CacheMode = ResourceLoader.CacheMode.CACHE_MODE_REUSE;
+			nodeAssert.equal(Number(cacheMode), 1);
+			nodeAssert.equal(String(ResourceLoader.CacheMode[1]), "CACHE_MODE_REUSE");
 
 			const esmPayload = buildRuntimePayload("alpha");
 			nodeAssert.deepEqual(esmPayload.values, [1, 2, 3]);

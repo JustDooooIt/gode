@@ -1,8 +1,7 @@
 from .base_generator import CodeGenerator
 from .utils.api_data import load_extension_api_json
-from .utils.binding_policy import global_enum_export_name, singleton_enum_export_name
+from .utils.binding_policy import global_enum_export_name
 from .utils.string_utils import to_snake_case
-from .utils.type_mappings import JS_CLASS_RENAME_MAP
 
 def enum_variable_name(name):
     variable_name = to_snake_case(name)
@@ -55,21 +54,6 @@ class RegisterGenerator(CodeGenerator):
                 'values': enum_def.get('values', []),
             })
 
-        singleton_names = {s['name'] for s in api_data.get('singletons', [])}
-        singleton_enum_aliases = []
-        for class_def in api_data['classes']:
-            class_name = class_def['name']
-            if class_name not in singleton_names:
-                continue
-            owner_name = JS_CLASS_RENAME_MAP.get(class_name, class_name)
-            for enum_def in class_def.get('enums', []):
-                export_name = singleton_enum_export_name(owner_name, enum_def['name'])
-                singleton_enum_aliases.append({
-                    'name': export_name,
-                    'variable_name': enum_variable_name(export_name),
-                    'values': enum_def.get('values', []),
-                })
-
         context = {
             'builtins': builtins,
             'classes': [], # We don't want to register classes globally anymore
@@ -100,7 +84,6 @@ class RegisterGenerator(CodeGenerator):
         context = {
             'classes': classes,
             'singletons': singletons,
-            'singleton_enum_aliases': singleton_enum_aliases,
         }
         self.render('register_classes.h.jinja2', context, 'register_classes.gen.h', 'include_dir')
         self.render('register_classes.cpp.jinja2', context, 'register_classes.gen.cpp', 'src_dir')

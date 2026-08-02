@@ -11,7 +11,6 @@ from .utils.binding_policy import (
     resolve_property_accessor,
     sanitize_ts_identifier,
     skipped_method_reason,
-    singleton_enum_export_name,
 )
 from .utils.type_mappings import (
     JS_CLASS_RENAME_MAP,
@@ -66,6 +65,12 @@ def member_name(name: str) -> str:
     return name
 
 
+def singleton_enum_type_ref(owner_name: str, enum_name: str) -> str:
+    owner_ts_name = sanitize_name(RENAME_MAP.get(owner_name, owner_name))
+    enum_ts_name = sanitize_name(enum_name)
+    return f'import("godot").{owner_ts_name}.{enum_ts_name}'
+
+
 def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_names: frozenset = frozenset(), meta: str = '') -> str:
     if not type_str:
         return 'void'
@@ -116,7 +121,7 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
             if cls == 'Variant' and enum == 'Operator':
                 return 'VariantOperator'
             if cls in singleton_class_names:
-                return f'{RENAME_MAP.get(cls, cls)}_{enum}'
+                return singleton_enum_type_ref(cls, enum)
             return f'{RENAME_MAP.get(cls, cls)}.{enum}'
         return inner  # global enum name
 
@@ -125,7 +130,7 @@ def godot_type_to_ts(type_str: str, is_input: bool = False, singleton_class_name
         if '.' in inner:
             cls, enum = inner.split('.', 1)
             if cls in singleton_class_names:
-                return f'{RENAME_MAP.get(cls, cls)}_{enum}'
+                return singleton_enum_type_ref(cls, enum)
             return f'{RENAME_MAP.get(cls, cls)}.{enum}'
         return 'number'
 
@@ -302,7 +307,7 @@ class DtsGenerator(CodeGenerator):
     def _enum_type_ref(self, owner_name: str, enum_name: str) -> str:
         enum_name = sanitize_name(enum_name)
         if owner_name in getattr(self, '_singleton_ts_names', frozenset()):
-            return f'{owner_name}_{enum_name}'
+            return singleton_enum_type_ref(owner_name, enum_name)
         return f'{owner_name}.{enum_name}'
 
     def _extends_type_to_ts(self, type_str: str) -> str:
@@ -350,7 +355,37 @@ class DtsGenerator(CodeGenerator):
         lines.append(f'{ind}}}')
         return lines
 
-    def _gen_enum_static_constants(self, enums: list, indent: int, owner_name: str, static: bool = True) -> list:
+    def _gen_singleton_enum_namespaces(self, owner_name: str, enums: list, indent: int) -> list:
+        if not enums:
+            return []
+
+        ind = self._ind(indent)
+        ind2 = self._ind(indent + 1)
+        lines = [f'{ind}export namespace {owner_name} {{']
+        for enum in enums:
+            enum_name = sanitize_name(enum['name'])
+            values = list(dict.fromkeys(str(value["value"]) for value in enum.get('values', [])))
+            value_type = ' | '.join(values) if values else 'never'
+            lines.append(f'{ind2}export type {enum_name} = {value_type};')
+        lines.append(f'{ind}}}')
+        return lines
+
+    def _gen_enum_object_property(self, enum_data: dict, indent: int, enum_type: str) -> list:
+        ind = self._ind(indent)
+        ind2 = self._ind(indent + 1)
+        enum_name = sanitize_name(enum_data['name'])
+        lines = [f'{ind}readonly {enum_name}: {{']
+        reverse_values = {}
+        for val in enum_data.get('values', []):
+            value_name = member_name(val['name'])
+            lines.append(f'{ind2}readonly {value_name}: {enum_type};')
+            reverse_values[val['value']] = val['name']
+        for value, value_name in reverse_values.items():
+            lines.append(f'{ind2}readonly [{value}]: {json.dumps(value_name)};')
+        lines.append(f'{ind}}};')
+        return lines
+
+    def _gen_enum_static_constants(self, enums: list, indent: int, owner_name: str, static: bool = True, seen: set = None) -> list:
         """Godot exposes class enum values directly on constructors at runtime.
 
         The nested namespace enum keeps enum types available as `Viewport.MSAA`,
@@ -359,13 +394,14 @@ class DtsGenerator(CodeGenerator):
         """
         ind = self._ind(indent)
         lines = []
-        seen = set()
+        seen = seen if seen is not None else set()
         modifier = 'static readonly' if static else 'readonly'
         for enum in enums:
             enum_name = sanitize_name(enum['name'])
             enum_type = self._enum_type_ref(owner_name, enum_name)
-            if not static:
-                lines.append(f'{ind}readonly {enum_name}: typeof {enum_type};')
+            if not static and enum_name not in seen:
+                seen.add(enum_name)
+                lines.extend(self._gen_enum_object_property(enum, indent, enum_type))
             for val in enum.get('values', []):
                 name = sanitize_name(val['name'])
                 if name in seen:
@@ -399,7 +435,7 @@ class DtsGenerator(CodeGenerator):
             ts_type = self._type_to_ts_with_meta(const['type'], meta=const.get('meta', ''))
             self._append_unique_line(lines, body_seen, f'{ind2}static readonly {const["name"]}: {ts_type};')
 
-        self._extend_unique_lines(lines, body_seen, self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1, ts_name, static=True))
+        lines.extend(self._gen_enum_static_constants(cls_data.get('enums', []), indent + 1, ts_name, static=True, seen=body_seen))
         member_names = {member['name'] for member in cls_data.get('members', [])}
 
         # Methods
@@ -454,14 +490,8 @@ class DtsGenerator(CodeGenerator):
         inherits = cls_data.get('inherits', '')
         extends = f' extends {self._extends_type_to_ts(inherits)}' if inherits else ' extends _GodotObject'
 
-        singleton_enums = cls_data.get('enums', []) if is_singleton else []
-        for enum in singleton_enums:
-            lines += self._gen_enum(
-                enum,
-                indent,
-                export=True,
-                name=singleton_enum_export_name(name, enum["name"]),
-            )
+        if is_singleton and cls_data.get('enums', []):
+            lines += self._gen_singleton_enum_namespaces(name, cls_data.get('enums', []), indent)
             lines.append('')
 
         if is_singleton:
@@ -477,7 +507,7 @@ class DtsGenerator(CodeGenerator):
             modifier = 'readonly' if is_singleton else 'static readonly'
             self._append_unique_line(lines, body_seen, f'{body_ind}{modifier} {const["name"]}: number;')
 
-        self._extend_unique_lines(lines, body_seen, self._gen_enum_static_constants(cls_data.get('enums', []), body_indent, name, static=not is_singleton))
+        lines.extend(self._gen_enum_static_constants(cls_data.get('enums', []), body_indent, name, static=not is_singleton, seen=body_seen))
 
         # Properties
         # Track which method names the methods loop will declare (to avoid duplicates)
