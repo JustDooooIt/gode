@@ -1,7 +1,15 @@
 from .base_generator import CodeGenerator
-from .dts_generator import SKIP_GLOBAL_ENUMS, VARIANT_ENUM_ALIASES
 from .utils.api_data import load_extension_api_json
+from .utils.binding_policy import global_enum_export_name, singleton_enum_export_name
 from .utils.string_utils import to_snake_case
+from .utils.type_mappings import JS_CLASS_RENAME_MAP
+
+def enum_variable_name(name):
+    variable_name = to_snake_case(name)
+    while "__" in variable_name:
+        variable_name = variable_name.replace("__", "_")
+    return variable_name
+
 
 class RegisterGenerator(CodeGenerator):
     def run(self):
@@ -38,18 +46,29 @@ class RegisterGenerator(CodeGenerator):
 
         global_enums = []
         for enum_def in api_data['global_enums']:
-            source_name = enum_def['name']
-            if source_name in SKIP_GLOBAL_ENUMS:
-                if source_name not in VARIANT_ENUM_ALIASES:
-                    continue
-                export_name = VARIANT_ENUM_ALIASES[source_name]
-            else:
-                export_name = source_name
+            export_name = global_enum_export_name(enum_def['name'])
+            if not export_name:
+                continue
             global_enums.append({
                 'name': export_name,
-                'variable_name': to_snake_case(export_name),
+                'variable_name': enum_variable_name(export_name),
                 'values': enum_def.get('values', []),
             })
+
+        singleton_names = {s['name'] for s in api_data.get('singletons', [])}
+        singleton_enum_aliases = []
+        for class_def in api_data['classes']:
+            class_name = class_def['name']
+            if class_name not in singleton_names:
+                continue
+            owner_name = JS_CLASS_RENAME_MAP.get(class_name, class_name)
+            for enum_def in class_def.get('enums', []):
+                export_name = singleton_enum_export_name(owner_name, enum_def['name'])
+                singleton_enum_aliases.append({
+                    'name': export_name,
+                    'variable_name': enum_variable_name(export_name),
+                    'values': enum_def.get('values', []),
+                })
 
         context = {
             'builtins': builtins,
@@ -80,7 +99,8 @@ class RegisterGenerator(CodeGenerator):
 
         context = {
             'classes': classes,
-            'singletons': singletons
+            'singletons': singletons,
+            'singleton_enum_aliases': singleton_enum_aliases,
         }
         self.render('register_classes.h.jinja2', context, 'register_classes.gen.h', 'include_dir')
         self.render('register_classes.cpp.jinja2', context, 'register_classes.gen.cpp', 'src_dir')

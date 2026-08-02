@@ -8,6 +8,23 @@ METHOD_BIND_OUT_ARGUMENTS = {
     ("VideoStreamPlayback", "mix_audio"): (1,),
 }
 
+TS_RESERVED_NAMES = frozenset([
+    'constructor', 'delete', 'class', 'new', 'return', 'typeof',
+    'void', 'function', 'var', 'let', 'const', 'if', 'else',
+    'for', 'while', 'break', 'continue', 'switch', 'case',
+    'default', 'import', 'export', 'from', 'extends', 'super',
+    'this', 'static', 'in', 'of', 'instanceof',
+    'throw', 'try', 'catch', 'finally', 'async', 'await',
+    'yield', 'debugger', 'with', 'enum',
+])
+
+# Godot exposes these as dotted global enum names. The JS/TS surface uses stable
+# module-level aliases because dotted identifiers are not valid exports.
+GLOBAL_ENUM_ALIASES = {
+    'Variant.Type': 'VariantType',
+    'Variant.Operator': 'VariantOperator',
+}
+
 VARIANT_OPERATOR_ENUM_NAMES = {
     '==': 'OP_EQUAL',
     '!=': 'OP_NOT_EQUAL',
@@ -127,3 +144,20 @@ def variant_operator_enum_name(operator_symbol: str) -> Optional[str]:
 
 def method_bind_out_argument_indices(class_name: str, method: dict) -> Sequence[int]:
     return METHOD_BIND_OUT_ARGUMENTS.get((class_name, method.get("name", "")), ())
+
+
+def sanitize_ts_identifier(name: str) -> str:
+    name = name.replace('-', '_')
+    if name in TS_RESERVED_NAMES:
+        return name + '_gd'
+    return name
+
+
+def global_enum_export_name(enum_name: str) -> Optional[str]:
+    if enum_name in GLOBAL_ENUM_ALIASES:
+        return GLOBAL_ENUM_ALIASES[enum_name]
+    return sanitize_ts_identifier(enum_name)
+
+
+def singleton_enum_export_name(owner_name: str, enum_name: str) -> str:
+    return f'{sanitize_ts_identifier(owner_name)}_{sanitize_ts_identifier(enum_name)}'

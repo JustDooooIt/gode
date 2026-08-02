@@ -1,4 +1,5 @@
 #include "register_builtin.gen.h"
+#include "runtime/value_convert.h"
 
 // Builtins
 {% for item in builtins %}
@@ -18,7 +19,7 @@ void register_builtin(Napi::Env env, Napi::Object exports) {
     {% for enum in global_enums %}
     Napi::Object {{ enum.variable_name }} = Napi::Object::New(env);
     {% for value in enum['values'] %}
-    {{ enum.variable_name }}.Set("{{ value['name'] }}", Napi::Number::New(env, {{ value['value'] }}));
+    {{ enum.variable_name }}.Set("{{ value['name'] }}", gode::godot_result_to_napi(env, {{ value['value'] }}));
     {{ enum.variable_name }}.Set(Napi::Number::New(env, {{ value['value'] }}), Napi::String::New(env, "{{ value['name'] }}"));
     {% endfor %}
     exports.Set("{{ enum.name }}", {{ enum.variable_name }});

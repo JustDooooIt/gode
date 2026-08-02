@@ -38,6 +38,17 @@ void register_classes(Napi::Env env, Napi::Object exports) {
     }
     {% endif %}
     {% endfor %}
+
+    // Register singleton enum aliases as module-level runtime objects. The DTS
+    // exposes these aliases because singleton instances cannot host namespaces.
+    {% for enum in singleton_enum_aliases %}
+    Napi::Object {{ enum.variable_name }} = Napi::Object::New(env);
+    {% for value in enum['values'] %}
+    {{ enum.variable_name }}.Set("{{ value['name'] }}", gode::godot_result_to_napi(env, {{ value['value'] }}));
+    {{ enum.variable_name }}.Set(Napi::Number::New(env, {{ value['value'] }}), Napi::String::New(env, "{{ value['name'] }}"));
+    {% endfor %}
+    exports.Set("{{ enum.name }}", {{ enum.variable_name }});
+    {% endfor %}
 }
 
 void reset_class_references() {
