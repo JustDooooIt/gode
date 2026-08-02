@@ -4,10 +4,14 @@ import json
 from .base_generator import CodeGenerator
 from .utils.api_data import load_extension_api_json
 from .utils.binding_policy import (
+    GLOBAL_ENUM_ALIASES,
     builtin_operator_method_name,
+    global_enum_export_name,
     method_conflicts_with_builtin_member,
     resolve_property_accessor,
+    sanitize_ts_identifier,
     skipped_method_reason,
+    singleton_enum_export_name,
 )
 from .utils.type_mappings import (
     JS_CLASS_RENAME_MAP,
@@ -36,26 +40,8 @@ JS_DICTIONARY_TYPE = f'{JS_OBJECT_TYPE} | {JS_MAP_TYPE}'
 # Builtin classes that map directly to JS primitives — skip class generation
 SKIP_BUILTINS = frozenset(['Nil', 'void', 'bool', 'int', 'float'])
 
-# Global enums to skip — exported below under JS-friendly aliases.
-SKIP_GLOBAL_ENUMS = frozenset(['Variant.Type', 'Variant.Operator'])
-VARIANT_ENUM_ALIASES = {
-    'Variant.Type': 'VariantType',
-    'Variant.Operator': 'VariantOperator',
-}
-
 # Rename map: Godot name → JS/TS API name (avoids conflicts with JS built-ins)
 RENAME_MAP = JS_CLASS_RENAME_MAP
-
-# Method/param names that are reserved in TypeScript/JS
-TS_RESERVED = frozenset([
-    'constructor', 'delete', 'class', 'new', 'return', 'typeof',
-    'void', 'function', 'var', 'let', 'const', 'if', 'else',
-    'for', 'while', 'break', 'continue', 'switch', 'case',
-    'default', 'import', 'export', 'from', 'extends', 'super',
-    'this', 'static', 'in', 'of', 'instanceof',
-    'throw', 'try', 'catch', 'finally', 'async', 'await',
-    'yield', 'debugger', 'with', 'enum',
-])
 
 UTILITY_RETURN_TYPE_OVERRIDES = {
     'instance_from_id': 'GodotObject | null',
@@ -70,15 +56,12 @@ UTILITY_ARGUMENT_TYPE_OVERRIDES = {
 
 
 def sanitize_name(name: str) -> str:
-    name = name.replace('-', '_')
-    if name in TS_RESERVED:
-        return name + '_gd'
-    return name
+    return sanitize_ts_identifier(name)
 
 
 def member_name(name: str) -> str:
     name = name.replace('-', '_')
-    if name in TS_RESERVED:
+    if sanitize_ts_identifier(name) != name:
         return json.dumps(name)
     return name
 
@@ -479,8 +462,7 @@ class DtsGenerator(CodeGenerator):
                 enum,
                 indent,
                 export=True,
-                const=True,
-                name=f'{name}_{sanitize_name(enum["name"])}',
+                name=singleton_enum_export_name(name, enum["name"]),
             )
             lines.append('')
 
@@ -597,15 +579,18 @@ class DtsGenerator(CodeGenerator):
             self._append_unique_line(lines, seen, f'{ind}{ind}{name}({params}): {ret};')
         return lines
 
-    def _gen_variant_alias_enums(self, api: dict) -> list:
+    def _gen_global_enums(self, api: dict) -> list:
         global_enums = {enum['name']: enum for enum in api.get('global_enums', [])}
-        missing = sorted(name for name in VARIANT_ENUM_ALIASES if name not in global_enums)
+        missing = sorted(name for name in GLOBAL_ENUM_ALIASES if name not in global_enums)
         if missing:
             raise KeyError(f"extension_api.json missing Variant enum(s): {', '.join(missing)}")
 
         lines = []
-        for source_name, alias_name in VARIANT_ENUM_ALIASES.items():
-            lines += self._gen_enum(global_enums[source_name], indent=1, export=True, const=True, name=alias_name)
+        for enum in api.get('global_enums', []):
+            export_name = global_enum_export_name(enum['name'])
+            if not export_name:
+                continue
+            lines += self._gen_enum(enum, indent=1, export=True, name=export_name)
             lines.append('')
         return lines
 
@@ -704,15 +689,7 @@ class DtsGenerator(CodeGenerator):
             '',
         ]
 
-        # Global enums
-        for enum in api.get('global_enums', []):
-            if enum['name'] in SKIP_GLOBAL_ENUMS:
-                continue
-            lines += self._gen_enum(enum, indent=1, export=True, const=True)
-            lines.append('')
-
-        # Variant enums are exported under JS-friendly aliases since VariantBinding is not generated.
-        lines += self._gen_variant_alias_enums(api)
+        lines += self._gen_global_enums(api)
 
         # Builtin classes (Vector2, Color, …)
         for cls in api.get('builtin_classes', []):
