@@ -222,6 +222,9 @@ void ScriptInstance::reload(bool p_keep_state) {
 			}
 		}
 	}
+	if (!p_keep_state) {
+		property_storage.clear();
+	}
 
 	js_instance.Reset();
 
@@ -348,11 +351,15 @@ bool ScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (log_and_clear_pending_js_exception(env, context)) {
 				return false;
 			}
+			property_storage[p_name] = p_value;
 			return true;
 		}
 		bool ok = js_instance.Set(property_name, js_value);
 		if (log_and_clear_pending_js_exception(env, context)) {
 			return false;
+		}
+		if (ok) {
+			property_storage[p_name] = p_value;
 		}
 		return ok;
 	} catch (const Napi::Error &e) {
@@ -428,7 +435,8 @@ bool ScriptInstance::get(const StringName &p_name, Variant &r_value) const {
 		if (log_and_clear_pending_js_exception(env, context)) {
 			return false;
 		}
-		r_value = converted;
+		property_storage[p_name] = converted;
+		r_value = property_storage[p_name];
 		return true;
 	} catch (const Napi::Error &e) {
 		log_js_error("JS property get " + prop_name, js_error_to_string(e));

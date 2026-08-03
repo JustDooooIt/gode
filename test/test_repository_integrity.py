@@ -1044,6 +1044,17 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("(void)p_add_func;", state_callback_body)
 		self.assertNotIn("(void)p_userdata;", state_callback_body)
 
+	def test_typescript_resource_properties_have_native_backing_storage(self):
+		script_instance_header = (ROOT / "include/script/script_instance.h").read_text(encoding="utf-8")
+		script_instance = (ROOT / "src/script/script_instance.cpp").read_text(encoding="utf-8")
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
+
+		self.assertIn("mutable godot::HashMap<godot::StringName, godot::Variant> property_storage;", script_instance_header)
+		self.assertIn("property_storage[p_name] = p_value;", script_instance)
+		self.assertIn("property_storage[p_name] = converted;", script_instance)
+		self.assertIn('ResourceLoader.load(RUNTIME_NESTED_RESOURCE_PATH)', runtime_test)
+		self.assertIn('nestedContainer.get("nested")', runtime_test)
+
 	def test_legacy_javascript_script_language_surface_is_removed(self):
 		for path in (
 			ROOT / "include/support",

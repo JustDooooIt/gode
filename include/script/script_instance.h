@@ -21,6 +21,11 @@ class ScriptInstance {
 	Napi::ObjectReference js_instance;
 	bool placeholder = false;
 	godot::HashMap<godot::StringName, godot::Variant> placeholder_properties;
+	// Keep exported values alive on the native side as well as in their JS fields.
+	// In particular, Resource references loaded from .tres files must outlive the
+	// temporary Variant passed to set() while the resource loader is resolving
+	// external dependencies.
+	mutable godot::HashMap<godot::StringName, godot::Variant> property_storage;
 
 	mutable std::vector<godot::PropertyInfo> prop_list_cache;
 	mutable std::vector<GDExtensionPropertyInfo> prop_list_gde;
