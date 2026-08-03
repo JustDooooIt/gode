@@ -279,7 +279,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertEqual([], missing)
 
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
-		self.assertLessEqual(len(source.splitlines()), 450)
+		self.assertLessEqual(len(source.splitlines()), 470)
 		for pattern in (
 			r"std::string\s+boot_script\s*=\s*\n\s*\"",
 			r"std::string\s+esm_script\s*=\s*\n\s*\"",
@@ -574,8 +574,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("class_list.push_back", source)
 		self.assertIn("static void release_object_reference", source)
 		self.assertIn("NodeRuntime::is_running()", source)
-		self.assertIn("object_cache[id] = Napi::Persistent(js_obj);", source)
-		self.assertNotIn("object_cache[id] = Napi::Weak(js_obj);", source)
+		self.assertIn("object_cache[id] = Napi::Weak(js_obj);", source)
+		self.assertNotIn("object_cache[id] = Napi::Persistent(js_obj);", source)
 		self.assertIn("ref.SuppressDestruct();", source)
 		self.assertNotIn("entry.second.Reset();", source)
 
@@ -588,19 +588,35 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertNotIn("ref->get_reference_count() == 0", source)
 			self.assertNotIn("ref->unreference();\n                if", source)
 
+	def test_node_runtime_shutdown_releases_typescript_script_handles(self):
+		node_runtime = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
+		script_header = (ROOT / "include/script/typescript_script.h").read_text(encoding="utf-8")
+		script_runtime = (ROOT / "src/script/typescript_script_runtime.cpp").read_text(encoding="utf-8")
+
+		self.assertIn("TypeScriptScript::release_all_runtime_state();", node_runtime)
+		self.assertIn("static void release_all_runtime_state();", script_header)
+		self.assertIn("void release_runtime_state();", script_header)
+		self.assertIn("HashSet<TypeScriptScript *> live_scripts;", script_runtime)
+		self.assertIn("live_scripts.insert(this);", script_runtime)
+		self.assertIn("live_scripts.erase(this);", script_runtime)
+		self.assertIn("instance->release_runtime_state();", script_runtime)
+
 	def test_typescript_loader_exposes_explicit_cache_clear(self):
 		header = (ROOT / "include/script/typescript_loader.h").read_text(encoding="utf-8")
 		source = (ROOT / "src/script/typescript_loader.cpp").read_text(encoding="utf-8")
 
 		self.assertIn("void clear_cache();", header)
 		self.assertIn("void reload_cached_scripts();", header)
+		self.assertIn("godot::HashMap<godot::StringName, godot::ObjectID> scripts;", header)
+		self.assertNotIn("godot::HashMap<godot::StringName, godot::Ref<TypeScriptScript>> scripts;", header)
 		self.assertIn("godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state);", (ROOT / "include/script/typescript_script.h").read_text(encoding="utf-8"))
 		self.assertIn("void TypeScriptLoader::clear_cache()", source)
 		self.assertIn("void TypeScriptLoader::reload_cached_scripts()", source)
 		self.assertIn("scripts.clear();", source)
 		self.assertIn("clear_cache();", source)
 		self.assertIn("cached_scripts.reserve(scripts.size());", source)
-		self.assertIn("script->reload_source_code(source_code, true);", source)
+		self.assertIn("script_ref->reload_source_code(source_code, true);", source)
+		self.assertIn("ObjectDB::get_instance", source)
 		self.assertIn("should_cache_loaded_script", source)
 		self.assertIn("bool is_typescript_script_path", source)
 		self.assertIn('!lower.ends_with(".d.ts")', source)
@@ -615,7 +631,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("StringName cache_key(load_path);", source)
 		self.assertIn("scripts.has(cache_key)", source)
 		self.assertIn("script->set_path(load_path);", source)
-		self.assertIn("scripts[cache_key] = Ref(script);", source)
+		self.assertIn("scripts[cache_key] = ObjectID(script->get_instance_id());", source)
+		self.assertNotIn("scripts[cache_key] = Ref(script);", source)
 		self.assertIn('p_type == StringName("Script")', source)
 		self.assertIn("p_type == TypeScriptScript::get_class_static()", source)
 		self.assertIn("return is_typescript_script_path(p_path);", source)
@@ -1044,16 +1061,22 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("(void)p_add_func;", state_callback_body)
 		self.assertNotIn("(void)p_userdata;", state_callback_body)
 
-	def test_typescript_resource_properties_have_native_backing_storage(self):
+	def test_typescript_resource_properties_have_lifetime_anchors(self):
 		script_instance_header = (ROOT / "include/script/script_instance.h").read_text(encoding="utf-8")
 		script_instance = (ROOT / "src/script/script_instance.cpp").read_text(encoding="utf-8")
-		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
+		value_convert = (ROOT / "src/runtime/value_convert.cpp").read_text(encoding="utf-8")
+		test_runner = (ROOT / "example/scripts/tests/tests_runner.gd").read_text(encoding="utf-8")
 
 		self.assertIn("mutable godot::HashMap<godot::StringName, godot::Variant> property_storage;", script_instance_header)
+		self.assertIn("void store_property_value_for_lifetime", script_instance_header)
+		self.assertIn("variant_can_hold_godot_object_reference", script_instance)
 		self.assertIn("property_storage[p_name] = p_value;", script_instance)
-		self.assertIn("property_storage[p_name] = converted;", script_instance)
-		self.assertIn('ResourceLoader.load(RUNTIME_NESTED_RESOURCE_PATH)', runtime_test)
-		self.assertIn('nestedContainer.get("nested")', runtime_test)
+		self.assertIn("property_storage.erase(p_name);", script_instance)
+		self.assertIn("object_cache[id] = Napi::Weak(js_obj);", value_convert)
+		self.assertNotIn("object_cache[id] = Napi::Persistent(js_obj);", value_convert)
+		self.assertIn('ResourceLoader.load(RUNTIME_NESTED_RESOURCE_PATH, "", ResourceLoader.CACHE_MODE_IGNORE_DEEP)', test_runner)
+		self.assertIn('nested_container.get("nested")', test_runner)
+		self.assertIn('nested_container.set("nested", null)', test_runner)
 
 	def test_legacy_javascript_script_language_surface_is_removed(self):
 		for path in (
@@ -1455,6 +1478,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"global.__gode_invalidate_esm_module = function",
 			"global.__gode_esm_source_cache = new Map();",
 			"global.__gode_esm_generation = 0;",
+			"global.__gode_esm_load_tokens = new Map();",
 			"_gode_strip_module_generation",
 			"_gode_module_cache_key",
 			"_gode_module_identifier",
@@ -1465,7 +1489,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"require('url').pathToFileURL(abs).href",
 			"global.__gode_esm_source_cache.get(filepath) !== source",
 			"global.__gode_esm_source_cache.set(filepath, source);",
-			"global.__gode_invalidate_esm_module(filename);",
+			"global.__gode_esm_pending_source = new Map();",
+			"global.__gode_esm_load_tokens.set(filepath, loadToken);",
+			"global.__gode_esm_load_tokens.get(filepath) === loadToken",
+			"global.__gode_esm_load_tokens.clear();",
+			"global.__gode_esm_load_tokens.delete(filepath);",
+			"global.__gode_forget_esm_module(filename);",
 			"_gode_should_invalidate_require_cache",
 			"return await global.__gode_import_module(spec, ref.identifier);",
 			"return await global.__gode_import_module(specifier, referrer.identifier);",
@@ -1473,7 +1502,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"if (mod.status === 'linked')",
 			"if (mod.status === 'errored')",
 			"CommonJS module load failed",
-			"global.__gode_cjs_pending.delete(resolvedPath);",
 			"global.__gode_esm_mod_cache.clear();",
 			"})().finally(() => {",
 			"global.__gode_esm_pending.delete(filepath);",

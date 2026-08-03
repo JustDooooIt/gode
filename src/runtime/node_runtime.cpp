@@ -252,6 +252,10 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 	while (promise->State() == v8::Promise::kPending) {
 		isolate->PerformMicrotaskCheckpoint();
 		uv_run(uv_default_loop(), UV_RUN_ONCE);
+		if (platform) {
+			platform->DrainTasks(isolate);
+		}
+		isolate->PerformMicrotaskCheckpoint();
 		if (promise->State() != v8::Promise::kPending) {
 			break;
 		}
@@ -395,6 +399,9 @@ void NodeRuntime::spin_loop() {
 
 	isolate->PerformMicrotaskCheckpoint();
 	uv_run(uv_default_loop(), UV_RUN_NOWAIT);
+	if (platform) {
+		platform->DrainTasks(isolate);
+	}
 	isolate->PerformMicrotaskCheckpoint();
 }
 
