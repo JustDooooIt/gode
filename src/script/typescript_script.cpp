@@ -9,6 +9,7 @@
 #include <v8-locker.h>
 #include <godot_cpp/classes/class_db_singleton.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -3034,7 +3035,15 @@ Napi::Function TypeScriptScript::get_default_class() const {
 		UtilityFunctions::printerr("[Gode TypeScript] Failed to read compiled script: ", js_path);
 		return Napi::Function();
 	}
-	Napi::Value exports = NodeRuntime::compile_script(js_code.utf8().get_data(), js_path.utf8().get_data());
+	String runtime_js_path = js_path;
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings && (js_path.begins_with("res://") || js_path.begins_with("user://"))) {
+		String globalized = project_settings->globalize_path(js_path);
+		if (!globalized.is_empty()) {
+			runtime_js_path = globalized;
+		}
+	}
+	Napi::Value exports = NodeRuntime::compile_script(js_code.utf8().get_data(), runtime_js_path.utf8().get_data());
 	Napi::Function cls = NodeRuntime::get_default_class(exports);
 
 	if (!cls.IsEmpty() && !cls.IsUndefined() && !cls.IsNull()) {

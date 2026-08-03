@@ -3,6 +3,7 @@
 
 #include "script/typescript_script.h"
 #include <godot_cpp/classes/resource_format_loader.hpp>
+#include <godot_cpp/core/object_id.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 
 namespace gode {
@@ -21,7 +22,7 @@ public:
 
 private:
 	static TypeScriptLoader *singleton;
-	mutable godot::HashMap<godot::StringName, godot::Ref<TypeScriptScript>> scripts;
+	mutable godot::HashMap<godot::StringName, godot::ObjectID> scripts;
 
 protected:
 	static void _bind_methods() {}

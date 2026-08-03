@@ -3,6 +3,8 @@ extends Node
 const TEST_FINISHED_SIGNAL := "test_finished"
 const RUN_TEST_METHOD := "run_test"
 const PASS_MARKER := "[GodeTest] all tests passed"
+const RUNTIME_NESTED_RESOURCE_PATH := "res://resources/tests/runtime_nested_outer.tres"
+const RUNTIME_NESTED_INNER_PATH := "res://resources/tests/runtime_nested_inner.tres"
 
 var tests: Array[Node] = []
 var current_index := -1
@@ -24,6 +26,8 @@ func _ready() -> void:
 func _run_next() -> void:
 	current_index += 1
 	if current_index >= tests.size():
+		if not _verify_nested_resource_fixture():
+			return
 		print(PASS_MARKER)
 		get_tree().quit(0)
 		return
@@ -91,3 +95,24 @@ func _on_test_finished(success: bool, message: String = "") -> void:
 func _fail(message: String) -> void:
 	push_error("[GodeTest] " + message)
 	get_tree().quit(1)
+
+
+func _verify_nested_resource_fixture() -> bool:
+	var nested_container := ResourceLoader.load(RUNTIME_NESTED_RESOURCE_PATH, "", ResourceLoader.CACHE_MODE_IGNORE_DEEP)
+	if not nested_container is Resource:
+		_fail("Nested Resource fixture did not load")
+		return false
+
+	var nested_resource = nested_container.get("nested")
+	if not nested_resource is Resource:
+		_fail("Resource export did not retain its nested Resource dependency")
+		return false
+
+	if nested_resource.resource_path != RUNTIME_NESTED_INNER_PATH:
+		_fail("Nested Resource fixture loaded wrong dependency: %s" % nested_resource.resource_path)
+		return false
+
+	nested_container.set("nested", null)
+	nested_resource.set_script(null)
+	nested_container.set_script(null)
+	return true

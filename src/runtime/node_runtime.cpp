@@ -6,6 +6,7 @@
 #include "runtime/node_godot_bridge.h"
 #include "runtime/node_inspector.h"
 #include "runtime/node_module_resolver.h"
+#include "script/typescript_script.h"
 #include "utility_functions/utility_functions.h"
 
 #include <node.h>
@@ -251,6 +252,10 @@ v8::Local<v8::Value> NodeRuntime::compile_esm_module(const std::string &code, co
 	while (promise->State() == v8::Promise::kPending) {
 		isolate->PerformMicrotaskCheckpoint();
 		uv_run(uv_default_loop(), UV_RUN_ONCE);
+		if (platform) {
+			platform->DrainTasks(isolate);
+		}
+		isolate->PerformMicrotaskCheckpoint();
 		if (promise->State() != v8::Promise::kPending) {
 			break;
 		}
@@ -394,6 +399,9 @@ void NodeRuntime::spin_loop() {
 
 	isolate->PerformMicrotaskCheckpoint();
 	uv_run(uv_default_loop(), UV_RUN_NOWAIT);
+	if (platform) {
+		platform->DrainTasks(isolate);
+	}
 	isolate->PerformMicrotaskCheckpoint();
 }
 
@@ -410,6 +418,7 @@ void NodeRuntime::shutdown() {
 		{
 			v8::Context::Scope context_scope(node_context.Get(isolate));
 			node_inspector::close_if_open();
+			TypeScriptScript::release_all_runtime_state();
 			clear_godot_instance_cache();
 			reset_class_references();
 			reset_builtin_references();

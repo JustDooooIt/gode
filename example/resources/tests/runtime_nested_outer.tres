@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="RuntimeNestedResource" format=3]
+
+[ext_resource type="Script" path="res://scripts/tests/runtime_nested_resource.ts" id="1_outer"]
+[ext_resource type="Resource" path="res://resources/tests/runtime_nested_inner.tres" id="2_inner"]
+
+[resource]
+script = ExtResource("1_outer")
+nested = ExtResource("2_inner")

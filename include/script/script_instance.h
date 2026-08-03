@@ -21,6 +21,8 @@ class ScriptInstance {
 	Napi::ObjectReference js_instance;
 	bool placeholder = false;
 	godot::HashMap<godot::StringName, godot::Variant> placeholder_properties;
+	// Keep exported Godot-object values anchored while a script instance owns them.
+	mutable godot::HashMap<godot::StringName, godot::Variant> property_storage;
 
 	mutable std::vector<godot::PropertyInfo> prop_list_cache;
 	mutable std::vector<GDExtensionPropertyInfo> prop_list_gde;
@@ -33,6 +35,7 @@ class ScriptInstance {
 
 private:
 	void notification_bind(Napi::Object instance, int32_t p_what, bool p_reversed);
+	void store_property_value_for_lifetime(const godot::StringName &p_name, const godot::Variant &p_value) const;
 
 public:
 	ScriptInstance(const godot::Ref<TypeScriptScript> &p_script, godot::Object *p_owner, bool p_placeholder);
@@ -41,6 +44,7 @@ public:
 	godot::Object *get_owner() const;
 	bool is_placeholder() const;
 	bool is_runtime_instance_valid() const;
+	void release_runtime_state();
 
 	bool set(const godot::StringName &p_name, const godot::Variant &p_value);
 	bool get(const godot::StringName &p_name, godot::Variant &r_value) const;
