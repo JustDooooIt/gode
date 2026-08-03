@@ -2,10 +2,10 @@
 #define GODE_TYPESCRIPT_SCRIPT_H
 
 #include <napi.h>
-#include <godot_cpp/core/object.hpp>
 #include <godot_cpp/classes/script.hpp>
 #include <godot_cpp/classes/script_extension.hpp>
 #include <godot_cpp/classes/script_language.hpp>
+#include <godot_cpp/core/object.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -51,10 +51,13 @@ protected:
 	static void _bind_methods();
 
 public:
+	TypeScriptScript();
 	~TypeScriptScript();
+	static void release_all_runtime_state();
 	bool compile() const;
 	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state);
 	Napi::Function get_default_class() const;
+	void release_runtime_state();
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }
 	const godot::HashMap<godot::StringName, godot::Variant> &get_property_defaults() const { return property_defaults; }

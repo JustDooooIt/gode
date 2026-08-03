@@ -9,19 +9,60 @@
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/core/gdextension_interface_loader.hpp>
 #include <godot_cpp/core/memory.hpp>
+#include <godot_cpp/templates/hash_set.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <vector>
 
 using namespace godot;
 using namespace gode;
 
+namespace {
+
+HashSet<TypeScriptScript *> live_scripts;
+
+} // namespace
+
 void TypeScriptScript::_bind_methods() {
 }
 
+TypeScriptScript::TypeScriptScript() {
+	live_scripts.insert(this);
+}
+
 TypeScriptScript::~TypeScriptScript() {
+	live_scripts.erase(this);
+	release_runtime_state();
+}
+
+void TypeScriptScript::release_all_runtime_state() {
+	std::vector<TypeScriptScript *> scripts;
+	scripts.reserve(live_scripts.size());
+	for (TypeScriptScript *script : live_scripts) {
+		scripts.push_back(script);
+	}
+
+	for (TypeScriptScript *script : scripts) {
+		if (script) {
+			script->release_runtime_state();
+		}
+	}
+}
+
+void TypeScriptScript::release_runtime_state() {
+	std::vector<ScriptInstance *> active_instances;
+	active_instances.reserve(instances.size());
+	for (ScriptInstance *instance : instances) {
+		active_instances.push_back(instance);
+	}
+	for (ScriptInstance *instance : active_instances) {
+		if (instance) {
+			instance->release_runtime_state();
+		}
+	}
+
 	if (default_class.IsEmpty()) {
 		return;
 	}
-
 	if (!NodeRuntime::is_running()) {
 		default_class.SuppressDestruct();
 		return;

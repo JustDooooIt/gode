@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/core/object.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -691,23 +692,26 @@ void TypeScriptLoader::clear_cache() {
 }
 
 void TypeScriptLoader::reload_cached_scripts() {
-	std::vector<std::pair<String, Ref<TypeScriptScript>>> cached_scripts;
+	std::vector<std::pair<String, ObjectID>> cached_scripts;
 	cached_scripts.reserve(scripts.size());
-	for (const KeyValue<StringName, Ref<TypeScriptScript>> &E : scripts) {
+	for (const KeyValue<StringName, ObjectID> &E : scripts) {
 		cached_scripts.push_back({ String(E.key), E.value });
 	}
 
 	for (const auto &cached_script : cached_scripts) {
-		Ref<TypeScriptScript> script = cached_script.second;
-		if (script.is_null()) {
+		Object *object = ObjectDB::get_instance(cached_script.second);
+		TypeScriptScript *script = Object::cast_to<TypeScriptScript>(object);
+		if (!script) {
+			scripts.erase(StringName(cached_script.first));
 			continue;
 		}
+		Ref<TypeScriptScript> script_ref(script);
 
 		String source_code = FileAccess::get_file_as_string(cached_script.first);
 		if (FileAccess::get_open_error() != OK) {
-			source_code = script->_get_source_code();
+			source_code = script_ref->_get_source_code();
 		}
-		script->reload_source_code(source_code, true);
+		script_ref->reload_source_code(source_code, true);
 	}
 }
 
@@ -932,7 +936,12 @@ Variant TypeScriptLoader::_load(const String &p_path, const String &p_original_p
 	StringName cache_key(load_path);
 
 	if (p_cache_mode == ResourceLoader::CacheMode::CACHE_MODE_REUSE && scripts.has(cache_key)) {
-		return scripts.get(cache_key);
+		Object *cached_object = ObjectDB::get_instance(scripts.get(cache_key));
+		TypeScriptScript *cached_script = Object::cast_to<TypeScriptScript>(cached_object);
+		if (cached_script) {
+			return Ref<TypeScriptScript>(cached_script);
+		}
+		scripts.erase(cache_key);
 	}
 
 	String source_code = FileAccess::get_file_as_string(read_path);
@@ -944,7 +953,7 @@ Variant TypeScriptLoader::_load(const String &p_path, const String &p_original_p
 	script->set_path(load_path);
 	script->_set_source_code(source_code);
 	if (should_cache_loaded_script(p_cache_mode)) {
-		scripts[cache_key] = Ref(script);
+		scripts[cache_key] = ObjectID(script->get_instance_id());
 	}
 	return script;
 }
