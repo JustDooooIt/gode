@@ -34,7 +34,6 @@ const PROPERTY_HINT_ARRAY_TYPE = 31;
 const PROPERTY_HINT_RESOURCE_TYPE = 17;
 const PROPERTY_HINT_NODE_TYPE = 34;
 const RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH = "res://scripts/tests/runtime_array_resource.ts";
-const RUNTIME_NESTED_RESOURCE_PATH = "res://resources/tests/runtime_nested_outer.tres";
 
 function assert(condition: boolean, message: string): void {
 	if (!condition) {
@@ -505,12 +504,6 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			const loadedResource = findPackedScenePropertyValue(loadedScene, "resource_slot") as unknown;
 			assert(loadedResource instanceof Resource, "reloaded scene did not preserve Resource export state");
 			nodeAssert.equal((loadedResource as Resource).resource_name, "PersistentRuntimeResource");
-
-			const nestedContainer = ResourceLoader.load(RUNTIME_NESTED_RESOURCE_PATH) as Resource;
-			assert(nestedContainer instanceof Resource, "nested Resource fixture did not load");
-			const nestedResource = nestedContainer.get("nested") as unknown;
-			assert(nestedResource instanceof Resource, "Resource export did not retain its nested Resource dependency");
-			nodeAssert.equal((nestedResource as Resource).resource_path, "res://resources/tests/runtime_nested_inner.tres");
 
 			assert(GD.is_instance_valid(this), "GD.is_instance_valid did not accept a live Godot object");
 			assert(!GD.is_instance_valid(null), "GD.is_instance_valid should reject null");

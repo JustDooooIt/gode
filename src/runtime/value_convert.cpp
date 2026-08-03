@@ -439,7 +439,7 @@ void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
 	uint64_t id = obj->get_instance_id();
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_ID_SYMBOL), Napi::BigInt::New(env, id));
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_PTR_SYMBOL), Napi::External<godot::Object>::New(env, obj));
-	object_cache[id] = Napi::Persistent(js_obj);
+	object_cache[id] = Napi::Weak(js_obj);
 }
 
 void clear_godot_instance_cache() {

@@ -77,6 +77,28 @@ void _attach_promise_rejection_handler(Napi::Value value, const std::string &met
 }
 
 } // namespace
+
+static bool variant_can_hold_godot_object_reference(const Variant &p_value) {
+	switch (p_value.get_type()) {
+		case Variant::OBJECT:
+		case Variant::ARRAY:
+		case Variant::DICTIONARY:
+		case Variant::CALLABLE:
+		case Variant::SIGNAL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+void ScriptInstance::store_property_value_for_lifetime(const StringName &p_name, const Variant &p_value) const {
+	if (variant_can_hold_godot_object_reference(p_value)) {
+		property_storage[p_name] = p_value;
+	} else {
+		property_storage.erase(p_name);
+	}
+}
+
 ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_owner, bool p_placeholder) :
 		script(p_script),
 		owner(p_owner),
@@ -155,6 +177,11 @@ ScriptInstance::~ScriptInstance() {
 			}
 		}
 	}
+	release_runtime_state();
+}
+
+void ScriptInstance::release_runtime_state() {
+	property_storage.clear();
 	if (!js_instance.IsEmpty()) {
 		if (NodeRuntime::is_running()) {
 			v8::Locker locker(NodeRuntime::isolate);
@@ -222,9 +249,7 @@ void ScriptInstance::reload(bool p_keep_state) {
 			}
 		}
 	}
-	if (!p_keep_state) {
-		property_storage.clear();
-	}
+	property_storage.clear();
 
 	js_instance.Reset();
 
@@ -284,7 +309,9 @@ void ScriptInstance::reload(bool p_keep_state) {
 						continue;
 					}
 					cur.Set(segments.back(), js_value);
-					log_and_clear_pending_js_exception(env, "JS script reload state restore " + key);
+					if (!log_and_clear_pending_js_exception(env, "JS script reload state restore " + key)) {
+						store_property_value_for_lifetime(E.key, E.value);
+					}
 				}
 			} else {
 				Napi::Value js_value = godot_to_napi(env, E.value);
@@ -292,7 +319,9 @@ void ScriptInstance::reload(bool p_keep_state) {
 					continue;
 				}
 				instance.Set(key, js_value);
-				log_and_clear_pending_js_exception(env, "JS script reload state restore " + key);
+				if (!log_and_clear_pending_js_exception(env, "JS script reload state restore " + key)) {
+					store_property_value_for_lifetime(E.key, E.value);
+				}
 			}
 		}
 	}
@@ -351,7 +380,7 @@ bool ScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (log_and_clear_pending_js_exception(env, context)) {
 				return false;
 			}
-			property_storage[p_name] = p_value;
+			store_property_value_for_lifetime(p_name, p_value);
 			return true;
 		}
 		bool ok = js_instance.Set(property_name, js_value);
@@ -359,7 +388,7 @@ bool ScriptInstance::set(const StringName &p_name, const Variant &p_value) {
 			return false;
 		}
 		if (ok) {
-			property_storage[p_name] = p_value;
+			store_property_value_for_lifetime(p_name, p_value);
 		}
 		return ok;
 	} catch (const Napi::Error &e) {
@@ -435,8 +464,12 @@ bool ScriptInstance::get(const StringName &p_name, Variant &r_value) const {
 		if (log_and_clear_pending_js_exception(env, context)) {
 			return false;
 		}
-		property_storage[p_name] = converted;
-		r_value = property_storage[p_name];
+		store_property_value_for_lifetime(p_name, converted);
+		if (property_storage.has(p_name)) {
+			r_value = property_storage[p_name];
+		} else {
+			r_value = converted;
+		}
 		return true;
 	} catch (const Napi::Error &e) {
 		log_js_error("JS property get " + prop_name, js_error_to_string(e));
