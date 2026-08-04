@@ -221,6 +221,150 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 			"""
 		)
 
+	def test_bare_npm_package_types_are_resolved_without_rewriting_runtime_imports(self):
+		self.run_compiler_fixture(
+			r"""
+			const tsconfig = {
+				compilerOptions: {
+					target: "ES2022",
+					module: "ESNext",
+					moduleResolution: "Bundler",
+					strict: true,
+					types: []
+				},
+				include: ["scripts/**/*.ts"]
+			};
+
+			const virtualFiles = new Map([
+				["res://tsconfig.json", JSON.stringify(tsconfig)],
+				["res://addons/gode/types/globals.d.ts", "export {};\n"],
+				["res://addons/gode/types/godot.d.ts", "declare module 'godot' { export class Node {} }\n"],
+				["res://scripts/main.ts", "import { Node } from 'godot';\nimport { answer } from 'demo-package';\nimport { legacyAnswer } from 'legacy-package';\nexport default class Demo extends Node { async _ready(): Promise<void> { const mod = await import('demo-package'); console.log(answer, legacyAnswer, mod.answer); } }\n"],
+				["res://node_modules/demo-package/package.json", JSON.stringify({
+					name: "demo-package",
+					type: "module",
+					exports: {
+						".": {
+							types: "./dist/index.d.ts",
+							import: "./dist/index.js"
+						}
+					},
+					types: "./dist/index.d.ts"
+				})],
+				["res://node_modules/demo-package/dist/index.d.ts", "export declare const answer: number;\n"],
+				["res://node_modules/legacy-package/package.json", JSON.stringify({
+					name: "legacy-package",
+					type: "module",
+					types: "dist/index.d.ts",
+					module: "dist/index.js"
+				})],
+				["res://node_modules/legacy-package/dist/index.d.ts", "export declare const legacyAnswer: number;\n"]
+			]);
+
+			const result = runCompiler(virtualFiles);
+			assertOk(result);
+
+			const main = result.outputs.find((output) => output.source === "res://scripts/main.ts");
+			if (!main) {
+				throw new Error("main.ts was not emitted");
+			}
+			if (!main.code.includes("from 'demo-package'") && !main.code.includes('from "demo-package"')) {
+				throw new Error(`Bare static package specifier was rewritten:\n${main.code}`);
+			}
+			if (!main.code.includes("import('demo-package')") && !main.code.includes('import("demo-package")')) {
+				throw new Error(`Bare dynamic package specifier was rewritten:\n${main.code}`);
+			}
+			"""
+		)
+
+	def test_bare_npm_package_subpath_export_patterns_are_resolved(self):
+		self.run_compiler_fixture(
+			r"""
+			const tsconfig = {
+				compilerOptions: {
+					target: "ES2022",
+					module: "ESNext",
+					moduleResolution: "Bundler",
+					strict: true,
+					types: []
+				},
+				include: ["scripts/**/*.ts"]
+			};
+
+			const virtualFiles = new Map([
+				["res://tsconfig.json", JSON.stringify(tsconfig)],
+				["res://addons/gode/types/globals.d.ts", "export {};\n"],
+				["res://addons/gode/types/godot.d.ts", "declare module 'godot' { export class Node {} }\n"],
+				["res://scripts/main.ts", "import { Node } from 'godot';\nimport { tool } from 'pattern-package/tools/format';\nexport default class Demo extends Node { _ready(): void { console.log(tool); } }\n"],
+				["res://node_modules/pattern-package/package.json", JSON.stringify({
+					name: "pattern-package",
+					type: "module",
+					exports: {
+						"./tools/*": {
+							types: "./dist/tools/*.d.ts",
+							import: "./dist/tools/*.js"
+						}
+					}
+				})],
+				["res://node_modules/pattern-package/dist/tools/format.d.ts", "export declare const tool: string;\n"]
+			]);
+
+			const result = runCompiler(virtualFiles);
+			assertOk(result);
+
+			const main = result.outputs.find((output) => output.source === "res://scripts/main.ts");
+			if (!main) {
+				throw new Error("main.ts was not emitted");
+			}
+			if (!main.code.includes("from 'pattern-package/tools/format'") && !main.code.includes('from "pattern-package/tools/format"')) {
+				throw new Error(`Bare package subpath specifier was rewritten:\n${main.code}`);
+			}
+			"""
+		)
+
+	def test_bare_npm_package_exports_do_not_fall_back_to_hidden_subpaths(self):
+		self.run_compiler_fixture(
+			r"""
+			const tsconfig = {
+				compilerOptions: {
+					target: "ES2022",
+					module: "ESNext",
+					moduleResolution: "Bundler",
+					strict: true,
+					types: []
+				},
+				include: ["scripts/**/*.ts"]
+			};
+
+			const virtualFiles = new Map([
+				["res://tsconfig.json", JSON.stringify(tsconfig)],
+				["res://addons/gode/types/globals.d.ts", "export {};\n"],
+				["res://addons/gode/types/godot.d.ts", "declare module 'godot' { export class Node {} }\n"],
+				["res://scripts/main.ts", "import { Node } from 'godot';\nimport { hidden } from 'sealed-package/hidden';\nexport default class Demo extends Node { _ready(): void { console.log(hidden); } }\n"],
+				["res://node_modules/sealed-package/package.json", JSON.stringify({
+					name: "sealed-package",
+					type: "module",
+					exports: {
+						"./allowed": {
+							types: "./dist/allowed.d.ts",
+							import: "./dist/allowed.js"
+						}
+					}
+				})],
+				["res://node_modules/sealed-package/hidden.d.ts", "export declare const hidden: string;\n"],
+				["res://node_modules/sealed-package/dist/allowed.d.ts", "export declare const allowed: string;\n"]
+			]);
+
+			const result = runCompiler(virtualFiles);
+			if (result.ok) {
+				throw new Error("Expected sealed package subpath import to fail");
+			}
+			if (!result.diagnostics.some((diagnostic) => diagnostic.code === 2307)) {
+				throw new Error(`Expected TS2307 for hidden package subpath:\n${JSON.stringify(result.diagnostics, null, 2)}`);
+			}
+			"""
+		)
+
 	def test_relative_specifiers_cannot_escape_resource_root(self):
 		self.run_compiler_fixture(
 			r"""

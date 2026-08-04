@@ -11,6 +11,7 @@ gallery/
 *.import
 node_modules/
 .astro/
+.gode/
 
 # Python cache files
 __pycache__/

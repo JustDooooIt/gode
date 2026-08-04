@@ -6,6 +6,7 @@
 /exports/
 
 # TypeScript / Node output
+.gode/
 node_modules/
 dist/
 npm-debug.log*

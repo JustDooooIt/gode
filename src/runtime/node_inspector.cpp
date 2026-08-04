@@ -229,8 +229,7 @@ void print_attach_info(const Config &config, const OpenResult &open_result) {
 }
 
 bool is_user_compiled_typescript_module(const std::string &filename) {
-	return filename.rfind("user://.gode/typescript/", 0) == 0 ||
-			filename.rfind("res://.gode/build/typescript/", 0) == 0;
+	return filename.rfind("res://.gode/build/typescript/", 0) == 0;
 }
 
 } // namespace

@@ -11,21 +11,25 @@
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-#include <algorithm>
-#include <vector>
+#include <mutex>
 
 using namespace godot;
 
 namespace gode {
 namespace {
 
-constexpr const char *TYPESCRIPT_VERSION = "6.0.3";
 constexpr const char *TYPESCRIPT_COMPILER_BRIDGE_PATH = "res://addons/gode/runtime/typescript_compiler.js";
 constexpr const char *TYPESCRIPT_RUNTIME_PATH = "res://addons/gode/tsc/lib/typescript.js";
 constexpr const char *PROJECT_TYPESCRIPT_CONFIG_PATH = "res://tsconfig.json";
 constexpr const char *DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config/tsconfig.json";
 constexpr const char *GODE_GLOBAL_TYPES_PATH = "res://addons/gode/types/globals.d.ts";
 constexpr const char *GODE_MODULE_TYPES_PATH = "res://addons/gode/types/godot.d.ts";
+constexpr const char *TYPESCRIPT_BUILD_ROOT = "res://.gode/build/typescript";
+
+std::mutex &typescript_compile_mutex() {
+	static std::mutex mutex;
+	return mutex;
+}
 
 bool is_dts_path(const String &path) {
 	return path.to_lower().ends_with(".d.ts");
@@ -74,27 +78,16 @@ String resource_relative_path(const String &source_path) {
 	return normalized;
 }
 
-String project_hash() {
-	ProjectSettings *project_settings = ProjectSettings::get_singleton();
-	String project_root = project_settings ? project_settings->globalize_path("res://") : String("res://");
-	String hash = project_root.sha256_text();
-	return hash.substr(0, 16);
-}
-
 String cache_root() {
-	return String("user://.gode/typescript/") + project_hash() + "/typescript-" + TYPESCRIPT_VERSION;
+	return TYPESCRIPT_BUILD_ROOT;
 }
 
 String exported_build_root() {
-	return "res://.gode/build/typescript";
+	return TYPESCRIPT_BUILD_ROOT;
 }
 
 String exported_manifest_path() {
 	return exported_build_root().path_join("manifest.json");
-}
-
-String manifest_path() {
-	return cache_root().path_join("manifest.json");
 }
 
 bool should_skip_directory(const String &directory_path) {
@@ -197,73 +190,6 @@ Dictionary output_mapping_for_source(const String &source_path) {
 	return output;
 }
 
-uint64_t newest_input_mtime(const Array &sources) {
-	uint64_t newest = 0;
-	for (int64_t i = 0; i < sources.size(); i++) {
-		Dictionary source = sources[i];
-		String source_path = source["path"];
-		if (FileAccess::file_exists(source_path)) {
-			newest = std::max(newest, FileAccess::get_modified_time(source_path));
-		}
-	}
-	if (FileAccess::file_exists(PROJECT_TYPESCRIPT_CONFIG_PATH)) {
-		newest = std::max(newest, FileAccess::get_modified_time(PROJECT_TYPESCRIPT_CONFIG_PATH));
-	}
-	if (FileAccess::file_exists(TYPESCRIPT_COMPILER_BRIDGE_PATH)) {
-		newest = std::max(newest, FileAccess::get_modified_time(TYPESCRIPT_COMPILER_BRIDGE_PATH));
-	}
-	if (FileAccess::file_exists(TYPESCRIPT_RUNTIME_PATH)) {
-		newest = std::max(newest, FileAccess::get_modified_time(TYPESCRIPT_RUNTIME_PATH));
-	}
-	if (FileAccess::file_exists(GODE_MODULE_TYPES_PATH)) {
-		newest = std::max(newest, FileAccess::get_modified_time(GODE_MODULE_TYPES_PATH));
-	}
-	return newest;
-}
-
-void append_file_state_signature(std::vector<String> &entries, const String &path, bool hash_content) {
-	if (!FileAccess::file_exists(path)) {
-		entries.push_back(path + String("\tmissing"));
-		return;
-	}
-
-	String entry = path + String("\tmtime:") + String::num_int64(static_cast<int64_t>(FileAccess::get_modified_time(path)));
-	if (hash_content) {
-		String content = FileAccess::get_file_as_string(path);
-		if (FileAccess::get_open_error() == OK) {
-			entry += String("\tsha256:") + content.sha256_text();
-		} else {
-			entry += String("\tunreadable");
-		}
-	}
-	entries.push_back(entry);
-}
-
-String input_signature(const Array &sources) {
-	std::vector<String> entries;
-	entries.reserve(static_cast<size_t>(sources.size()) + 4);
-
-	for (int64_t i = 0; i < sources.size(); i++) {
-		Dictionary source = sources[i];
-		String source_path = source["path"];
-		String source_content = source.get("source", String());
-		entries.push_back(source_path + String("\tsha256:") + source_content.sha256_text());
-	}
-
-	append_file_state_signature(entries, PROJECT_TYPESCRIPT_CONFIG_PATH, true);
-	append_file_state_signature(entries, TYPESCRIPT_COMPILER_BRIDGE_PATH, true);
-	append_file_state_signature(entries, TYPESCRIPT_RUNTIME_PATH, true);
-	append_file_state_signature(entries, GODE_MODULE_TYPES_PATH, true);
-
-	std::sort(entries.begin(), entries.end());
-
-	String joined;
-	for (const String &entry : entries) {
-		joined += entry + String("\n");
-	}
-	return joined.sha256_text();
-}
-
 bool output_string_field_is_valid(const Dictionary &output, const String &field) {
 	Variant value = output.get(field, Variant());
 	return value.get_type() == Variant::STRING && !String(value).is_empty();
@@ -314,7 +240,7 @@ bool normalize_typescript_source_path(const String &path, String &r_source_path,
 	return true;
 }
 
-bool output_entry_is_valid(const Variant &output_value, bool require_cache_path) {
+bool output_entry_is_valid(const Variant &output_value) {
 	if (output_value.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
@@ -329,34 +255,20 @@ bool output_entry_is_valid(const Variant &output_value, bool require_cache_path)
 	if (!path_is_under_root(String(output["exported_path"]), exported_build_root()) || !path_has_extension(String(output["exported_path"]), ".js")) {
 		return false;
 	}
-	if (require_cache_path && !output_string_field_is_valid(output, "path")) {
-		return false;
-	}
-	if (require_cache_path && (!path_is_under_root(String(output["path"]), cache_root()) || !path_has_extension(String(output["path"]), ".js"))) {
-		return false;
-	}
-	return true;
-}
-
-bool manifest_outputs_are_valid(const Array &outputs, bool require_cache_path) {
-	for (int64_t i = 0; i < outputs.size(); i++) {
-		if (!output_entry_is_valid(outputs[i], require_cache_path)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-bool outputs_exist(const Array &outputs) {
-	for (int64_t i = 0; i < outputs.size(); i++) {
-		Variant output_value = outputs[i];
-		if (!output_entry_is_valid(output_value, true)) {
-			return false;
-		}
-
-		Dictionary output = output_value;
+	if (output.has("path")) {
 		String output_path = output["path"];
-		if (!FileAccess::file_exists(output_path)) {
+		if (!output_string_field_is_valid(output, "path") ||
+				!path_is_under_root(output_path, cache_root()) ||
+				!path_has_extension(output_path, ".js")) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool manifest_outputs_are_valid(const Array &outputs) {
+	for (int64_t i = 0; i < outputs.size(); i++) {
+		if (!output_entry_is_valid(outputs[i])) {
 			return false;
 		}
 	}
@@ -367,7 +279,7 @@ bool output_for_source(const Array &outputs, const String &source_path, Dictiona
 	const String normalized_source_path = normalize_project_path(source_path);
 	for (int64_t i = 0; i < outputs.size(); i++) {
 		Variant output_value = outputs[i];
-		if (!output_entry_is_valid(output_value, false)) {
+		if (!output_entry_is_valid(output_value)) {
 			continue;
 		}
 
@@ -385,10 +297,10 @@ Dictionary make_result(bool ok, const String &message = String()) {
 	Dictionary result;
 	result["ok"] = ok;
 	result["compiled"] = 0;
-	result["skipped"] = 0;
 	result["outputs"] = Array();
 	result["diagnostics"] = Array();
 	result["cache_root"] = cache_root();
+	result["output_root"] = cache_root();
 	if (!message.is_empty()) {
 		Array diagnostics;
 		diagnostics.append(make_error_diagnostic(message));
@@ -454,11 +366,7 @@ bool load_manifest(const String &path, Dictionary &r_manifest) {
 	return true;
 }
 
-bool load_compile_manifest(Dictionary &r_manifest) {
-	return load_manifest(manifest_path(), r_manifest);
-}
-
-bool load_manifest_outputs_from_path(const String &path, Array &r_outputs, bool require_cache_path = false) {
+bool load_manifest_outputs_from_path(const String &path, Array &r_outputs) {
 	Dictionary manifest;
 	if (!load_manifest(path, manifest)) {
 		return false;
@@ -470,7 +378,7 @@ bool load_manifest_outputs_from_path(const String &path, Array &r_outputs, bool 
 	}
 
 	Array outputs = outputs_value;
-	if (!manifest_outputs_are_valid(outputs, require_cache_path)) {
+	if (!manifest_outputs_are_valid(outputs)) {
 		return false;
 	}
 
@@ -478,108 +386,60 @@ bool load_manifest_outputs_from_path(const String &path, Array &r_outputs, bool 
 	return true;
 }
 
-bool load_manifest_outputs(Array &r_outputs) {
-	return load_manifest_outputs_from_path(manifest_path(), r_outputs, true);
-}
-
-bool load_cached_outputs(uint64_t input_mtime, const String &signature, Array &r_outputs) {
-	Dictionary manifest;
-	if (!load_compile_manifest(manifest)) {
-		return false;
-	}
-
-	Variant outputs_value = manifest.get("outputs", Array());
-	if (outputs_value.get_type() != Variant::ARRAY) {
-		return false;
-	}
-
-	Array outputs = outputs_value;
-	if (!manifest_outputs_are_valid(outputs, true)) {
-		return false;
-	}
-
-	const int64_t manifest_input_mtime = int64_t(manifest.get("input_mtime", 0));
-	if (manifest_input_mtime < int64_t(input_mtime)) {
-		return false;
-	}
-	if (String(manifest.get("input_signature", String())) != signature) {
-		return false;
-	}
-
-	if (!outputs_exist(outputs)) {
-		return false;
-	}
-
-	r_outputs = outputs;
-	return true;
-}
-
-void save_compile_manifest(const Array &outputs, uint64_t input_mtime, const String &signature) {
-	Dictionary manifest;
-	manifest["input_mtime"] = int64_t(input_mtime);
-	manifest["input_signature"] = signature;
-	manifest["outputs"] = outputs;
-
-	if (!write_text_file(manifest_path(), JSON::stringify(manifest, "\t"))) {
-		UtilityFunctions::printerr("[Gode TypeScript] Failed to write compile manifest: ", manifest_path());
-	}
-}
-
-bool output_path_in_outputs(const Array &outputs, const String &path) {
-	String normalized_path = path.replace("\\", "/");
-	for (int64_t i = 0; i < outputs.size(); i++) {
-		Variant output_value = outputs[i];
-		if (output_value.get_type() != Variant::DICTIONARY) {
-			continue;
-		}
-
-		Dictionary output = output_value;
-		String output_path = String(output.get("path", String())).replace("\\", "/");
-		if (output_path == normalized_path) {
-			return true;
-		}
-	}
-	return false;
-}
-
-void remove_cache_file_if_safe(const String &path) {
+bool remove_generated_file_if_safe(const String &path) {
 	if (path.is_empty()) {
-		return;
+		return true;
 	}
 
 	String normalized_path = path.replace("\\", "/");
 	if (!path_is_under_root(normalized_path, cache_root())) {
-		return;
-	}
-	if (!normalized_path.ends_with(".js") && !normalized_path.ends_with(".js.map")) {
-		return;
+		return false;
 	}
 	if (!FileAccess::file_exists(normalized_path)) {
-		return;
+		return true;
 	}
 
 	Error remove_error = DirAccess::remove_absolute(normalized_path);
 	if (remove_error != OK) {
-		UtilityFunctions::printerr("[Gode TypeScript] Failed to remove stale cache output: ", normalized_path);
+		UtilityFunctions::printerr("[Gode TypeScript] Failed to remove generated output: ", normalized_path);
+		return false;
 	}
+	return true;
 }
 
-void prune_stale_outputs(const Array &previous_outputs, const Array &current_outputs) {
-	for (int64_t i = 0; i < previous_outputs.size(); i++) {
-		Variant previous_output_value = previous_outputs[i];
-		if (previous_output_value.get_type() != Variant::DICTIONARY) {
-			continue;
-		}
-
-		Dictionary previous_output = previous_output_value;
-		String output_path = previous_output.get("path", String());
-		if (output_path.is_empty() || output_path_in_outputs(current_outputs, output_path)) {
-			continue;
-		}
-
-		remove_cache_file_if_safe(output_path);
-		remove_cache_file_if_safe(output_path + String(".map"));
+bool clear_generated_directory_contents(const String &directory_path) {
+	if (!path_is_under_root(directory_path, cache_root())) {
+		return false;
 	}
+	if (!DirAccess::dir_exists_absolute(directory_path)) {
+		return true;
+	}
+
+	PackedStringArray files = DirAccess::get_files_at(directory_path);
+	for (int64_t i = 0; i < files.size(); i++) {
+		String file_path = directory_path.path_join(files[i]);
+		if (!remove_generated_file_if_safe(file_path)) {
+			return false;
+		}
+	}
+
+	PackedStringArray directories = DirAccess::get_directories_at(directory_path);
+	for (int64_t i = 0; i < directories.size(); i++) {
+		String child_path = directory_path.path_join(directories[i]);
+		if (!clear_generated_directory_contents(child_path)) {
+			return false;
+		}
+		Error remove_error = DirAccess::remove_absolute(child_path);
+		if (remove_error != OK) {
+			UtilityFunctions::printerr("[Gode TypeScript] Failed to remove generated output directory: ", child_path);
+			return false;
+		}
+	}
+	return true;
+}
+
+bool clear_generated_output_root() {
+	return clear_generated_directory_contents(cache_root());
 }
 
 bool ensure_project_typescript_config(String *r_error) {
@@ -617,6 +477,9 @@ bool ensure_project_typescript_config(String *r_error) {
 }
 
 Dictionary compile_project_internal(bool force) {
+	(void)force;
+	std::lock_guard<std::mutex> compile_lock(typescript_compile_mutex());
+
 	if (!FileAccess::file_exists(TYPESCRIPT_RUNTIME_PATH)) {
 		return make_result(false, "The packaged TypeScript compiler is missing: " + String(TYPESCRIPT_RUNTIME_PATH));
 	}
@@ -636,17 +499,9 @@ Dictionary compile_project_internal(bool force) {
 		return result;
 	}
 
-	uint64_t newest_input = newest_input_mtime(sources);
-	String signature = input_signature(sources);
-	Array cached_outputs;
-	if (!force && load_cached_outputs(newest_input, signature, cached_outputs)) {
-		result["outputs"] = cached_outputs;
-		result["skipped"] = cached_outputs.size();
-		return result;
+	if (!clear_generated_output_root()) {
+		return make_result(false, "Failed to clear generated TypeScript output: " + cache_root());
 	}
-
-	Array previous_outputs;
-	load_manifest_outputs(previous_outputs);
 
 	Dictionary compile_result = NodeRuntime::compile_typescript_project(sources);
 	Array diagnostics = compile_result.has("diagnostics") ? Array(compile_result["diagnostics"]) : Array();
@@ -674,17 +529,12 @@ Dictionary compile_project_internal(bool force) {
 		if (!source_map.is_empty() && !write_text_file(source_map_path, source_map)) {
 			return make_result(false, "Failed to write TypeScript source map: " + source_map_path);
 		}
-		if (source_map.is_empty() && FileAccess::file_exists(source_map_path)) {
-			DirAccess::remove_absolute(source_map_path);
-		}
 		actual_outputs.append(output);
 		written_count++;
 	}
 
 	result["outputs"] = actual_outputs;
 	result["compiled"] = written_count;
-	prune_stale_outputs(previous_outputs, actual_outputs);
-	save_compile_manifest(actual_outputs, newest_input, signature);
 	return result;
 }
 

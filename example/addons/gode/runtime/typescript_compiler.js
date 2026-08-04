@@ -22,6 +22,17 @@
 		return moduleName.startsWith("./") || moduleName.startsWith("../");
 	}
 
+	function isBarePackageModuleName(moduleName) {
+		return typeof moduleName === "string" &&
+			moduleName.length > 0 &&
+			!isRelativeModuleName(moduleName) &&
+			!moduleName.startsWith("/") &&
+			!moduleName.startsWith("#") &&
+			!moduleName.startsWith("res://") &&
+			!moduleName.startsWith("user://") &&
+			!moduleName.includes("://");
+	}
+
 	function resourceDirname(filePath) {
 		const normalized = normalizePath(filePath);
 		for (const prefix of ["res://", "user://"]) {
@@ -206,10 +217,227 @@
 		return undefined;
 	}
 
+	function packageSpecifierParts(moduleName) {
+		const parts = String(moduleName || "").split("/");
+		if (parts[0] && parts[0].startsWith("@")) {
+			if (parts.length < 2 || !parts[1]) {
+				return null;
+			}
+			const packageName = `${parts[0]}/${parts[1]}`;
+			const subpathParts = parts.slice(2);
+			return {
+				packageName,
+				subpath: subpathParts.length > 0 ? `./${subpathParts.join("/")}` : "."
+			};
+		}
+		if (!parts[0]) {
+			return null;
+		}
+		const subpathParts = parts.slice(1);
+		return {
+			packageName: parts[0],
+			subpath: subpathParts.length > 0 ? `./${subpathParts.join("/")}` : "."
+		};
+	}
+
+	function nodeModuleSearchDirectories(containingFile) {
+		const directories = [];
+		let dir = resourceDirname(containingFile);
+		while (dir && !directories.includes(dir)) {
+			directories.push(`${dir}${dir.endsWith("/") ? "" : "/"}node_modules`);
+			if (dir === "res://" || dir === "user://") {
+				break;
+			}
+			const parent = resourceDirname(dir);
+			if (!parent || parent === dir) {
+				break;
+			}
+			dir = parent;
+		}
+		if (!directories.includes("res://node_modules")) {
+			directories.push("res://node_modules");
+		}
+		return directories;
+	}
+
+	function readPackageJson(baseHost, packageDir) {
+		const packageJsonPath = `${packageDir}/package.json`;
+		if (!baseHost.fileExists(packageJsonPath)) {
+			return null;
+		}
+		try {
+			return JSON.parse(baseHost.readFile(packageJsonPath) || "{}");
+		} catch (_) {
+			return null;
+		}
+	}
+
+	function packageExportTarget(exportsValue, subpath) {
+		if (exportsValue === undefined || exportsValue === null) {
+			return "";
+		}
+		if (typeof exportsValue === "string") {
+			return subpath === "." ? exportsValue : "";
+		}
+		if (Array.isArray(exportsValue)) {
+			for (const entry of exportsValue) {
+				const target = packageExportTarget(entry, subpath);
+				if (target) {
+					return target;
+				}
+			}
+			return "";
+		}
+		if (typeof exportsValue !== "object") {
+			return "";
+		}
+		const keys = Object.keys(exportsValue);
+		const hasSubpathKeys = keys.some((key) => key === "." || key.startsWith("./"));
+		if (hasSubpathKeys) {
+			if (Object.prototype.hasOwnProperty.call(exportsValue, subpath)) {
+				return packageExportTarget(exportsValue[subpath], ".");
+			}
+			for (const key of keys) {
+				const starIndex = key.indexOf("*");
+				if (starIndex < 0) {
+					continue;
+				}
+				const prefix = key.slice(0, starIndex);
+				const suffix = key.slice(starIndex + 1);
+				if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) {
+					continue;
+				}
+				const replacement = subpath.slice(prefix.length, subpath.length - suffix.length);
+				const target = packageExportTarget(exportsValue[key], ".");
+				if (target) {
+					return target.includes("*") ? target.split("*").join(replacement) : target;
+				}
+			}
+			return "";
+		}
+		for (const condition of ["types", "import", "node", "default"]) {
+			if (Object.prototype.hasOwnProperty.call(exportsValue, condition)) {
+				const target = packageExportTarget(exportsValue[condition], ".");
+				if (target) {
+					return target;
+				}
+			}
+		}
+		return "";
+	}
+
+	function packageTargetCandidates(packageDir, target, requireDotSlash = true) {
+		if (typeof target !== "string" || !target) {
+			return [];
+		}
+		let relativeTarget = "";
+		if (target.startsWith("./")) {
+			relativeTarget = target.slice(2);
+		} else if (!requireDotSlash && !target.startsWith("../") && !target.startsWith("/") && !target.includes("://")) {
+			relativeTarget = target;
+		} else {
+			return [];
+		}
+		const normalizedTarget = normalizeResourcePath(`${packageDir}/${relativeTarget}`);
+		if (!normalizedTarget) {
+			return [];
+		}
+		if (normalizedTarget !== packageDir && !normalizedTarget.startsWith(`${packageDir}/`)) {
+			return [];
+		}
+		const candidates = [];
+		const lower = normalizedTarget.toLowerCase();
+		if (lower.endsWith(".d.ts") || lower.endsWith(".d.mts") || lower.endsWith(".d.cts")) {
+			pushUnique(candidates, normalizedTarget);
+			return candidates;
+		}
+		for (const extension of [".js", ".mjs", ".cjs", ".jsx"]) {
+			if (lower.endsWith(extension)) {
+				const stem = normalizedTarget.slice(0, -extension.length);
+				if (extension === ".mjs") {
+					pushUnique(candidates, `${stem}.d.mts`);
+				} else if (extension === ".cjs") {
+					pushUnique(candidates, `${stem}.d.cts`);
+				}
+				pushUnique(candidates, `${stem}.d.ts`);
+				pushUnique(candidates, normalizedTarget);
+				return candidates;
+			}
+		}
+		return sourcePathCandidatesForBase(normalizedTarget);
+	}
+
+	function packageFallbackCandidates(packageDir, pkg, subpath) {
+		if (subpath === ".") {
+			const candidates = [];
+			for (const field of ["types", "typings", "module", "main"]) {
+				for (const candidate of packageTargetCandidates(packageDir, pkg && pkg[field], false)) {
+					pushUnique(candidates, candidate);
+				}
+			}
+			for (const candidate of sourcePathCandidatesForBase(`${packageDir}/index`)) {
+				pushUnique(candidates, candidate);
+			}
+			return candidates;
+		}
+		return sourcePathCandidatesForBase(normalizeResourcePath(`${packageDir}/${subpath.slice(2)}`));
+	}
+
+	function resolvePackageModule(tsApi, baseHost, moduleName, containingFile) {
+		if (!isBarePackageModuleName(moduleName)) {
+			return undefined;
+		}
+		const parts = packageSpecifierParts(moduleName);
+		if (!parts) {
+			return undefined;
+		}
+		for (const nodeModulesDir of nodeModuleSearchDirectories(containingFile)) {
+			const packageDir = normalizeResourcePath(`${nodeModulesDir}/${parts.packageName}`);
+			if (!packageDir || !baseHost.directoryExists(packageDir)) {
+				continue;
+			}
+			const pkg = readPackageJson(baseHost, packageDir) || {};
+			const candidates = [];
+			if (pkg.exports !== undefined) {
+				for (const candidate of packageTargetCandidates(packageDir, packageExportTarget(pkg.exports, parts.subpath))) {
+					pushUnique(candidates, candidate);
+				}
+				if (parts.subpath === ".") {
+					for (const field of ["types", "typings"]) {
+						for (const candidate of packageTargetCandidates(packageDir, pkg && pkg[field], false)) {
+							pushUnique(candidates, candidate);
+						}
+					}
+				}
+			} else {
+				for (const candidate of packageFallbackCandidates(packageDir, pkg, parts.subpath)) {
+					pushUnique(candidates, candidate);
+				}
+			}
+			for (const candidate of candidates) {
+				if (!baseHost.fileExists(candidate)) {
+					continue;
+				}
+				return {
+					resolvedFileName: candidate,
+					extension: sourceFileExtension(tsApi, candidate),
+					isExternalLibraryImport: true
+				};
+			}
+		}
+		return undefined;
+	}
+
 	function sourceFileExtension(tsApi, filePath) {
 		const lower = normalizePath(filePath).toLowerCase();
 		if (lower.endsWith(".d.ts")) {
 			return tsApi.Extension.Dts;
+		}
+		if (lower.endsWith(".d.mts")) {
+			return tsApi.Extension.Dmts || tsApi.Extension.Dts;
+		}
+		if (lower.endsWith(".d.cts")) {
+			return tsApi.Extension.Dcts || tsApi.Extension.Dts;
 		}
 		if (lower.endsWith(".tsx")) {
 			return tsApi.Extension.Tsx;
@@ -500,6 +728,10 @@
 			const sourceResolved = resolveProjectModule(tsApi, baseHost, moduleName, normalizePath(containingFile), config);
 			if (sourceResolved) {
 				return sourceResolved;
+			}
+			const packageResolved = resolvePackageModule(tsApi, baseHost, moduleName, normalizePath(containingFile));
+			if (packageResolved) {
+				return packageResolved;
 			}
 			const resolved = tsApi.resolveModuleName(
 				moduleName,
