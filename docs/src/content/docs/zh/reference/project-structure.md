@@ -43,14 +43,13 @@ my_project/
 
 ## 生成文件
 
-Gode 使用生成缓存进行 TypeScript 编译和导出打包。这些属于实现细节：
+Gode 会写入生成的 TypeScript 输出，供编辑器、运行时加载和导出打包使用。这个位置属于实现细节：
 
 ```text
-user://.gode/typescript/
 res://.gode/build/typescript/
 ```
 
-不要把生成的 JavaScript 挂到场景上，也不要提交生成缓存。
+不要把生成的 JavaScript 挂到场景上，也不要提交生成输出。
 
 ## 版本控制策略
 

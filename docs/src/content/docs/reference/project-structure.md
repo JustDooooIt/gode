@@ -43,14 +43,13 @@ my_project/
 
 ## Generated files
 
-Gode uses generated caches for TypeScript compilation and export packaging. These are implementation details:
+Gode writes generated TypeScript output for editor use, runtime loading, and export packaging. This is an implementation detail:
 
 ```text
-user://.gode/typescript/
 res://.gode/build/typescript/
 ```
 
-Do not attach generated JavaScript to scenes. Do not commit generated caches.
+Do not attach generated JavaScript to scenes. Do not commit generated output.
 
 ## Source control policy
 

@@ -43,6 +43,6 @@ Most projects can use the default configuration directly. These cases are good c
 
 ## Generated output
 
-At edit time and runtime, Gode compiles `.ts` scripts into ESM JavaScript and writes them into the internal `user://.gode/typescript/...` cache. During export, runtime JavaScript is injected into `res://.gode/build/typescript/...` inside the exported package.
+At edit time, runtime, and export, Gode compiles `.ts` scripts into ESM JavaScript under `res://.gode/build/typescript/...`.
 
-Treat both locations as implementation details. Scenes should keep referencing the original TypeScript scripts.
+Treat this location as an implementation detail. Scenes should keep referencing the original TypeScript scripts.

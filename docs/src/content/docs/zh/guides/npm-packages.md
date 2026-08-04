@@ -27,6 +27,23 @@ pnpm init
 pnpm add lodash
 ```
 
+使用 pnpm 时，应在项目中配置 hoisted 的 `node_modules` 布局：
+
+```ini title=".npmrc"
+node-linker=hoisted
+```
+
+pnpm 默认 isolated 布局会把包放在 `node_modules/.pnpm` 下，并通过 symlink 暴露入口。Node.js 自身可以直接解析这种布局，但 Godot 的 `res://` 文件系统和原生 side asset 加载无法完全等价模拟 Node 的 symlink resolver。hoisted 布局会让包入口、间接依赖和原生 `.node` 旁边的动态库都直接出现在 `res://node_modules` 下，这是 Gode 当前最可靠的打包和解析形态。
+
+pnpm 10 或更新版本使用原生包时，只批准已经审计过且确实需要安装脚本的包：
+
+```yaml title="pnpm-workspace.yaml"
+onlyBuiltDependencies:
+  - node-llama-cpp
+```
+
+也可以运行 `pnpm approve-builds`，并提交它生成的批准文件。如果缺少这一步，pnpm 可能输出 `Ignored build scripts` 警告，并跳过某些原生包需要的安装阶段。
+
 Gode 不会替你初始化包管理器，也不会自动安装依赖。这些步骤属于项目自身开发流程。
 
 ## 导入包
@@ -63,6 +80,8 @@ Gode 不审计包内部内容。如果依赖包含原生二进制、wasm、大�
 | --- | --- |
 | 提交 `package.json` 和 lockfile | CI 与团队成员安装同一份依赖图。 |
 | 导出前安装依赖 | Gode 打包已安装快照，不在导出时执行 install。 |
+| pnpm 使用 `node-linker=hoisted` | Godot 和导出构建需要常规 `node_modules` 树，而不是 pnpm 默认 symlink 图。 |
+| 批准必要的 pnpm 构建脚本 | 原生包可能需要 postinstall 才能让 Godot 加载 `.node` 二进制和旁边的动态库。 |
 | 审查依赖体积 | 原生游戏导出对意外包体积很敏感。 |
 | 测试每个目标平台 | npm 包可能假设桌面 API 或特定文件系统结构。 |
 | 保持 `gode.json` 明确 | 导出策略应能在 code review 中被看见。 |

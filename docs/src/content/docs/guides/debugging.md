@@ -118,9 +118,10 @@ If an npm package cannot be found:
 
 1. Confirm the Godot project root contains `package.json`.
 2. Confirm dependencies are installed under root `node_modules`.
-3. Confirm the script imports the package by its package name, not a generated cache path.
-4. Confirm export keeps `export.npm.exportDependencies` and `includeNodeModules` enabled.
-5. For wasm, data files, or native side assets, add explicit export handling through `extraIncludePaths` or your own pipeline.
+3. If the project uses pnpm, confirm `.npmrc` sets `node-linker=hoisted`, then reinstall dependencies.
+4. Confirm the script imports the package by its package name, not a generated cache path.
+5. Confirm export keeps `export.npm.exportDependencies` and `includeNodeModules` enabled.
+6. For wasm, data files, or native side assets, add explicit export handling through `extraIncludePaths` or your own pipeline.
 
 ## Native extension loading
 

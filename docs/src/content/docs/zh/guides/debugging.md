@@ -118,9 +118,10 @@ async function runTask(): Promise<void> {
 
 1. 确认 Godot 项目根目录存在 `package.json`。
 2. 确认依赖安装在根目录 `node_modules`。
-3. 确认脚本按包名导入，而不是引用生成缓存路径。
-4. 确认导出时保留 `export.npm.exportDependencies` 和 `includeNodeModules`。
-5. 对 wasm、数据文件或原生 side asset，通过 `extraIncludePaths` 或自定义管线显式处理。
+3. 如果项目使用 pnpm，确认 `.npmrc` 设置了 `node-linker=hoisted`，然后重新安装依赖。
+4. 确认脚本按包名导入，而不是引用生成缓存路径。
+5. 确认导出时保留 `export.npm.exportDependencies` 和 `includeNodeModules`。
+6. 对 wasm、数据文件或原生 side asset，通过 `extraIncludePaths` 或自定义管线显式处理。
 
 ## 原生扩展加载
 

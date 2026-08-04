@@ -43,6 +43,6 @@ Gode 内置 TypeScript 编译工具，会自动读取 Godot 项目根目录的 `
 
 ## 生成输出
 
-编辑和运行时，Gode 会把 `.ts` 脚本编译成 ESM JavaScript，并写入内部 `user://.gode/typescript/...` 缓存。导出时，运行时 JavaScript 会注入到导出包内的 `res://.gode/build/typescript/...`。
+编辑、运行和导出时，Gode 都会把 `.ts` 脚本编译成 ESM JavaScript，并写入 `res://.gode/build/typescript/...`。
 
-这两个位置都属于实现细节。场景应继续引用原始 TypeScript 脚本。
+这个位置属于实现细节。场景应继续引用原始 TypeScript 脚本。
