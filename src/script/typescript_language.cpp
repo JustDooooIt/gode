@@ -492,7 +492,7 @@ void reload_typescript_script_from_file(const Ref<Script> &p_script, bool p_keep
 	if (path.is_empty() || FileAccess::get_open_error() != OK) {
 		source_code = script->_get_source_code();
 	}
-	script->reload_source_code(source_code, p_keep_state);
+	script->reload_source_code(source_code, p_keep_state, true);
 }
 
 } // namespace
