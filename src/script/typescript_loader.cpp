@@ -711,7 +711,7 @@ void TypeScriptLoader::reload_cached_scripts() {
 		if (FileAccess::get_open_error() != OK) {
 			source_code = script_ref->_get_source_code();
 		}
-		script_ref->reload_source_code(source_code, true);
+		script_ref->reload_source_code(source_code, true, true);
 	}
 }
 

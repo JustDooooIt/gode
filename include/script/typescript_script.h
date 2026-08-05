@@ -27,6 +27,7 @@ protected:
 	mutable bool is_dirty = false;
 	mutable bool is_valid = false;
 	mutable bool is_tool_script = false;
+	bool source_code_loaded = false;
 	godot::String source_code;
 
 	mutable godot::StringName class_name;
@@ -57,7 +58,7 @@ public:
 	~TypeScriptScript();
 	static void release_all_runtime_state();
 	bool compile() const;
-	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state);
+	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state, bool p_force_dirty = false);
 	void release_runtime_state();
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }

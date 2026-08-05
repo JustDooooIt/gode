@@ -11,7 +11,11 @@
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
+#include <cstdint>
 #include <mutex>
+#include <string>
+#include <vector>
 
 using namespace godot;
 
@@ -25,10 +29,73 @@ constexpr const char *DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config
 constexpr const char *GODE_GLOBAL_TYPES_PATH = "res://addons/gode/types/globals.d.ts";
 constexpr const char *GODE_MODULE_TYPES_PATH = "res://addons/gode/types/godot.d.ts";
 constexpr const char *TYPESCRIPT_BUILD_ROOT = "res://.gode/build/typescript";
+constexpr uint64_t FNV1A_64_OFFSET_BASIS = 14695981039346656037ULL;
+constexpr uint64_t FNV1A_64_PRIME = 1099511628211ULL;
+
+struct TypeScriptProjectCompileCache {
+	bool has_result = false;
+	uint64_t input_hash = 0;
+	int64_t source_count = 0;
+	Dictionary result;
+};
 
 std::mutex &typescript_compile_mutex() {
 	static std::mutex mutex;
 	return mutex;
+}
+
+TypeScriptProjectCompileCache &project_compile_cache() {
+	static TypeScriptProjectCompileCache cache;
+	return cache;
+}
+
+void reset_project_compile_cache() {
+	TypeScriptProjectCompileCache &cache = project_compile_cache();
+	cache.has_result = false;
+	cache.input_hash = 0;
+	cache.source_count = 0;
+	cache.result = Dictionary();
+}
+
+std::string to_utf8_string(const String &value) {
+	CharString utf8 = value.utf8();
+	return std::string(utf8.get_data(), utf8.length());
+}
+
+void update_hash_byte(uint64_t &hash, uint8_t value) {
+	hash ^= value;
+	hash *= FNV1A_64_PRIME;
+}
+
+void update_hash_integer(uint64_t &hash, uint64_t value) {
+	for (int i = 0; i < 8; i++) {
+		update_hash_byte(hash, static_cast<uint8_t>((value >> (i * 8)) & 0xff));
+	}
+}
+
+void update_hash_string(uint64_t &hash, const String &value) {
+	CharString utf8 = value.utf8();
+	const int64_t length = utf8.length();
+	update_hash_integer(hash, static_cast<uint64_t>(length));
+	const char *data = utf8.get_data();
+	for (int64_t i = 0; i < length; i++) {
+		update_hash_byte(hash, static_cast<uint8_t>(data[i]));
+	}
+}
+
+void update_hash_file(uint64_t &hash, const String &path) {
+	update_hash_string(hash, path);
+	if (!FileAccess::file_exists(path)) {
+		update_hash_string(hash, "<missing>");
+		return;
+	}
+
+	String content = FileAccess::get_file_as_string(path);
+	if (FileAccess::get_open_error() != OK) {
+		update_hash_string(hash, "<unreadable>");
+		return;
+	}
+	update_hash_string(hash, content);
 }
 
 bool is_dts_path(const String &path) {
@@ -172,6 +239,56 @@ Array collect_project_sources(Array &diagnostics) {
 	return sources;
 }
 
+Array sorted_sources_by_path(const Array &sources) {
+	std::vector<Dictionary> sorted;
+	sorted.reserve(sources.size());
+	for (int64_t i = 0; i < sources.size(); i++) {
+		Variant value = sources[i];
+		if (value.get_type() == Variant::DICTIONARY) {
+			sorted.push_back(Dictionary(value));
+		}
+	}
+
+	std::sort(sorted.begin(), sorted.end(), [](const Dictionary &left, const Dictionary &right) {
+		return to_utf8_string(String(left.get("path", String()))) < to_utf8_string(String(right.get("path", String())));
+	});
+
+	Array result;
+	for (const Dictionary &source : sorted) {
+		result.append(source);
+	}
+	return result;
+}
+
+uint64_t project_input_hash(const Array &sources) {
+	uint64_t hash = FNV1A_64_OFFSET_BASIS;
+	update_hash_string(hash, "gode-typescript-project-v1");
+	update_hash_integer(hash, static_cast<uint64_t>(sources.size()));
+	for (int64_t i = 0; i < sources.size(); i++) {
+		Dictionary source = sources[i];
+		update_hash_string(hash, String(source.get("path", String())));
+		update_hash_string(hash, String(source.get("source", String())));
+	}
+
+	static const char *signature_file_paths[] = {
+		PROJECT_TYPESCRIPT_CONFIG_PATH,
+		GODE_MODULE_TYPES_PATH,
+		TYPESCRIPT_COMPILER_BRIDGE_PATH,
+		"res://package.json",
+		"res://package-lock.json",
+		"res://npm-shrinkwrap.json",
+		"res://pnpm-lock.yaml",
+		"res://yarn.lock",
+		"res://bun.lock",
+		"res://bun.lockb",
+		"res://.npmrc",
+	};
+	for (const char *path : signature_file_paths) {
+		update_hash_file(hash, path);
+	}
+	return hash;
+}
+
 String compiled_path_for_source_internal(const String &source_path) {
 	String rel = resource_relative_path(source_path);
 	return cache_root().path_join(rel.get_basename() + ".js");
@@ -293,6 +410,53 @@ bool output_for_source(const Array &outputs, const String &source_path, Dictiona
 	return false;
 }
 
+bool compile_result_outputs_are_present(const Dictionary &result) {
+	if (!bool(result.get("ok", false))) {
+		return true;
+	}
+
+	Array outputs = result.has("outputs") ? Array(result["outputs"]) : Array();
+	for (int64_t i = 0; i < outputs.size(); i++) {
+		Variant output_value = outputs[i];
+		if (!output_entry_is_valid(output_value)) {
+			return false;
+		}
+		Dictionary output = output_value;
+		String output_path = output.get("path", String());
+		if (output_path.is_empty() || !FileAccess::file_exists(output_path)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool compile_failure_is_cacheable(const Dictionary &compile_result) {
+	Array outputs = compile_result.has("outputs") ? Array(compile_result["outputs"]) : Array();
+	if (!outputs.is_empty()) {
+		return true;
+	}
+
+	Array diagnostics = compile_result.has("diagnostics") ? Array(compile_result["diagnostics"]) : Array();
+	for (int64_t i = 0; i < diagnostics.size(); i++) {
+		Variant diagnostic_value = diagnostics[i];
+		if (diagnostic_value.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary diagnostic = diagnostic_value;
+		if (!String(diagnostic.get("file", String())).is_empty()) {
+			return true;
+		}
+		if (int64_t(diagnostic.get("code", 0)) != 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Dictionary duplicate_compile_result(const Dictionary &result) {
+	return result.duplicate(true);
+}
+
 Dictionary make_result(bool ok, const String &message = String()) {
 	Dictionary result;
 	result["ok"] = ok;
@@ -301,6 +465,8 @@ Dictionary make_result(bool ok, const String &message = String()) {
 	result["diagnostics"] = Array();
 	result["cache_root"] = cache_root();
 	result["output_root"] = cache_root();
+	result["cached"] = false;
+	result["retryable"] = !ok;
 	if (!message.is_empty()) {
 		Array diagnostics;
 		diagnostics.append(make_error_diagnostic(message));
@@ -477,7 +643,6 @@ bool ensure_project_typescript_config(String *r_error) {
 }
 
 Dictionary compile_project_internal(bool force) {
-	(void)force;
 	std::lock_guard<std::mutex> compile_lock(typescript_compile_mutex());
 
 	if (!FileAccess::file_exists(TYPESCRIPT_RUNTIME_PATH)) {
@@ -498,6 +663,20 @@ Dictionary compile_project_internal(bool force) {
 		result["diagnostics"] = source_diagnostics;
 		return result;
 	}
+	sources = sorted_sources_by_path(sources);
+
+	const uint64_t input_hash = project_input_hash(sources);
+	TypeScriptProjectCompileCache &cache = project_compile_cache();
+	if (!force &&
+			cache.has_result &&
+			cache.input_hash == input_hash &&
+			cache.source_count == sources.size() &&
+			compile_result_outputs_are_present(cache.result)) {
+		Dictionary cached_result = duplicate_compile_result(cache.result);
+		cached_result["cached"] = true;
+		cached_result["compiled"] = 0;
+		return cached_result;
+	}
 
 	if (!clear_generated_output_root()) {
 		return make_result(false, "Failed to clear generated TypeScript output: " + cache_root());
@@ -507,8 +686,17 @@ Dictionary compile_project_internal(bool force) {
 	Array diagnostics = compile_result.has("diagnostics") ? Array(compile_result["diagnostics"]) : Array();
 	result["diagnostics"] = diagnostics;
 	if (!bool(compile_result.get("ok", false))) {
+		const bool cacheable_failure = compile_failure_is_cacheable(compile_result);
 		result["ok"] = false;
 		result["message"] = "TypeScript compilation failed.";
+		result["cached"] = false;
+		result["retryable"] = !cacheable_failure;
+		if (cacheable_failure) {
+			cache.has_result = true;
+			cache.input_hash = input_hash;
+			cache.source_count = sources.size();
+			cache.result = duplicate_compile_result(result);
+		}
 		return result;
 	}
 
@@ -535,6 +723,13 @@ Dictionary compile_project_internal(bool force) {
 
 	result["outputs"] = actual_outputs;
 	result["compiled"] = written_count;
+	result["cached"] = false;
+	result["retryable"] = false;
+
+	cache.has_result = true;
+	cache.input_hash = input_hash;
+	cache.source_count = sources.size();
+	cache.result = duplicate_compile_result(result);
 	return result;
 }
 
@@ -616,11 +811,23 @@ String GodeTypeScriptCompiler::exported_path_for_source(const String &p_source_p
 	return exported_path_for_source_internal(source_path);
 }
 
-bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path, String *r_compiled_path) {
+void GodeTypeScriptCompiler::clear_compile_cache() {
+	std::lock_guard<std::mutex> compile_lock(typescript_compile_mutex());
+	reset_project_compile_cache();
+}
+
+bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path, String *r_compiled_path, bool *r_retryable_failure) {
+	if (r_retryable_failure) {
+		*r_retryable_failure = true;
+	}
+
 	String source_path;
 	String path_error;
 	if (!normalize_typescript_source_path(p_source_path, source_path, &path_error)) {
 		UtilityFunctions::printerr("[Gode TypeScript] ", path_error);
+		if (r_retryable_failure) {
+			*r_retryable_failure = false;
+		}
 		return false;
 	}
 	String exported_path = exported_path_for_source_internal(source_path);
@@ -631,17 +838,26 @@ bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path,
 			Dictionary output;
 			if (!output_for_source(exported_outputs, source_path, output)) {
 				UtilityFunctions::printerr("[Gode TypeScript] Source was not included in the exported TypeScript manifest: ", source_path);
+				if (r_retryable_failure) {
+					*r_retryable_failure = false;
+				}
 				return false;
 			}
 
 			String manifest_exported_path = output.get("exported_path", exported_path);
 			if (!FileAccess::file_exists(manifest_exported_path)) {
 				UtilityFunctions::printerr("[Gode TypeScript] Exported TypeScript output is missing: ", manifest_exported_path);
+				if (r_retryable_failure) {
+					*r_retryable_failure = false;
+				}
 				return false;
 			}
 
 			if (r_compiled_path) {
 				*r_compiled_path = manifest_exported_path;
+			}
+			if (r_retryable_failure) {
+				*r_retryable_failure = false;
 			}
 			return true;
 		}
@@ -650,7 +866,12 @@ bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path,
 	Dictionary result = compile_project_internal(false);
 	if (!bool(result.get("ok", false))) {
 		Array diagnostics = result.has("diagnostics") ? Array(result["diagnostics"]) : Array();
-		print_diagnostics(diagnostics);
+		if (!bool(result.get("cached", false))) {
+			print_diagnostics(diagnostics);
+		}
+		if (r_retryable_failure) {
+			*r_retryable_failure = bool(result.get("retryable", true));
+		}
 		return false;
 	}
 
@@ -658,6 +879,9 @@ bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path,
 	Dictionary output;
 	if (!output_for_source(outputs, source_path, output)) {
 		UtilityFunctions::printerr("[Gode TypeScript] Source was not emitted by the active TypeScript project: ", source_path);
+		if (r_retryable_failure) {
+			*r_retryable_failure = false;
+		}
 		return false;
 	}
 
@@ -669,6 +893,9 @@ bool GodeTypeScriptCompiler::ensure_script_compiled(const String &p_source_path,
 
 	if (r_compiled_path) {
 		*r_compiled_path = compiled_path;
+	}
+	if (r_retryable_failure) {
+		*r_retryable_failure = false;
 	}
 	return true;
 }

@@ -168,9 +168,18 @@ String TypeScriptScript::_get_source_code() const {
 	return source_code;
 }
 
-Error TypeScriptScript::reload_source_code(const String &p_code, bool p_keep_state) {
-	is_dirty = source_code != p_code;
-	source_code = p_code;
+Error TypeScriptScript::reload_source_code(const String &p_code, bool p_keep_state, bool p_force_dirty) {
+	const bool source_changed = !source_code_loaded || source_code != p_code;
+	source_code_loaded = true;
+	if (source_changed) {
+		source_code = p_code;
+	}
+	if (source_changed || p_force_dirty) {
+		is_dirty = true;
+	}
+	if (!source_changed && !p_force_dirty && !is_dirty) {
+		return is_valid ? Error::OK : Error::ERR_INVALID_PARAMETER;
+	}
 	return _reload(p_keep_state);
 }
 
