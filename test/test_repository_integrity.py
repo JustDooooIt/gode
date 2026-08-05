@@ -506,6 +506,55 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertLess(reload_lockers[0], reload_load)
 		self.assertLess(reload_load, reload_lockers[1])
 
+	def test_script_v8_scopes_do_not_call_compiling_metadata_apis(self):
+		risky_calls = (
+			"GodeTypeScriptCompiler::ensure_script_compiled",
+			"script->compile()",
+			"script->_has_method",
+			"script->_is_tool",
+			"script->_get_global_name",
+			"script->_get_base_script",
+			"script->get_base_class_name",
+			"script->_has_property_default_value",
+			"script->_get_property_default_value",
+			"script->ensure_default_class_loaded()",
+		)
+
+		def enclosing_block_after(source: str, marker_index: int) -> str:
+			stack = []
+			for index, char in enumerate(source[:marker_index]):
+				if char == "{":
+					stack.append(index)
+				elif char == "}" and stack:
+					stack.pop()
+
+			block_start = stack[-1] if stack else 0
+			depth = 0
+			for index in range(block_start, len(source)):
+				if source[index] == "{":
+					depth += 1
+				elif source[index] == "}":
+					depth -= 1
+					if depth == 0:
+						return source[marker_index : index + 1]
+			return source[marker_index:]
+
+		for path in (
+			ROOT / "src/script/script_instance.cpp",
+			ROOT / "src/script/typescript_script.cpp",
+		):
+			source = path.read_text(encoding="utf-8")
+			search_from = 0
+			while True:
+				locker_index = source.find("v8::Locker locker(NodeRuntime::isolate);", search_from)
+				if locker_index == -1:
+					break
+				scope = enclosing_block_after(source, locker_index)
+				line = source.count("\n", 0, locker_index) + 1
+				for call in risky_calls:
+					self.assertNotIn(call, scope, f"{call} appears inside a V8 scope at {path.relative_to(ROOT)}:{line}")
+				search_from = locker_index + 1
+
 	def test_typescript_script_compile_state_does_not_reuse_stale_metadata(self):
 		source = (ROOT / "src/script/typescript_script.cpp").read_text(encoding="utf-8")
 		runtime_source = (ROOT / "src/script/typescript_script_runtime.cpp").read_text(encoding="utf-8")
