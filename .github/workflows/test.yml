@@ -90,6 +90,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
       - name: Install dependencies
         run: python -m pip install -r generator/requirements.txt
 
@@ -180,3 +185,6 @@ jobs:
 
       - name: Run Godot smoke tests
         run: python test/run_godot_smoke.py --godot "$GODOT_BIN" --strict-exit-leaks
+
+      - name: Run npm native package smoke
+        run: python test/run_npm_native_smoke.py --godot "$GODOT_BIN"

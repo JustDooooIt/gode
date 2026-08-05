@@ -228,9 +228,17 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"find_program(GODE_COMPILER_CACHE_PROGRAM ccache)",
 			"CMAKE_C_COMPILER_LAUNCHER",
 			"CMAKE_CXX_COMPILER_LAUNCHER",
+			"add_library(gode_libnode STATIC IMPORTED GLOBAL)",
 			'if(WIN32)',
 			'set(GODE_LIBNODE_LINK_ITEMS)',
 			'set(GODE_LIBNODE_LINK_OPTIONS "/WHOLEARCHIVE:${GODE_LIBNODE_FILE}")',
+			'set(GODE_WINDOWS_NODE_SHIM_DEF "${CMAKE_CURRENT_BINARY_DIR}/gode_node_api_forwarders.def")',
+			"string(REGEX MATCHALL [[(napi|node_api)_[A-Za-z0-9_]+\\(]]",
+			"node_module_register\\(",
+			'string(REPLACE "(" "" _GODE_NODE_API_SYMBOL',
+			"add_custom_command(TARGET gode POST_BUILD",
+			"/noentry",
+			'"/out:$<TARGET_FILE_DIR:gode>/node.dll"',
 			'elseif(APPLE)',
 			'set(GODE_LIBNODE_LINK_ITEMS "-Wl,-force_load,${GODE_LIBNODE_FILE}")',
 			"set(GODE_LIBNODE_LINK_OPTIONS)",
@@ -262,6 +270,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		self.assertNotIn("set(ENV{GODOT_CPP_DIR}", cmake_text)
 		self.assertNotIn("\tgode_libnode\n", cmake_text)
+		self.assertNotIn("GODE_LIBNODE_IMPORTED_TYPE", cmake_text)
 
 	def test_node_runtime_helpers_are_split_from_runtime_lifecycle(self):
 		expected_files = [
@@ -277,6 +286,19 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		]
 		missing = [str(path.relative_to(ROOT)) for path in expected_files if not path.exists()]
 		self.assertEqual([], missing)
+
+		bridge_source = (ROOT / "src/runtime/node_godot_bridge.cpp").read_text(encoding="utf-8")
+		header_source = (ROOT / "include/runtime/node_godot_bridge.h").read_text(encoding="utf-8")
+		runtime_source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
+		self.assertIn("prepare_native_addon_host", header_source)
+		self.assertIn("node_runtime_bridge::prepare_native_addon_host();", runtime_source)
+		self.assertIn("GetModuleHandleExW", bridge_source)
+		self.assertIn("GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS", bridge_source)
+		self.assertIn('node_dll_path += L"node.dll"', bridge_source)
+		self.assertIn("promote_current_module_symbols", bridge_source)
+		self.assertIn("RTLD_GLOBAL", bridge_source)
+		self.assertNotIn('GetModuleHandleW(L"libnode.dll")', bridge_source)
+		self.assertNotIn("preload_node_dll_stub", header_source + bridge_source + runtime_source)
 
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
 		self.assertLessEqual(len(source.splitlines()), 470)
@@ -301,6 +323,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("__gode_package_manifest_entry", bootstrap_source)
 		self.assertIn("__gode_package_import_target", bootstrap_source)
 		self.assertIn("const packageExportTarget", bootstrap_source)
+		self.assertIn("arguments.length >= 3 ? _originalDlopen.call", bootstrap_source)
 		self.assertNotIn("user://.gode/typescript/", bootstrap_source)
 		self.assertNotIn("typescript-6.0.3", bootstrap_source)
 
@@ -1343,6 +1366,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"runtime/typescript_compiler.js",
 			"types/globals.d.ts",
 			"types/godot.d.ts",
+			"binary/windows/x64/node.dll",
 		):
 			self.assertIn(f'"{path}"', package_script)
 		self.assertNotIn("icons/typescript.svg.import", package_script)
