@@ -23,7 +23,8 @@ public:
 
 	static godot::String compiled_path_for_source(const godot::String &p_source_path);
 	static godot::String exported_path_for_source(const godot::String &p_source_path);
-	static bool ensure_script_compiled(const godot::String &p_source_path, godot::String *r_compiled_path = nullptr);
+	static bool ensure_script_compiled(const godot::String &p_source_path, godot::String *r_compiled_path = nullptr, bool *r_retryable_failure = nullptr);
+	static void clear_compile_cache();
 };
 
 } // namespace gode

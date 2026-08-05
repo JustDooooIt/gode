@@ -47,6 +47,7 @@ void uninitialize_node_module(godot::ModuleInitializationLevel p_level) {
 	gode::TypeScriptLanguage *typescript_language = gode::TypeScriptLanguage::get_singleton();
 
 	godot::Engine::get_singleton()->unregister_script_language(typescript_language);
+	gode::GodeTypeScriptCompiler::clear_compile_cache();
 
 	if (typescript_loader.is_valid()) {
 		typescript_loader->clear_cache();

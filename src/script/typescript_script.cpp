@@ -2945,23 +2945,31 @@ bool TypeScriptScript::compile() const {
 	if (path.is_empty()) {
 		return false;
 	}
+	auto finish_failed_compile_attempt = [this]() {
+		is_valid = false;
+		is_dirty = false;
+		return false;
+	};
 
 	String js_path;
-	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path)) {
-		return false;
+	bool retryable_compile_failure = true;
+	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path, &retryable_compile_failure)) {
+		if (retryable_compile_failure) {
+			is_valid = false;
+			return false;
+		}
+		return finish_failed_compile_attempt();
 	}
 
 	TSParser *parser = ts_parser_new();
 	if (!parser) {
 		UtilityFunctions::printerr("[Gode TypeScript] Failed to create TypeScript metadata parser: ", path);
-		is_valid = false;
-		return false;
+		return finish_failed_compile_attempt();
 	}
 	if (!ts_parser_set_language(parser, tree_sitter_typescript())) {
 		UtilityFunctions::printerr("[Gode TypeScript] Failed to configure TypeScript metadata parser: ", path);
 		ts_parser_delete(parser);
-		is_valid = false;
-		return false;
+		return finish_failed_compile_attempt();
 	}
 
 	std::string source = source_code.utf8().get_data();
@@ -2969,8 +2977,7 @@ bool TypeScriptScript::compile() const {
 	if (!tree) {
 		UtilityFunctions::printerr("[Gode TypeScript] Failed to parse TypeScript metadata: ", path);
 		ts_parser_delete(parser);
-		is_valid = false;
-		return false;
+		return finish_failed_compile_attempt();
 	}
 	TSNode root_node = ts_tree_root_node(tree);
 
@@ -2981,8 +2988,7 @@ bool TypeScriptScript::compile() const {
 	if (ts_node_is_null(class_node)) {
 		ts_tree_delete(tree);
 		ts_parser_delete(parser);
-		is_valid = false;
-		return false;
+		return finish_failed_compile_attempt();
 	}
 
 	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source, get_path());
