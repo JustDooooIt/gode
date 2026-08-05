@@ -169,7 +169,7 @@ String TypeScriptScript::_get_source_code() const {
 }
 
 Error TypeScriptScript::reload_source_code(const String &p_code, bool p_keep_state) {
-	is_dirty = true;
+	is_dirty = source_code != p_code;
 	source_code = p_code;
 	return _reload(p_keep_state);
 }

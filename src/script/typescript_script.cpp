@@ -2981,6 +2981,7 @@ bool TypeScriptScript::compile() const {
 	if (ts_node_is_null(class_node)) {
 		ts_tree_delete(tree);
 		ts_parser_delete(parser);
+		is_dirty = false;
 		is_valid = false;
 		return false;
 	}
