@@ -5,7 +5,7 @@
 
 namespace gode::node_runtime_bridge {
 
-void preload_node_dll_stub();
+void prepare_native_addon_host();
 void install_exports(Napi::Env env, Napi::Object exports);
 void install_global_decorators(Napi::Env env);
 

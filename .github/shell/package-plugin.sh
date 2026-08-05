@@ -59,6 +59,7 @@ required_files=(
 )
 required_binaries=(
 	"binary/windows/x64/libgode.dll"
+	"binary/windows/x64/node.dll"
 	"binary/linux/x64/libgode.so"
 	"binary/macos/arm64/libgode.dylib"
 	"binary/android/arm64/libgode.so"

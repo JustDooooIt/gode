@@ -36,7 +36,9 @@ jobs:
             arch: x64
             runner: windows-2022
             script: ./shell/build-windows.ps1 -Architecture x64 -Configuration Release -Fresh
-            artifact_path: example/addons/gode/binary/windows/x64/libgode.dll
+            artifact_path: |
+              example/addons/gode/binary/windows/x64/libgode.dll
+              example/addons/gode/binary/windows/x64/node.dll
           - platform: linux
             arch: x64
             runner: ubuntu-22.04

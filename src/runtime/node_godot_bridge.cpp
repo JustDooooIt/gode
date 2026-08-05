@@ -8,6 +8,37 @@
 
 #ifdef WIN32
 #include <windows.h>
+
+static std::wstring get_module_file_name(HMODULE module) {
+	std::wstring path(MAX_PATH, L'\0');
+	for (;;) {
+		DWORD length = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
+		if (length == 0) {
+			return {};
+		}
+		if (length < path.size()) {
+			path.resize(length);
+			return path;
+		}
+		path.resize(path.size() * 2);
+	}
+}
+#elif defined(__APPLE__) || defined(__linux__)
+#include <dlfcn.h>
+
+static void promote_current_module_symbols(void *symbol) {
+	Dl_info info = {};
+	if (dladdr(symbol, &info) == 0 || !info.dli_fname) {
+		return;
+	}
+#ifdef RTLD_NOLOAD
+	void *existing_handle = dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
+	if (existing_handle) {
+		return;
+	}
+#endif
+	(void)dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL);
+}
 #endif
 
 namespace gode::node_runtime_bridge {
@@ -117,24 +148,28 @@ static Napi::Value preload_dlls(const Napi::CallbackInfo &info) {
 	return env.Undefined();
 }
 
-void preload_node_dll_stub() {
+void prepare_native_addon_host() {
 #ifdef WIN32
-	HMODULE libnode = GetModuleHandleW(L"libnode.dll");
-	if (!libnode) {
+	HMODULE current_module = nullptr;
+	if (!GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(&prepare_native_addon_host),
+			&current_module)) {
 		return;
 	}
-	wchar_t libnode_path[MAX_PATH];
-	if (!GetModuleFileNameW(libnode, libnode_path, MAX_PATH)) {
+	std::wstring node_dll_path = get_module_file_name(current_module);
+	if (node_dll_path.empty()) {
 		return;
 	}
-	wchar_t node_dll_path[MAX_PATH];
-	wcscpy_s(node_dll_path, MAX_PATH, libnode_path);
-	wchar_t *sep = wcsrchr(node_dll_path, L'\\');
-	if (!sep) {
+	size_t sep = node_dll_path.find_last_of(L"\\/");
+	if (sep == std::wstring::npos) {
 		return;
 	}
-	wcscpy_s(sep + 1, MAX_PATH - (DWORD)(sep + 1 - node_dll_path), L"node.dll");
-	LoadLibraryW(node_dll_path);
+	node_dll_path.resize(sep + 1);
+	node_dll_path += L"node.dll";
+	LoadLibraryW(node_dll_path.c_str());
+#elif defined(__APPLE__) || defined(__linux__)
+	promote_current_module_symbols(reinterpret_cast<void *>(&prepare_native_addon_host));
 #endif
 }
 

@@ -35,7 +35,7 @@ v8::Global<v8::Context> NodeRuntime::node_context;
 napi_env NodeRuntime::napi_environment = nullptr;
 
 static Napi::Object InitGodeAddon(Napi::Env env, Napi::Object exports) {
-	node_runtime_bridge::preload_node_dll_stub();
+	node_runtime_bridge::prepare_native_addon_host();
 	NodeRuntime::napi_environment = env;
 	gode::register_builtin(env, exports);
 	gode::register_classes(env, exports);

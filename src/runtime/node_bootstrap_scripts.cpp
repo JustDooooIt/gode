@@ -366,7 +366,7 @@ std::string commonjs_bootstrap_script() {
 		   "  if (typeof realPath === 'string' && realPath.endsWith('.node') && typeof gode.preload_dlls === 'function') {"
 		   "    try { gode.preload_dlls(require('path').dirname(realPath)); } catch(_) {}"
 		   "  }"
-		   "  return _originalDlopen(mod, realPath, flags);"
+		   "  return arguments.length >= 3 ? _originalDlopen.call(this, mod, realPath, flags) : _originalDlopen.call(this, mod, realPath);"
 		   "};"
 		   ""
 		   "if (gode.GodotObject && gode.GodotObject.prototype) {"

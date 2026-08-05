@@ -204,6 +204,8 @@ endif()
 add_library(gode_libnode STATIC IMPORTED GLOBAL)
 if(GODE_PLATFORM STREQUAL "windows")
 	set(GODE_LIBNODE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/libnode/windows/${GODE_ARCH}/libnode.lib")
+	set(GODE_LIBNODE_LINK_ITEMS)
+	set(GODE_LIBNODE_LINK_OPTIONS "/WHOLEARCHIVE:${GODE_LIBNODE_FILE}")
 	set(GODE_LIBNODE_SYSTEM_LIBS Dbghelp Psapi Winmm Ws2_32 Advapi32 Crypt32 Ole32 Iphlpapi Shell32 User32 Userenv Uuid)
 elseif(GODE_PLATFORM STREQUAL "linux")
 	set(GODE_LIBNODE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/libnode/linux/${GODE_ARCH}/libnode.a")
@@ -224,13 +226,10 @@ endif()
 if(NOT EXISTS "${GODE_LIBNODE_FILE}")
 	message(FATAL_ERROR "libnode binary was not found: ${GODE_LIBNODE_FILE}")
 endif()
-if(WIN32)
-	set(GODE_LIBNODE_LINK_ITEMS)
-	set(GODE_LIBNODE_LINK_OPTIONS "/WHOLEARCHIVE:${GODE_LIBNODE_FILE}")
-elseif(APPLE)
+if(APPLE)
 	set(GODE_LIBNODE_LINK_ITEMS "-Wl,-force_load,${GODE_LIBNODE_FILE}")
 	set(GODE_LIBNODE_LINK_OPTIONS)
-else()
+elseif(NOT WIN32)
 	set(GODE_LIBNODE_LINK_ITEMS "-Wl,--whole-archive" "${GODE_LIBNODE_FILE}" "-Wl,--no-whole-archive")
 	set(GODE_LIBNODE_LINK_OPTIONS)
 endif()
@@ -298,6 +297,69 @@ target_link_libraries(gode PRIVATE
 )
 target_link_options(gode PRIVATE ${GODE_LIBNODE_LINK_OPTIONS})
 set_property(TARGET gode APPEND PROPERTY LINK_DEPENDS "${GODE_LIBNODE_FILE}")
+if(WIN32)
+	set(GODE_WINDOWS_NODE_SHIM_DEF "${CMAKE_CURRENT_BINARY_DIR}/gode_node_api_forwarders.def")
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/js_native_api.h"
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/node_api.h"
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/node.h"
+	)
+	set(_GODE_NODE_API_FORWARDER_SYMBOLS)
+	foreach(_GODE_NODE_API_HEADER IN ITEMS
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/js_native_api.h"
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/node_api.h"
+		"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include/node.h"
+	)
+		file(READ "${_GODE_NODE_API_HEADER}" _GODE_NODE_API_HEADER_TEXT)
+		string(REGEX MATCHALL [[(napi|node_api)_[A-Za-z0-9_]+\(]] _GODE_NODE_API_HEADER_MATCHES "${_GODE_NODE_API_HEADER_TEXT}")
+		foreach(_GODE_NODE_API_HEADER_MATCH IN LISTS _GODE_NODE_API_HEADER_MATCHES)
+			string(REPLACE "(" "" _GODE_NODE_API_SYMBOL "${_GODE_NODE_API_HEADER_MATCH}")
+			list(APPEND _GODE_NODE_API_FORWARDER_SYMBOLS "${_GODE_NODE_API_SYMBOL}")
+		endforeach()
+		string(REGEX MATCHALL [[node_module_register\(]] _GODE_NODE_MODULE_HEADER_MATCHES "${_GODE_NODE_API_HEADER_TEXT}")
+		foreach(_GODE_NODE_MODULE_HEADER_MATCH IN LISTS _GODE_NODE_MODULE_HEADER_MATCHES)
+			string(REPLACE "(" "" _GODE_NODE_MODULE_SYMBOL "${_GODE_NODE_MODULE_HEADER_MATCH}")
+			list(APPEND _GODE_NODE_API_FORWARDER_SYMBOLS "${_GODE_NODE_MODULE_SYMBOL}")
+		endforeach()
+	endforeach()
+	if(NOT _GODE_NODE_API_FORWARDER_SYMBOLS)
+		message(FATAL_ERROR "No Node-API symbols were found for the Windows node.dll shim.")
+	endif()
+	list(REMOVE_DUPLICATES _GODE_NODE_API_FORWARDER_SYMBOLS)
+	list(SORT _GODE_NODE_API_FORWARDER_SYMBOLS)
+	set(_GODE_NODE_API_FORWARDER_DEF "LIBRARY node\nEXPORTS\n")
+	foreach(_GODE_NODE_API_SYMBOL IN LISTS _GODE_NODE_API_FORWARDER_SYMBOLS)
+		string(APPEND _GODE_NODE_API_FORWARDER_DEF "\t${_GODE_NODE_API_SYMBOL}=libgode.${_GODE_NODE_API_SYMBOL}\n")
+	endforeach()
+	file(WRITE "${GODE_WINDOWS_NODE_SHIM_DEF}" "${_GODE_NODE_API_FORWARDER_DEF}")
+
+	if(NOT MSVC)
+		message(FATAL_ERROR "The Windows node.dll Node-API forwarder requires the MSVC linker.")
+	endif()
+	if(GODE_ARCH STREQUAL "arm64")
+		set(GODE_WINDOWS_NODE_SHIM_MACHINE "ARM64")
+	elseif(GODE_ARCH STREQUAL "x64")
+		set(GODE_WINDOWS_NODE_SHIM_MACHINE "X64")
+	else()
+		message(FATAL_ERROR "Unsupported Windows architecture for node.dll shim: ${GODE_ARCH}")
+	endif()
+	set(GODE_WINDOWS_NODE_SHIM_IMPORT_DIR "${CMAKE_CURRENT_BINARY_DIR}/gode-node-shim/$<CONFIG>")
+	add_custom_command(TARGET gode POST_BUILD
+		COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:gode>" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}"
+		COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE_DIR:gode>/node.dll" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}/node.lib"
+		COMMAND "${CMAKE_LINKER}"
+			/nologo
+			/dll
+			/noentry
+			/ignore:4001
+			"/machine:${GODE_WINDOWS_NODE_SHIM_MACHINE}"
+			"/def:${GODE_WINDOWS_NODE_SHIM_DEF}"
+			"/out:$<TARGET_FILE_DIR:gode>/node.dll"
+			"/implib:${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}/node.lib"
+		COMMENT "Generating Windows node.dll Node-API forwarder"
+		VERBATIM
+	)
+endif()
 
 if(MSVC)
 	target_compile_options(gode PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
