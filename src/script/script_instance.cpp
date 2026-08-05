@@ -127,8 +127,9 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 			owner->add_user_signal(E.key, args);
 		}
 
-		if (!NodeRuntime::is_running()) {
-			NodeRuntime::init_once();
+		// This can compile TypeScript; keep it outside the instance V8 scope to avoid lock inversion.
+		if (!script->ensure_default_class_loaded()) {
+			return;
 		}
 		if (!NodeRuntime::is_running()) {
 			return;
@@ -138,7 +139,7 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 		v8::HandleScope handle_scope(NodeRuntime::isolate);
 
-		Napi::Function default_class = script->get_default_class();
+		Napi::Function default_class = script->get_cached_default_class();
 		if (default_class.IsEmpty() || default_class.IsUndefined() || default_class.IsNull()) {
 			return;
 		}
@@ -234,27 +235,42 @@ void ScriptInstance::reload(bool p_keep_state) {
 		return;
 	}
 
+	HashMap<StringName, Variant> old_state;
+	{
+		v8::Locker locker(NodeRuntime::isolate);
+		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+		v8::HandleScope handle_scope(NodeRuntime::isolate);
+		v8::Local<v8::Context> context = NodeRuntime::node_context.Get(NodeRuntime::isolate);
+		v8::Context::Scope context_scope(context);
+
+		if (p_keep_state && !js_instance.IsEmpty()) {
+			for (const KeyValue<StringName, PropertyInfo> &E : script->get_exported_properties()) {
+				Variant value;
+				if (get(E.key, value)) {
+					old_state[E.key] = value;
+				}
+			}
+		}
+		property_storage.clear();
+		js_instance.Reset();
+	}
+
+	// This can compile TypeScript; keep it outside the instance V8 scope to avoid lock inversion.
+	if (!script->ensure_default_class_loaded()) {
+		return;
+	}
+	if (!NodeRuntime::is_running()) {
+		return;
+	}
+
 	v8::Locker locker(NodeRuntime::isolate);
 	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
 	v8::HandleScope handle_scope(NodeRuntime::isolate);
 	v8::Local<v8::Context> context = NodeRuntime::node_context.Get(NodeRuntime::isolate);
 	v8::Context::Scope context_scope(context);
 
-	HashMap<StringName, Variant> old_state;
-	if (p_keep_state && !js_instance.IsEmpty()) {
-		for (const KeyValue<StringName, PropertyInfo> &E : script->get_exported_properties()) {
-			Variant value;
-			if (get(E.key, value)) {
-				old_state[E.key] = value;
-			}
-		}
-	}
-	property_storage.clear();
-
-	js_instance.Reset();
-
-	Napi::Function default_class = script->get_default_class();
-	if (default_class.IsEmpty()) {
+	Napi::Function default_class = script->get_cached_default_class();
+	if (default_class.IsEmpty() || default_class.IsUndefined() || default_class.IsNull()) {
 		return;
 	}
 
@@ -493,12 +509,7 @@ bool ScriptInstance::has_method(const StringName &p_method) const {
 	if (!NodeRuntime::is_running()) {
 		return false;
 	}
-	v8::Locker locker(NodeRuntime::isolate);
-	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-	v8::HandleScope handle_scope(NodeRuntime::isolate);
-	Napi::Object instance = js_instance.Value();
-	std::string method_name = String(p_method).utf8().get_data();
-	return script->_has_method(method_name.c_str());
+	return script->_has_method(p_method);
 }
 
 int32_t ScriptInstance::get_method_argument_count(const StringName &p_method, bool &r_is_valid) const {
@@ -689,50 +700,52 @@ String ScriptInstance::to_string(bool &r_is_valid) const {
 		r_is_valid = false;
 		return String();
 	}
-	v8::Locker locker(NodeRuntime::isolate);
-	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
-	v8::HandleScope handle_scope(NodeRuntime::isolate);
-	Napi::Object obj = js_instance.Value();
-	Napi::Env env = obj.Env();
-	try {
-		Napi::Value proto_val = obj.Get("__proto__");
-		if (log_and_clear_pending_js_exception(env, "JS toString prototype lookup")) {
-			r_is_valid = false;
-			return String();
-		}
-		if (proto_val.IsObject()) {
-			Napi::Object proto = proto_val.As<Napi::Object>();
-			if (proto.HasOwnProperty("toString")) {
-				Napi::Value ts_val = proto.Get("toString");
-				if (log_and_clear_pending_js_exception(env, "JS toString lookup")) {
-					r_is_valid = false;
-					return String();
-				}
-				if (ts_val.IsFunction()) {
-					Napi::Value result = ts_val.As<Napi::Function>().Call(obj, {});
-					if (log_and_clear_pending_js_exception(env, "JS toString call")) {
+	{
+		v8::Locker locker(NodeRuntime::isolate);
+		v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+		v8::HandleScope handle_scope(NodeRuntime::isolate);
+		Napi::Object obj = js_instance.Value();
+		Napi::Env env = obj.Env();
+		try {
+			Napi::Value proto_val = obj.Get("__proto__");
+			if (log_and_clear_pending_js_exception(env, "JS toString prototype lookup")) {
+				r_is_valid = false;
+				return String();
+			}
+			if (proto_val.IsObject()) {
+				Napi::Object proto = proto_val.As<Napi::Object>();
+				if (proto.HasOwnProperty("toString")) {
+					Napi::Value ts_val = proto.Get("toString");
+					if (log_and_clear_pending_js_exception(env, "JS toString lookup")) {
 						r_is_valid = false;
 						return String();
 					}
-					if (result.IsString()) {
-						r_is_valid = true;
-						return String(result.As<Napi::String>().Utf8Value().c_str());
+					if (ts_val.IsFunction()) {
+						Napi::Value result = ts_val.As<Napi::Function>().Call(obj, {});
+						if (log_and_clear_pending_js_exception(env, "JS toString call")) {
+							r_is_valid = false;
+							return String();
+						}
+						if (result.IsString()) {
+							r_is_valid = true;
+							return String(result.As<Napi::String>().Utf8Value().c_str());
+						}
 					}
 				}
 			}
+		} catch (const Napi::Error &e) {
+			log_js_error("JS toString", js_error_to_string(e));
+			r_is_valid = false;
+			return String();
+		} catch (const std::exception &e) {
+			UtilityFunctions::printerr("Native exception in JS toString: ", e.what());
+			r_is_valid = false;
+			return String();
+		} catch (...) {
+			UtilityFunctions::printerr("Unknown exception in JS toString");
+			r_is_valid = false;
+			return String();
 		}
-	} catch (const Napi::Error &e) {
-		log_js_error("JS toString", js_error_to_string(e));
-		r_is_valid = false;
-		return String();
-	} catch (const std::exception &e) {
-		UtilityFunctions::printerr("Native exception in JS toString: ", e.what());
-		r_is_valid = false;
-		return String();
-	} catch (...) {
-		UtilityFunctions::printerr("Unknown exception in JS toString");
-		r_is_valid = false;
-		return String();
 	}
 	r_is_valid = true;
 	String cls_name = String(script->_get_global_name());

@@ -3011,29 +3011,29 @@ bool TypeScriptScript::compile() const {
 	return true;
 }
 
-Napi::Function TypeScriptScript::get_default_class() const {
+bool TypeScriptScript::ensure_default_class_loaded() const {
 	if (!compile()) {
-		return Napi::Function();
+		return false;
 	}
 
 	if (!default_class.IsEmpty()) {
-		return default_class.Value();
+		return NodeRuntime::is_running() && NodeRuntime::napi_environment != nullptr;
 	}
 
 	String path = get_path();
 	if (path.is_empty()) {
-		return Napi::Function();
+		return false;
 	}
 
 	String js_path;
 	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path)) {
-		return Napi::Function();
+		return false;
 	}
 
 	String js_code = FileAccess::get_file_as_string(js_path);
 	if (FileAccess::get_open_error() != OK) {
 		UtilityFunctions::printerr("[Gode TypeScript] Failed to read compiled script: ", js_path);
-		return Napi::Function();
+		return false;
 	}
 	String runtime_js_path = js_path;
 	ProjectSettings *project_settings = ProjectSettings::get_singleton();
@@ -3043,15 +3043,36 @@ Napi::Function TypeScriptScript::get_default_class() const {
 			runtime_js_path = globalized;
 		}
 	}
+
+	if (!NodeRuntime::is_running()) {
+		NodeRuntime::init_once();
+	}
+	if (!NodeRuntime::is_running() || NodeRuntime::napi_environment == nullptr) {
+		return false;
+	}
+
+	v8::Locker locker(NodeRuntime::isolate);
+	v8::Isolate::Scope isolate_scope(NodeRuntime::isolate);
+	Napi::Env env(NodeRuntime::napi_environment);
+	Napi::HandleScope handle_scope(env);
+	v8::Context::Scope context_scope(NodeRuntime::node_context.Get(NodeRuntime::isolate));
+
 	Napi::Value exports = NodeRuntime::compile_script(js_code.utf8().get_data(), runtime_js_path.utf8().get_data());
 	Napi::Function cls = NodeRuntime::get_default_class(exports);
 
 	if (!cls.IsEmpty() && !cls.IsUndefined() && !cls.IsNull()) {
 		const_cast<TypeScriptScript *>(this)->default_class = Napi::Persistent(cls);
-		return cls;
+		return true;
 	}
 
-	return Napi::Function();
+	return false;
+}
+
+Napi::Function TypeScriptScript::get_cached_default_class() const {
+	if (default_class.IsEmpty() || !NodeRuntime::is_running() || NodeRuntime::napi_environment == nullptr) {
+		return Napi::Function();
+	}
+	return default_class.Value();
 }
 
 ScriptLanguage *TypeScriptScript::_get_language() const {

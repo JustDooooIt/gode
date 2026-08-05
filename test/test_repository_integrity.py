@@ -455,6 +455,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		source = (ROOT / "src/script/script_instance.cpp").read_text(encoding="utf-8")
 
 		self.assertIn("NodeRuntime::init_once();", source)
+		self.assertNotIn("script->get_default_class()", source)
+		self.assertIn("script->ensure_default_class_loaded()", source)
+		self.assertIn("script->get_cached_default_class()", source)
 		self.assertIn("if (!NodeRuntime::is_running()) {\n\t\t\treturn;\n\t\t}\n\n\t\tv8::Locker locker(NodeRuntime::isolate);", source)
 		self.assertIn("if (js_instance.IsEmpty() || !NodeRuntime::is_running()) {\n\t\treturn false;\n\t}", source)
 		self.assertIn("if (!NodeRuntime::is_running()) {\n\t\tr_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;", source)
@@ -466,7 +469,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			return source[start:end]
 
 		for body in (
-			source_between("bool ScriptInstance::has_method", "int32_t ScriptInstance::get_method_argument_count"),
 			source_between("Variant ScriptInstance::call", "void ScriptInstance::notification_bind"),
 			source_between("void ScriptInstance::notification", "String ScriptInstance::to_string"),
 		):
@@ -476,14 +478,38 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertLess(locker, isolate_scope)
 			self.assertLess(isolate_scope, handle_scope)
 
+		has_method_body = source_between("bool ScriptInstance::has_method", "int32_t ScriptInstance::get_method_argument_count")
+		self.assertIn("return script->_has_method(p_method);", has_method_body)
+		self.assertNotIn("v8::Locker locker(NodeRuntime::isolate);", has_method_body)
+
 		method_start = source.index("int32_t ScriptInstance::get_method_argument_count")
 		method_end = source.index("Variant ScriptInstance::call", method_start)
 		method_body = source[method_start:method_end]
 		self.assertNotIn("v8::Locker locker(NodeRuntime::isolate);", method_body)
 
+		to_string_body = source_between("String ScriptInstance::to_string", "bool ScriptInstance::property_can_revert")
+		to_string_locker = to_string_body.index("v8::Locker locker(NodeRuntime::isolate);")
+		to_string_class_name = to_string_body.index("String cls_name = String(script->_get_global_name());")
+		to_string_scope_end = to_string_body.index("\n\t}\n\tr_is_valid = true;", to_string_locker)
+		self.assertLess(to_string_locker, to_string_scope_end)
+		self.assertLess(to_string_scope_end, to_string_class_name)
+
+		constructor_body = source_between("ScriptInstance::ScriptInstance", "ScriptInstance::~ScriptInstance")
+		constructor_load = constructor_body.index("if (!script->ensure_default_class_loaded())")
+		constructor_locker = constructor_body.index("v8::Locker locker(NodeRuntime::isolate);")
+		self.assertLess(constructor_load, constructor_locker)
+
+		reload_body = source_between("void ScriptInstance::reload", "bool ScriptInstance::set")
+		reload_lockers = [match.start() for match in re.finditer(r"v8::Locker locker\(NodeRuntime::isolate\);", reload_body)]
+		self.assertEqual(2, len(reload_lockers))
+		reload_load = reload_body.index("if (!script->ensure_default_class_loaded())")
+		self.assertLess(reload_lockers[0], reload_load)
+		self.assertLess(reload_load, reload_lockers[1])
+
 	def test_typescript_script_compile_state_does_not_reuse_stale_metadata(self):
 		source = (ROOT / "src/script/typescript_script.cpp").read_text(encoding="utf-8")
 		runtime_source = (ROOT / "src/script/typescript_script_runtime.cpp").read_text(encoding="utf-8")
+		header = (ROOT / "include/script/typescript_script.h").read_text(encoding="utf-8")
 
 		self.assertIn("if (!is_dirty) {\n\t\treturn is_valid;\n\t}", source)
 		self.assertIn("if (!default_class.IsEmpty())", source)
@@ -504,10 +530,18 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		):
 			self.assertLess(source.index(token, compile_start), path_index, token)
 
-		get_default_class_start = source.index("Napi::Function TypeScriptScript::get_default_class() const")
-		first_compile = source.index("if (!compile())", get_default_class_start)
-		cache_read = source.index("if (!default_class.IsEmpty())", get_default_class_start)
+		self.assertNotIn("Napi::Function get_default_class() const", header)
+		self.assertNotIn("Napi::Function TypeScriptScript::get_default_class() const", source)
+		self.assertIn("bool ensure_default_class_loaded() const;", header)
+		self.assertIn("Napi::Function get_cached_default_class() const;", header)
+
+		default_class_load_start = source.index("bool TypeScriptScript::ensure_default_class_loaded() const")
+		first_compile = source.index("if (!compile())", default_class_load_start)
+		cache_read = source.index("if (!default_class.IsEmpty())", default_class_load_start)
 		self.assertLess(first_compile, cache_read)
+		ensure_compiled = source.index("GodeTypeScriptCompiler::ensure_script_compiled", default_class_load_start)
+		v8_locker = source.index("v8::Locker locker(NodeRuntime::isolate);", default_class_load_start)
+		self.assertLess(ensure_compiled, v8_locker)
 		self.assertIn("if (!compile()) {\n\t\treturn Error::ERR_INVALID_PARAMETER;\n\t}", runtime_source)
 		reload_start = runtime_source.index("Error TypeScriptScript::_reload(bool p_keep_state)")
 		reload_fail = runtime_source.index("return Error::ERR_INVALID_PARAMETER;", reload_start)

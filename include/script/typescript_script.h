@@ -49,6 +49,8 @@ protected:
 
 protected:
 	static void _bind_methods();
+	bool ensure_default_class_loaded() const;
+	Napi::Function get_cached_default_class() const;
 
 public:
 	TypeScriptScript();
@@ -56,7 +58,6 @@ public:
 	static void release_all_runtime_state();
 	bool compile() const;
 	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state);
-	Napi::Function get_default_class() const;
 	void release_runtime_state();
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }
