@@ -324,8 +324,20 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("__gode_package_import_target", bootstrap_source)
 		self.assertIn("const packageExportTarget", bootstrap_source)
 		self.assertIn("arguments.length >= 3 ? _originalDlopen.call", bootstrap_source)
+		self.assertIn("testBindingBinary", bootstrap_source)
+		self.assertIn("msg.gpu === false", bootstrap_source)
+		self.assertIn("child_process.fork is not supported", bootstrap_source)
+		self.assertNotIn("simulate success", bootstrap_source)
+		self.assertNotIn("GODE_NODE_EXECUTABLE", bootstrap_source)
+		self.assertNotIn("execPath:", bootstrap_source)
+		self.assertNotIn(".includes('testBindingBinary')", bootstrap_source)
+		self.assertNotIn("_origFork.apply", bootstrap_source)
 		self.assertNotIn("user://.gode/typescript/", bootstrap_source)
 		self.assertNotIn("typescript-6.0.3", bootstrap_source)
+
+		npm_native_smoke_source = (ROOT / "test/run_npm_native_smoke.py").read_text(encoding="utf-8")
+		self.assertIn("getLlama({ dryRun: true }", npm_native_smoke_source)
+		self.assertNotIn('exclude: ["cuda", "vulkan"]', npm_native_smoke_source)
 
 	def test_node_runtime_public_v8_entries_hold_locker_and_safe_scopes(self):
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
