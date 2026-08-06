@@ -1,10 +1,11 @@
 ## 2.4.0
 
-- Breaking：将原生插件拆分为 `gode_runtime` 和桌面专用 `gode_editor`；导出的游戏现在只保留目标平台运行时库，并排除 editor-only 原生文件。
-- 将项目级 TypeScript 编译移动到 editor 扩展。runtime 脚本加载只会在编辑器进程中调用 `GodeTypeScriptCompiler`，导出运行时只加载 export manifest 中列出的产物。
-- 导出运行时首次校验 TypeScript export manifest 后会缓存结果，避免每次加载脚本都重新读取和解析 manifest。
-- 简化 editor 编译 API：`GodeTypeScriptCompiler` 现在直接暴露静态编译方法，并移除 `compile_project_static`。
-- 更新 CMake、构建脚本、打包校验和 CI 检查以适配 `libgode_runtime` / `libgode_editor` 布局，包括 Windows `node.dll` Node-API forwarder。
+- Breaking：将原生扩展拆分为 `gode_runtime` 和桌面专用 `gode_editor`；导出包现在只包含目标平台运行时二进制，并排除编辑器专用文件。
+- Breaking：TypeScript 静态方法不再出现在脚本实例方法表中。默认导出类的静态方法通过脚本资源 API `has_static_method()`、`get_static_method_argument_count()` 和 `call_static()` 检查和调用。
+- 项目级 TypeScript 编译移入 editor 扩展；`GodeTypeScriptCompiler` 直接暴露静态编译方法，移除 `compile_project_static`，导出运行时只读取 manifest 中列出的产物并缓存已校验 manifest。
+- 收紧 TypeScript 编辑器方法发现，只识别默认导出类的直接实例方法，排除静态方法、constructor、getter/setter 和嵌套声明。
+- 统一实例调用、notification 和静态方法调用的异步 Promise rejection 日志处理。
+- 更新构建、打包、CI 和测试覆盖，覆盖拆分后的库布局、Windows `node.dll` Node-API forwarder、iOS deployment target 16.0、静态方法调用和方法过滤。
 
 ## 2.3.3
 
