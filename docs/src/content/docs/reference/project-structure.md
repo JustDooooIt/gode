@@ -23,13 +23,15 @@ my_project/
 
 | Path | Purpose |
 | --- | --- |
-| `binary/` | GDExtension manifest and platform-specific native libraries. |
+| `binary/` | Runtime GDExtension manifest, platform-specific runtime libraries, and desktop editor-only native libraries under `binary/editor/`. |
 | `config/` | Bundled templates such as `tsconfig.json` and `gode.json`. |
 | `gode.gd` | Godot plugin entry point. |
 | `plugin.cfg` | Godot editor plugin metadata. |
 | `runtime/` | Godot-side runtime helpers. |
 | `tsc/` | Bundled TypeScript compiler. |
 | `types/` | Generated TypeScript declaration files for Godot APIs. |
+
+`native_extensions/paths` should contain only `res://addons/gode/binary/gode.gdextension`. When the editor plugin is enabled, Gode registers `gode_editor.gdextension` in the local `.godot/extension_list.cfg` cache for development-only native editor APIs without exporting the editor extension.
 
 ## Project root files
 

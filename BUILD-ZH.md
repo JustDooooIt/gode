@@ -55,7 +55,7 @@ Windows：
 ./shell/build-linux.sh
 ```
 
-这些命令默认构建 `Debug`，默认启用增量构建，默认自动选择可用的 CMake generator，并将产物输出到 `example/addons/gode/binary/<platform>/<arch>/`。
+这些命令默认构建 `Debug`，默认启用增量构建，默认自动选择可用的 CMake generator。运行时库输出到 `example/addons/gode/binary/<platform>/<arch>/`；桌面平台还会构建开发期专用的编辑器库，输出到 `example/addons/gode/binary/editor/<platform>/<arch>/`。
 
 注意：`shell/build-*` 构建脚本只负责生成 native GDExtension 二进制，不会自动下载 TypeScript 编译器。首次打开 Godot 示例项目前，或清理过 `example/addons/gode/tsc/` 后，需要先运行 `./.github/shell/prepare-typescript.sh` 或 `./.github/shell/prepare-typescript.ps1`。正式打包脚本 `.github/shell/package-plugin.sh` 会在打包 staging 目录中自动准备 TypeScript 编译器。
 
@@ -178,10 +178,16 @@ build/macos/arm64/release/
 build/windows/x64/debug/
 ```
 
-插件二进制产物仍输出到 Godot 插件目录：
+插件二进制产物仍输出到 Godot 插件目录。`gode_runtime` 是运行游戏和导出包需要的库，覆盖所有支持的目标平台：
 
 ```text
 example/addons/gode/binary/<platform>/<arch>/
+```
+
+桌面平台额外输出 `gode_editor`，只在开发时由 Godot 编辑器插件加载：
+
+```text
+example/addons/gode/binary/editor/<platform>/<arch>/
 ```
 
 因此同一平台和架构下，`Debug` 与 `Release` 构建会覆盖同一个插件二进制文件。这样 Godot 示例项目可以直接加载最近一次构建出的库。

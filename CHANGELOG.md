@@ -1,3 +1,11 @@
+## 2.4.0
+
+- Breaking: split the native plugin into `gode_runtime` and desktop-only `gode_editor`; exported games now keep only the selected target platform's runtime library and exclude editor-only native files.
+- Moved project TypeScript compilation into the editor extension. Runtime script loading now calls `GodeTypeScriptCompiler` only in editor processes, while exported runtimes load only files listed in the export manifest.
+- Cached the exported TypeScript manifest after first validation so exported games do not re-read and re-parse it for every script load.
+- Simplified the editor compile API: `GodeTypeScriptCompiler` now exposes static compile methods directly and `compile_project_static` has been removed.
+- Updated CMake, build scripts, package validation, and CI checks for the `libgode_runtime` / `libgode_editor` layout, including the Windows `node.dll` Node-API forwarder.
+
 ## 2.3.3
 
 - Fixed TypeScript script resource registration and export metadata context handling.
