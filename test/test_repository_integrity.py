@@ -226,6 +226,29 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		self.assertEqual([], missing)
 
+	def test_declared_ios_minimum_matches_release_build_target(self):
+		ios_target = "16.0"
+		build_script = (ROOT / "shell/build-ios.sh").read_text(encoding="utf-8")
+		build_workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+		build_doc = (ROOT / "BUILD-ZH.md").read_text(encoding="utf-8")
+		readme = (ROOT / "README.md").read_text(encoding="utf-8")
+		readme_zh = (ROOT / "README-ZH.md").read_text(encoding="utf-8")
+		docs_overview = (ROOT / "docs/src/content/docs/index.md").read_text(encoding="utf-8")
+		docs_overview_zh = (ROOT / "docs/src/content/docs/zh/index.md").read_text(encoding="utf-8")
+
+		self.assertIn(f'deployment_target="{ios_target}"', build_script)
+		self.assertIn(
+			f"./shell/build-ios.sh --arch arm64 --config Release --deployment-target {ios_target} --fresh",
+			build_workflow,
+		)
+		self.assertIn(f"| `--deployment-target <version>` | `{ios_target}` | iOS deployment target\u3002 |", build_doc)
+		self.assertIn("| Minimum Version | 10 | 9 | 10.15 | 16 | Ubuntu 22 |", readme)
+		self.assertIn("| \u6700\u4f4e\u7248\u672c | 10 | 9 | 10.15 | 16 | Ubuntu 22 |", readme_zh)
+		self.assertIn("| iOS | \u2705 | iOS 16 |", docs_overview)
+		self.assertIn("| iOS | \u2705 | iOS 16 |", docs_overview_zh)
+		self.assertNotIn('deployment_target="12.0"', build_script)
+		self.assertNotIn("| `--deployment-target <version>` | `12.0` | iOS deployment target\u3002 |", build_doc)
+
 	def test_cmake_codegen_and_generated_binding_builds_are_incremental(self):
 		cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 

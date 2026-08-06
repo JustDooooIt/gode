@@ -55,7 +55,7 @@ jobs:
           - platform: ios
             arch: arm64
             runner: macos-26
-            script: ./shell/build-ios.sh --arch arm64 --config Release --fresh
+            script: ./shell/build-ios.sh --arch arm64 --config Release --deployment-target 16.0 --fresh
             artifact_path: example/addons/gode/binary/ios/arm64/libgode_runtime.dylib
             editor_artifact_path: ""
           - platform: android
