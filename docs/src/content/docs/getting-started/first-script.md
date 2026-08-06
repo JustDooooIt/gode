@@ -62,6 +62,28 @@ From GDScript:
 $Health.damage(25)
 ```
 
+## Call static class methods
+
+Static TypeScript methods are exposed on the script resource, not on node instances:
+
+```ts
+import { Node } from "godot";
+
+export default class DamageTable extends Node {
+  static baseDamage(level: number): number {
+    return level * 10;
+  }
+}
+```
+
+From GDScript:
+
+```gdscript
+var script = preload("res://scripts/damage_table.ts")
+if script.has_static_method("baseDamage"):
+  var amount = script.call_static("baseDamage", 3)
+```
+
 ## Import local modules
 
 Use modern ESM-style imports for local modules. File extensions are not required:

@@ -2481,7 +2481,38 @@ static void parse_method_params(TSNode method_node, const std::string &source, M
 	}
 }
 
-static void parse_class_members(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
+static bool is_script_method_name_node(TSNode name_node) {
+	return !ts_node_is_null(name_node) && strcmp(ts_node_type(name_node), "property_identifier") == 0;
+}
+
+static bool node_has_static_modifier(TSNode node) {
+	const uint32_t child_count = ts_node_child_count(node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		if (strcmp(ts_node_type(ts_node_child(node, i)), "static") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool method_node_is_accessor(TSNode method_node, TSNode name_node) {
+	const uint32_t child_count = ts_node_child_count(method_node);
+	const uint32_t name_start = ts_node_start_byte(name_node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(method_node, i);
+		if (ts_node_end_byte(child) > name_start) {
+			break;
+		}
+
+		const char *child_type = ts_node_type(child);
+		if (strcmp(child_type, "get") == 0 || strcmp(child_type, "set") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void parse_class_members(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &static_methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
 	TSNode body_node = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body_node)) {
 		return;
@@ -2492,13 +2523,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 		const char *member_type = ts_node_type(member);
 
 		if (strcmp(member_type, "public_field_definition") == 0) {
-			bool is_static = false;
-			for (uint32_t k = 0; k < ts_node_child_count(member); k++) {
-				if (strcmp(ts_node_type(ts_node_child(member, k)), "static") == 0) {
-					is_static = true;
-					break;
-				}
-			}
+			const bool is_static = node_has_static_modifier(member);
 			if (is_static) {
 				TSNode field_name_node = ts_node_child_by_field_name(member, "name", 4);
 				TSNode field_value_node = ts_node_child_by_field_name(member, "value", 5);
@@ -2667,21 +2692,18 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 			if (ts_node_is_null(mn)) {
 				continue;
 			}
+			if (!is_script_method_name_node(mn)) {
+				continue;
+			}
 
 			uint32_t s = ts_node_start_byte(mn);
 			uint32_t e = ts_node_end_byte(mn);
 			StringName method_name(source.substr(s, e - s).c_str());
-			if (method_name == StringName("constructor")) {
+			if (method_name == StringName("constructor") || method_node_is_accessor(member, mn)) {
 				continue;
 			}
 
-			bool is_static = false;
-			for (uint32_t k = 0; k < ts_node_child_count(member); k++) {
-				if (strcmp(ts_node_type(ts_node_child(member, k)), "static") == 0) {
-					is_static = true;
-					break;
-				}
-			}
+			const bool is_static = node_has_static_modifier(member);
 
 			MethodInfo mi;
 			mi.name = method_name;
@@ -2689,8 +2711,12 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 				mi.flags |= METHOD_FLAG_STATIC;
 			}
 			parse_method_params(member, source, mi);
-			methods[method_name] = mi;
-			member_lines[method_name] = ts_node_start_point(member).row + 1;
+			if (is_static) {
+				static_methods[method_name] = mi;
+			} else {
+				methods[method_name] = mi;
+			}
+			member_lines[method_name] = ts_node_start_point(mn).row + 1;
 		}
 	}
 }
@@ -2838,14 +2864,7 @@ static void parse_exported_field_defaults(TSNode class_node, const std::string &
 			continue;
 		}
 
-		bool is_static = false;
-		for (uint32_t j = 0; j < ts_node_child_count(member); j++) {
-			if (strcmp(ts_node_type(ts_node_child(member, j)), "static") == 0) {
-				is_static = true;
-				break;
-			}
-		}
-		if (is_static) {
+		if (node_has_static_modifier(member)) {
 			continue;
 		}
 
@@ -2881,15 +2900,7 @@ static void parse_static_exports(TSNode class_node, const std::string &source, c
 			continue;
 		}
 
-		// Check for a static modifier.
-		bool is_static = false;
-		for (uint32_t j = 0; j < ts_node_child_count(member); j++) {
-			if (strcmp(ts_node_type(ts_node_child(member, j)), "static") == 0) {
-				is_static = true;
-				break;
-			}
-		}
-		if (!is_static) {
+		if (!node_has_static_modifier(member)) {
 			continue;
 		}
 
@@ -2934,6 +2945,7 @@ bool TypeScriptScript::compile() const {
 	base_script_path = String();
 	property_list.clear();
 	methods.clear();
+	static_methods.clear();
 	signals.clear();
 	rpc_configs.clear();
 	properties.clear();
@@ -2999,7 +3011,7 @@ bool TypeScriptScript::compile() const {
 		base_class_qualifier = qualifier_from_extends_node(base_class_node, source);
 	}
 	base_script_path = resolve_imported_class_path(get_path(), source, root_node, child_count, base_class_name, base_class_qualifier);
-	parse_class_members(class_node, source, get_path(), root_node, child_count, properties, property_list, property_defaults, methods, signals, rpc_configs, member_lines, interfaces);
+	parse_class_members(class_node, source, get_path(), root_node, child_count, properties, property_list, property_defaults, methods, static_methods, signals, rpc_configs, member_lines, interfaces);
 	parse_static_exports(class_node, source, get_path(), root_node, child_count, properties, property_list, property_defaults);
 	parse_exported_field_defaults(class_node, source, properties, property_defaults);
 	collect_parent_properties(base_class_name, base_class_qualifier, source, root_node, child_count, get_path(), properties, property_list, property_defaults);

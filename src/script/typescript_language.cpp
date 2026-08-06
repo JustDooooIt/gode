@@ -342,51 +342,99 @@ void collect_tree_sitter_errors(TSNode node, const String &path, Array &errors) 
 	}
 }
 
-void append_validate_function_names(TSNode node, const std::string &source, PackedStringArray &functions) {
-	if (ts_node_is_null(node)) {
+bool is_script_method_node(TSNode node) {
+	return strcmp(ts_node_type(node), "method_definition") == 0;
+}
+
+bool is_script_method_name_node(TSNode name_node) {
+	return !ts_node_is_null(name_node) && strcmp(ts_node_type(name_node), "property_identifier") == 0;
+}
+
+TSNode class_body_node(TSNode class_node) {
+	if (ts_node_is_null(class_node)) {
+		return {};
+	}
+	return ts_node_child_by_field_name(class_node, "body", 4);
+}
+
+bool method_node_is_accessor(TSNode method_node, TSNode name_node) {
+	const uint32_t child_count = ts_node_child_count(method_node);
+	const uint32_t name_start = ts_node_start_byte(name_node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(method_node, i);
+		if (ts_node_end_byte(child) > name_start) {
+			break;
+		}
+
+		const char *child_type = ts_node_type(child);
+		if (strcmp(child_type, "get") == 0 || strcmp(child_type, "set") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool method_node_is_static(TSNode method_node) {
+	const uint32_t child_count = ts_node_child_count(method_node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		if (strcmp(ts_node_type(ts_node_child(method_node, i)), "static") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool script_method_name(TSNode method_node, const std::string &source, String &r_name) {
+	if (!is_script_method_node(method_node)) {
+		return false;
+	}
+
+	TSNode name_node = ts_node_child_by_field_name(method_node, "name", 4);
+	if (!is_script_method_name_node(name_node)) {
+		return false;
+	}
+
+	r_name = tree_sitter_node_text(name_node, source);
+	if (r_name.is_empty() ||
+			r_name == String("constructor") ||
+			method_node_is_accessor(method_node, name_node) ||
+			method_node_is_static(method_node)) {
+		return false;
+	}
+	return true;
+}
+
+void append_validate_function_names(TSNode class_node, const std::string &source, PackedStringArray &functions) {
+	TSNode body = class_body_node(class_node);
+	if (ts_node_is_null(body)) {
 		return;
 	}
 
-	const char *node_type = ts_node_type(node);
-	if (strcmp(node_type, "function_declaration") == 0 ||
-			strcmp(node_type, "method_definition") == 0 ||
-			strcmp(node_type, "abstract_method_signature") == 0) {
-		TSNode name_node = ts_node_child_by_field_name(node, "name", 4);
-		String name = tree_sitter_node_text(name_node, source);
-		if (!name.is_empty()) {
-			// ScriptTextEditor expects each entry as "name:line", with a
-			// one-based line number. Omitting the line makes it resolve to -1
-			// when the editor adds connection and override gutter icons.
+	const uint32_t child_count = ts_node_named_child_count(body);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_named_child(body, i);
+		String name;
+		if (script_method_name(child, source, name)) {
+			TSNode name_node = ts_node_child_by_field_name(child, "name", 4);
+			// ScriptTextEditor expects "name:line" with a one-based line number.
 			functions.push_back(name + ":" + String::num_int64(ts_node_start_point(name_node).row + 1));
 		}
 	}
-
-	const uint32_t child_count = ts_node_named_child_count(node);
-	for (uint32_t i = 0; i < child_count; i++) {
-		append_validate_function_names(ts_node_named_child(node, i), source, functions);
-	}
 }
 
-int32_t find_function_line(TSNode node, const std::string &source, const String &name) {
-	if (ts_node_is_null(node)) {
+int32_t find_function_line(TSNode class_node, const std::string &source, const String &name) {
+	TSNode body = class_body_node(class_node);
+	if (ts_node_is_null(body)) {
 		return -1;
 	}
 
-	const char *node_type = ts_node_type(node);
-	if (strcmp(node_type, "function_declaration") == 0 ||
-			strcmp(node_type, "method_definition") == 0 ||
-			strcmp(node_type, "abstract_method_signature") == 0) {
-		TSNode name_node = ts_node_child_by_field_name(node, "name", 4);
-		if (tree_sitter_node_text(name_node, source) == name) {
-			return static_cast<int32_t>(ts_node_start_point(node).row);
-		}
-	}
-
-	const uint32_t child_count = ts_node_named_child_count(node);
+	const uint32_t child_count = ts_node_named_child_count(body);
 	for (uint32_t i = 0; i < child_count; i++) {
-		const int32_t line = find_function_line(ts_node_named_child(node, i), source, name);
-		if (line >= 0) {
-			return line;
+		TSNode child = ts_node_named_child(body, i);
+		String method_name;
+		if (script_method_name(child, source, method_name) && method_name == name) {
+			TSNode name_node = ts_node_child_by_field_name(child, "name", 4);
+			return static_cast<int32_t>(ts_node_start_point(name_node).row);
 		}
 	}
 	return -1;
@@ -694,7 +742,8 @@ Dictionary TypeScriptLanguage::_validate(const String &p_script, const String &p
 	}
 	if (p_validate_functions) {
 		PackedStringArray functions;
-		append_validate_function_names(root, source, functions);
+		TSNode script_class = find_default_class(root, ts_node_child_count(root), source);
+		append_validate_function_names(script_class, source, functions);
 		d["functions"] = functions;
 	}
 	ts_tree_delete(tree);
@@ -756,7 +805,9 @@ int32_t TypeScriptLanguage::_find_function(const String &p_function, const Strin
 		return -1;
 	}
 
-	const int32_t line = find_function_line(ts_tree_root_node(tree), source, p_function);
+	TSNode root = ts_tree_root_node(tree);
+	TSNode script_class = find_default_class(root, ts_node_child_count(root), source);
+	const int32_t line = find_function_line(script_class, source, p_function);
 	ts_tree_delete(tree);
 	return line;
 }

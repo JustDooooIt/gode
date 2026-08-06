@@ -62,6 +62,28 @@ export default class Health extends Node {
 $Health.damage(25)
 ```
 
+## 调用静态类方法
+
+TypeScript 静态方法暴露在脚本资源上，不属于节点实例方法：
+
+```ts
+import { Node } from "godot";
+
+export default class DamageTable extends Node {
+  static baseDamage(level: number): number {
+    return level * 10;
+  }
+}
+```
+
+在 GDScript 中调用：
+
+```gdscript
+var script = preload("res://scripts/damage_table.ts")
+if script.has_static_method("baseDamage"):
+  var amount = script.call_static("baseDamage", 3)
+```
+
 ## 导入本地模块
 
 本地模块使用现代 ESM 风格导入，无需写文件后缀：

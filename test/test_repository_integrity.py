@@ -614,8 +614,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("is_valid = false;", source)
 		self.assertIn("property_list.clear();", source)
 		self.assertIn("methods.clear();", source)
+		self.assertIn("static_methods.clear();", source)
 		self.assertIn("member_lines.clear();", source)
 		self.assertIn("bool source_code_loaded = false;", header)
+		self.assertIn("HashMap<godot::StringName, godot::MethodInfo> static_methods;", header)
 		self.assertIn("const bool source_changed = !source_code_loaded || source_code != p_code;", runtime_source)
 		self.assertIn("if (source_changed || p_force_dirty) {\n\t\tis_dirty = true;\n\t}", runtime_source)
 		self.assertIn("if (!source_changed && !p_force_dirty && !is_dirty)", runtime_source)
@@ -633,6 +635,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"is_valid = false;",
 			"class_name = StringName();",
 			"property_list.clear();",
+			"static_methods.clear();",
 			"member_lines.clear();",
 		):
 			self.assertLess(source.index(token, compile_start), path_index, token)
@@ -654,6 +657,102 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		reload_fail = runtime_source.index("return Error::ERR_INVALID_PARAMETER;", reload_start)
 		reload_loop = runtime_source.index("for (ScriptInstance *instance : instances)", reload_start)
 		self.assertLess(reload_fail, reload_loop)
+
+	def test_typescript_static_methods_are_not_instance_methods(self):
+		header = (ROOT / "include/script/typescript_script.h").read_text(encoding="utf-8")
+		runtime_source = (ROOT / "src/script/typescript_script_runtime.cpp").read_text(encoding="utf-8")
+		instance_source = (ROOT / "src/script/script_instance.cpp").read_text(encoding="utf-8")
+		error_header = (ROOT / "include/runtime/napi_error_utils.h").read_text(encoding="utf-8")
+		error_source = (ROOT / "src/runtime/napi_error_utils.cpp").read_text(encoding="utf-8")
+
+		self.assertIn("HashMap<godot::StringName, godot::MethodInfo> static_methods;", header)
+		self.assertIn("bool has_static_method(const godot::StringName &p_method) const;", header)
+		self.assertIn("int32_t get_static_method_argument_count(const godot::StringName &p_method) const;", header)
+		self.assertIn("godot::Variant call_static(const godot::Variant **p_args, GDExtensionInt p_argcount, GDExtensionCallError &r_error);", header)
+		self.assertIn("godot::Variant call_static_method(const godot::StringName &p_method, const godot::Variant **p_args, int32_t p_argcount, GDExtensionCallError &r_error) const;", header)
+		self.assertIn("Dictionary method_info_to_dictionary", runtime_source)
+		self.assertIn("Dictionary method = p_method;", runtime_source)
+		self.assertIn('dict["default_args"] = da;', (ROOT / "third/godot-cpp/src/core/object.cpp").read_text(encoding="utf-8"))
+		self.assertNotIn('d["flags"] = (int)p_method.flags;', runtime_source)
+		self.assertIn('ClassDB::bind_method(D_METHOD("has_static_method", "method"), &TypeScriptScript::has_static_method);', runtime_source)
+		self.assertIn('ClassDB::bind_method(D_METHOD("get_static_method_argument_count", "method"), &TypeScriptScript::get_static_method_argument_count);', runtime_source)
+		self.assertIn("ClassDB::bind_vararg_method(", runtime_source)
+		self.assertIn('"call_static"', runtime_source)
+		self.assertIn("void attach_promise_rejection_handler(Napi::Value value, const std::string &context);", error_header)
+		self.assertIn("void attach_promise_rejection_handler(Napi::Value value, const std::string &context)", error_source)
+		self.assertNotIn("_attach_promise_rejection_handler", instance_source)
+		self.assertIn("attach_promise_rejection_handler(result, method_name);", instance_source)
+
+		has_method_body = runtime_source[
+			runtime_source.index("bool TypeScriptScript::_has_method") :
+			runtime_source.index("bool TypeScriptScript::_has_static_method")
+		]
+		self.assertIn("return methods.has(p_method);", has_method_body)
+		self.assertNotIn("static_methods", has_method_body)
+
+		has_static_method_body = runtime_source[
+			runtime_source.index("bool TypeScriptScript::_has_static_method") :
+			runtime_source.index("Variant TypeScriptScript::_get_script_method_argument_count")
+		]
+		self.assertIn("return static_methods.has(p_method);", has_static_method_body)
+		self.assertNotIn("METHOD_FLAG_STATIC", has_static_method_body)
+
+		static_call_body = runtime_source[
+			runtime_source.index("Variant TypeScriptScript::call_static_method") :
+			runtime_source.index("bool TypeScriptScript::_editor_can_reload_from_file")
+		]
+		self.assertIn("!static_methods.has(p_method)", static_call_body)
+		self.assertIn("ensure_default_class_loaded()", static_call_body)
+		self.assertIn("class_object.HasOwnProperty(method_name)", static_call_body)
+		self.assertIn("godot_to_napi(env, *p_args[i])", static_call_body)
+		self.assertIn("method.Call(class_object, args)", static_call_body)
+		self.assertIn("napi_to_godot(result)", static_call_body)
+		self.assertIn("attach_promise_rejection_handler(result, context)", static_call_body)
+		self.assertNotIn("default_class.New", static_call_body)
+
+		argument_count_body = runtime_source[
+			runtime_source.index("Variant TypeScriptScript::_get_script_method_argument_count") :
+			runtime_source.index("Dictionary TypeScriptScript::_get_method_info")
+		]
+		self.assertIn("methods[p_method].arguments.size();", argument_count_body)
+		self.assertIn("static_methods[p_method].arguments.size();", argument_count_body)
+
+		method_info_body = runtime_source[
+			runtime_source.index("Dictionary TypeScriptScript::_get_method_info") :
+			runtime_source.index("bool TypeScriptScript::_is_tool")
+		]
+		self.assertIn("method_info_to_dictionary(methods[p_method]);", method_info_body)
+		self.assertIn("method_info_to_dictionary(static_methods[p_method]);", method_info_body)
+
+		method_list_body = runtime_source[
+			runtime_source.index("TypedArray<Dictionary> TypeScriptScript::_get_script_method_list") :
+			runtime_source.index("TypedArray<Dictionary> TypeScriptScript::_get_script_property_list")
+		]
+		self.assertIn("for (const KeyValue<StringName, MethodInfo> &E : methods)", method_list_body)
+		self.assertIn("for (const KeyValue<StringName, MethodInfo> &E : static_methods)", method_list_body)
+
+		instance_argument_count_body = instance_source[
+			instance_source.index("int32_t ScriptInstance::get_method_argument_count") :
+			instance_source.index("Variant ScriptInstance::call")
+		]
+		self.assertIn("script->methods.has(p_method)", instance_argument_count_body)
+		self.assertNotIn("static_methods", instance_argument_count_body)
+
+		instance_method_list_body = instance_source[
+			instance_source.index("void ScriptInstance::get_method_list") :
+			instance_source.index("void ScriptInstance::free_method_list")
+		]
+		self.assertIn("script->methods", instance_method_list_body)
+		self.assertNotIn("static_methods", instance_method_list_body)
+
+		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
+		test_runner = (ROOT / "example/scripts/tests/tests_runner.gd").read_text(encoding="utf-8")
+		self.assertIn("static staticBridgeAdd(left: number, right: number): number", runtime_test)
+		self.assertIn('current_test.has_method("staticBridgeAdd")', test_runner)
+		self.assertIn('var script: Object = current_test.get_script()', test_runner)
+		self.assertIn('script.call("has_static_method", "staticBridgeAdd")', test_runner)
+		self.assertIn('script.call("get_static_method_argument_count", "staticBridgeAdd") != 2', test_runner)
+		self.assertIn('script.call("call_static", "staticBridgeAdd", 6, 7) != 13', test_runner)
 
 	def test_generated_static_napi_references_reset_before_node_environment_free(self):
 		node_source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
@@ -868,10 +967,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"TypeScript scripts must be saved under res://.",
 			"TypeScript script paths cannot contain parent-directory segments.",
 			"TypeScript script paths must end with .ts or .tsx.",
-			"strip_typescript_method_modifiers",
 			"format_function_argument",
 			"collect_tree_sitter_errors",
+			"is_script_method_node",
+			"is_script_method_name_node",
+			"class_body_node",
+			"method_node_is_accessor",
+			"method_node_is_static",
+			"script_method_name",
 			"append_validate_function_names",
+			"find_function_line",
 			"describe_tree_sitter_error",
 			"class_name_from_extends_node",
 			"class_name_from_class_node",
@@ -921,7 +1026,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"ts_parser_parse_string(parser, nullptr",
 			"ts_node_has_error(root)",
 			"collect_tree_sitter_errors(root, p_path, errors);",
-			"append_validate_function_names(root, source, functions);",
+			"TSNode script_class = find_default_class(root, ts_node_child_count(root), source);",
+			"append_validate_function_names(script_class, source, functions);",
 			"ts_tree_delete(tree);",
 			"ts_parser_delete(parser);",
 		):
@@ -937,6 +1043,34 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("normalize_resource_script_path(p_path)", validate_path_body)
 		self.assertIn('ext != String("ts") && ext != String("tsx")', validate_path_body)
 		self.assertNotEqual("String TypeScriptLanguage::_validate_path(const String &p_path) const {\n\treturn String();\n}", validate_path_body.strip())
+
+		append_functions_body = source[
+			source.index("void append_validate_function_names") :
+			source.index("int32_t find_function_line")
+		]
+		self.assertIn("TSNode body = class_body_node(class_node);", append_functions_body)
+		self.assertIn('return ts_node_child_by_field_name(class_node, "body", 4);', source)
+		self.assertIn('return strcmp(ts_node_type(node), "method_definition") == 0;', source)
+		self.assertIn('strcmp(ts_node_type(name_node), "property_identifier") == 0', source)
+		self.assertIn('strcmp(ts_node_type(ts_node_child(method_node, i)), "static") == 0', source)
+		self.assertIn("method_node_is_static(method_node)", source)
+		self.assertIn('functions.push_back(name + ":" + String::num_int64(ts_node_start_point(name_node).row + 1));', append_functions_body)
+		self.assertNotIn('strcmp(node_type, "function_declaration")', append_functions_body)
+		self.assertNotIn('abstract_method_signature', append_functions_body)
+		self.assertNotIn("append_validate_function_names(ts_node_named_child", source)
+
+		find_function_body = source[
+			source.index("int32_t TypeScriptLanguage::_find_function") :
+			source.index("String TypeScriptLanguage::_make_function")
+		]
+		self.assertIn("TSNode script_class = find_default_class(root, ts_node_child_count(root), source);", find_function_body)
+		self.assertIn("find_function_line(script_class, source, p_function);", find_function_body)
+		self.assertNotIn("sanitize_typescript_identifier(p_function", find_function_body)
+		self.assertIn("return static_cast<int32_t>(ts_node_start_point(name_node).row);", source)
+		self.assertIn('r_name == String("constructor")', source)
+		self.assertIn('strcmp(child_type, "get") == 0 || strcmp(child_type, "set") == 0', source)
+		self.assertNotIn("find_function_line(ts_node_named_child", source)
+		self.assertNotIn("strip_typescript_method_modifiers", source)
 
 		global_class_body = source[
 			source.index("Dictionary TypeScriptLanguage::_get_global_class_name") :
@@ -1035,6 +1169,10 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"parse_integer_range",
 			"parse_non_negative_int",
 			"parse_bool_literal",
+			"is_script_method_name_node",
+			"node_has_static_modifier",
+			"method_node_is_accessor",
+			"static_methods",
 			"parse_rpc_mode",
 			"parse_transfer_mode",
 			"parse_int_metadata_value",
@@ -1068,6 +1206,20 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("std::stoi(", source)
 		self.assertNotIn("std::atoi", source)
 		self.assertEqual(1, source.count("std::stod("))
+
+		method_parse_start = source.index('if (strcmp(member_type, "method_definition") == 0)')
+		method_parse_body = source[
+			method_parse_start :
+			source.index("static bool parse_default_value", method_parse_start)
+		]
+		self.assertIn("if (!is_script_method_name_node(mn))", method_parse_body)
+		self.assertIn('method_name == StringName("constructor") || method_node_is_accessor(member, mn)', method_parse_body)
+		self.assertIn("const bool is_static = node_has_static_modifier(member);", method_parse_body)
+		self.assertIn("mi.flags |= METHOD_FLAG_STATIC;", method_parse_body)
+		self.assertIn("static_methods[method_name] = mi;", method_parse_body)
+		self.assertIn("methods[method_name] = mi;", method_parse_body)
+		self.assertIn("member_lines[method_name] = ts_node_start_point(mn).row + 1;", method_parse_body)
+		self.assertNotIn("member_lines[method_name] = ts_node_start_point(member).row + 1;", method_parse_body)
 
 		runtime_test = (ROOT / "example/scripts/tests/runtime_integration_test.ts").read_text(encoding="utf-8")
 		runtime_base = (ROOT / "example/scripts/tests/runtime_base_test.ts").read_text(encoding="utf-8")
