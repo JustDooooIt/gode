@@ -131,7 +131,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertEqual([], offenders)
 
 	def test_handwritten_source_comments_are_english(self):
-		comment_pattern = re.compile(r"//.*|/\*.*?\*/|#.*", re.DOTALL)
+		comment_pattern = re.compile(r"/\*.*?\*/|//[^\n]*|#[^\n]*", re.DOTALL)
 		non_english_comments = []
 		for root in (ROOT / "include", ROOT / "src", ROOT / "generator", ROOT / "test"):
 			for path in sorted(root.rglob("*")):
