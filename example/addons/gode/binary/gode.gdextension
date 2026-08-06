@@ -1,6 +1,6 @@
 [configuration]
 
-entry_symbol = "node_library_init"
+entry_symbol = "gode_runtime_library_init"
 compatibility_minimum = "4.6.2"
 
 [icons]
@@ -9,17 +9,26 @@ TypeScript = "res://addons/gode/icons/typescript.svg"
 
 [libraries]
 
-windows.debug.x86_64 = "res://addons/gode/binary/windows/x64/libgode.dll"
-windows.release.x86_64 = "res://addons/gode/binary/windows/x64/libgode.dll"
+windows.debug.x86_64 = "res://addons/gode/binary/windows/x64/libgode_runtime.dll"
+windows.release.x86_64 = "res://addons/gode/binary/windows/x64/libgode_runtime.dll"
 
-linux.debug.x86_64 = "res://addons/gode/binary/linux/x64/libgode.so"
-linux.release.x86_64 = "res://addons/gode/binary/linux/x64/libgode.so"
+linux.debug.x86_64 = "res://addons/gode/binary/linux/x64/libgode_runtime.so"
+linux.release.x86_64 = "res://addons/gode/binary/linux/x64/libgode_runtime.so"
 
-macos.debug.arm64 = "res://addons/gode/binary/macos/arm64/libgode.dylib"
-macos.release.arm64 = "res://addons/gode/binary/macos/arm64/libgode.dylib"
+macos.debug.arm64 = "res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"
+macos.release.arm64 = "res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"
 
-android.debug.arm64 = "res://addons/gode/binary/android/arm64/libgode.so"
-android.release.arm64 = "res://addons/gode/binary/android/arm64/libgode.so"
+android.debug.arm64 = "res://addons/gode/binary/android/arm64/libgode_runtime.so"
+android.release.arm64 = "res://addons/gode/binary/android/arm64/libgode_runtime.so"
 
-ios.debug.arm64 = "res://addons/gode/binary/ios/arm64/libgode.dylib"
-ios.release.arm64 = "res://addons/gode/binary/ios/arm64/libgode.dylib"
+ios.debug.arm64 = "res://addons/gode/binary/ios/arm64/libgode_runtime.dylib"
+ios.release.arm64 = "res://addons/gode/binary/ios/arm64/libgode_runtime.dylib"
+
+[dependencies]
+
+windows.debug.x86_64 = {
+    "res://addons/gode/binary/windows/x64/node.dll": ""
+}
+windows.release.x86_64 = {
+    "res://addons/gode/binary/windows/x64/node.dll": ""
+}

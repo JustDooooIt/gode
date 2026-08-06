@@ -47,6 +47,9 @@ required_files=(
 	"plugin.cfg"
 	"gode.gd"
 	"binary/gode.gdextension"
+	"binary/gode.gdextension.uid"
+	"binary/gode_editor.gdextension"
+	"binary/gode_editor.gdextension.uid"
 	"config/gode.json"
 	"config/tsconfig.json"
 	"icons/typescript.svg"
@@ -58,12 +61,15 @@ required_files=(
 	"types/godot.d.ts"
 )
 required_binaries=(
-	"binary/windows/x64/libgode.dll"
+	"binary/windows/x64/libgode_runtime.dll"
 	"binary/windows/x64/node.dll"
-	"binary/linux/x64/libgode.so"
-	"binary/macos/arm64/libgode.dylib"
-	"binary/android/arm64/libgode.so"
-	"binary/ios/arm64/libgode.dylib"
+	"binary/linux/x64/libgode_runtime.so"
+	"binary/macos/arm64/libgode_runtime.dylib"
+	"binary/android/arm64/libgode_runtime.so"
+	"binary/ios/arm64/libgode_runtime.dylib"
+	"binary/editor/windows/x64/libgode_editor.dll"
+	"binary/editor/linux/x64/libgode_editor.so"
+	"binary/editor/macos/arm64/libgode_editor.dylib"
 )
 
 for file in "${required_files[@]}"; do
@@ -97,6 +103,7 @@ for file in "tsc/package.json" "tsc/lib/typescript.js"; do
 done
 
 find "$staged_addon_root/binary" -type f \( -name '*.lib' -o -name '*.exp' -o -name '*.pdb' -o -name '*.ilk' \) -delete
+find "$staged_addon_root/binary" -type f \( -name 'libgode.dll' -o -name 'libgode.so' -o -name 'libgode.dylib' \) -delete
 
 rm -f "$archive_path"
 (

@@ -84,11 +84,16 @@ def copy_addon(source_addon, project):
 def ensure_platform_binaries(addon_root):
 	gode_platform, arch = host_platform()
 	extension_binary = {
-		"windows": f"binary/windows/{arch}/libgode.dll",
-		"linux": f"binary/linux/{arch}/libgode.so",
-		"macos": f"binary/macos/{arch}/libgode.dylib",
+		"windows": f"binary/windows/{arch}/libgode_runtime.dll",
+		"linux": f"binary/linux/{arch}/libgode_runtime.so",
+		"macos": f"binary/macos/{arch}/libgode_runtime.dylib",
 	}[gode_platform]
-	required = [extension_binary]
+	editor_binary = {
+		"windows": f"binary/editor/windows/{arch}/libgode_editor.dll",
+		"linux": f"binary/editor/linux/{arch}/libgode_editor.so",
+		"macos": f"binary/editor/macos/{arch}/libgode_editor.dylib",
+	}[gode_platform]
+	required = [extension_binary, editor_binary, "binary/gode_editor.gdextension"]
 	if gode_platform == "windows":
 		required.append(f"binary/windows/{arch}/node.dll")
 
@@ -217,7 +222,7 @@ def prepare_project(args):
 	ensure_platform_binaries(addon_root)
 	ensure_typescript_compiler(addon_root, args.prepare_typescript_timeout)
 	write_project(project, args.package_version)
-	ensure_extension_list(project, DEFAULT_EXTENSION)
+	ensure_extension_list(project, [DEFAULT_EXTENSION, "res://addons/gode/binary/gode_editor.gdextension"])
 	return project
 
 

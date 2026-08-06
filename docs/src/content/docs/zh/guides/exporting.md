@@ -42,6 +42,8 @@ Debug 导出包含 source map。Release 导出只包含运行时 JavaScript。
 
 不要让场景文件指向生成的 JavaScript。源码仍然是原始 `.ts` 或 `.tsx` 资源。
 
+Gode 导出时只保留所选目标平台的运行时原生扩展。`gode_editor.gdextension`、`binary/editor/`、内置 TypeScript 编译器和生成类型声明都属于开发期资产，不会进入导出的游戏包。
+
 ## 平台导出预期
 
 Gode 将 Node.js 嵌入原生扩展，并在该运行时中执行 TypeScript 输出。一次可靠的导出依赖三层共同成立：

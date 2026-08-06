@@ -126,12 +126,24 @@ jobs:
             echo "Packaged plugin is missing plugin.cfg" >&2
             exit 1
           fi
-          if [ ! -f "$package_root/gode/binary/linux/x64/libgode.so" ]; then
+          if [ ! -f "$package_root/gode/binary/gode.gdextension" ] || [ ! -f "$package_root/gode/binary/gode_editor.gdextension" ]; then
+            echo "Packaged plugin is missing one or more GDExtension manifests" >&2
+            exit 1
+          fi
+          if [ ! -f "$package_root/gode/binary/linux/x64/libgode_runtime.so" ]; then
             echo "Packaged plugin is missing the Linux x64 binary" >&2
+            exit 1
+          fi
+          if [ ! -f "$package_root/gode/binary/editor/linux/x64/libgode_editor.so" ]; then
+            echo "Packaged plugin is missing the Linux x64 editor binary" >&2
             exit 1
           fi
           if [ ! -f "$package_root/gode/tsc/lib/typescript.js" ]; then
             echo "Packaged plugin is missing the TypeScript compiler" >&2
+            exit 1
+          fi
+          if find "$package_root/gode/binary" -type f \( -name 'libgode.dll' -o -name 'libgode.so' -o -name 'libgode.dylib' \) | grep -q .; then
+            echo "Packaged plugin contains stale pre-split native binaries" >&2
             exit 1
           fi
 

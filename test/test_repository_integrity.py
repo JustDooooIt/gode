@@ -47,6 +47,17 @@ def find_dts_class_body(dts: str, dts_name: str, exported: bool = False):
 	return match.group("body") if match else None
 
 
+def gdscript_function_body(source: str, function_name: str) -> str:
+	match = re.search(
+		rf"^func {re.escape(function_name)}\b[^\n]*:\n(?P<body>.*?)(?=^func \w|\Z)",
+		source,
+		re.DOTALL | re.MULTILINE,
+	)
+	if not match:
+		raise AssertionError(f"GDScript function was not found: {function_name}")
+	return match.group("body")
+
+
 class RepositoryIntegrityTests(unittest.TestCase):
 	def test_scene_resource_paths_exist(self):
 		missing = []
@@ -236,16 +247,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"string(REGEX MATCHALL [[(napi|node_api)_[A-Za-z0-9_]+\\(]]",
 			"node_module_register\\(",
 			'string(REPLACE "(" "" _GODE_NODE_API_SYMBOL',
-			"add_custom_command(TARGET gode POST_BUILD",
+			"add_custom_command(TARGET gode_runtime POST_BUILD",
 			"/noentry",
-			'"/out:$<TARGET_FILE_DIR:gode>/node.dll"',
+			'"/out:$<TARGET_FILE_DIR:gode_runtime>/node.dll"',
 			'elseif(APPLE)',
 			'set(GODE_LIBNODE_LINK_ITEMS "-Wl,-force_load,${GODE_LIBNODE_FILE}")',
 			"set(GODE_LIBNODE_LINK_OPTIONS)",
 			'else()',
 			'set(GODE_LIBNODE_LINK_ITEMS "-Wl,--whole-archive" "${GODE_LIBNODE_FILE}" "-Wl,--no-whole-archive")',
-			"target_link_options(gode PRIVATE ${GODE_LIBNODE_LINK_OPTIONS})",
-			'set_property(TARGET gode APPEND PROPERTY LINK_DEPENDS "${GODE_LIBNODE_FILE}")',
+			"target_link_options(gode_runtime PRIVATE ${GODE_LIBNODE_LINK_OPTIONS})",
+			'set_property(TARGET gode_runtime APPEND PROPERTY LINK_DEPENDS "${GODE_LIBNODE_FILE}")',
 			'set(GODE_EXTENSION_API_JSON "" CACHE FILEPATH',
 			"file(GLOB_RECURSE GODE_CODEGEN_PYTHON_INPUTS CONFIGURE_DEPENDS",
 			"file(GLOB GODE_CODEGEN_TEMPLATE_INPUTS CONFIGURE_DEPENDS",
@@ -260,7 +271,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"file(GLOB_RECURSE GODE_MANUAL_SOURCES CONFIGURE_DEPENDS",
 			"file(GLOB_RECURSE GODE_GENERATED_SOURCES CONFIGURE_DEPENDS",
 			"list(REMOVE_ITEM GODE_MANUAL_SOURCES ${GODE_GENERATED_SOURCES})",
-			"set(GODE_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})",
+			"set(GODE_RUNTIME_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})",
+			"set(GODE_EDITOR_SOURCES",
+			"list(APPEND GODE_RUNTIME_SOURCES",
 			"UNITY_BUILD ON",
 			'UNITY_BUILD_BATCH_SIZE "${GODE_UNITY_GENERATED_BATCH_SIZE}"',
 			"SKIP_UNITY_BUILD_INCLUSION ON",
@@ -405,7 +418,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertIn(token, node_source)
 
 	def test_module_lifecycle_owns_resource_format_refs_until_node_shutdown(self):
-		source = (ROOT / "src/register_types.cpp").read_text(encoding="utf-8")
+		source = (ROOT / "src/register_runtime_types.cpp").read_text(encoding="utf-8")
 
 		for class_name, ref_name in (
 			("TypeScriptSaver", "typescript_saver"),
@@ -543,7 +556,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_script_v8_scopes_do_not_call_compiling_metadata_apis(self):
 		risky_calls = (
-			"GodeTypeScriptCompiler::ensure_script_compiled",
+			"ensure_typescript_script_compiled",
 			"script->compile()",
 			"script->_has_method",
 			"script->_is_tool",
@@ -610,7 +623,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("auto finish_failed_compile_attempt = [this]()", source)
 		self.assertIn("is_dirty = false;", source[source.index("auto finish_failed_compile_attempt = [this]()") :])
 		self.assertIn("bool retryable_compile_failure = true;", source)
-		self.assertIn("GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path, &retryable_compile_failure)", source)
+		self.assertIn("ensure_typescript_script_compiled(path, &js_path, &retryable_compile_failure)", source)
 		self.assertIn("if (retryable_compile_failure) {\n\t\t\tis_valid = false;\n\t\t\treturn false;\n\t\t}", source)
 
 		compile_start = source.index("bool TypeScriptScript::compile() const")
@@ -633,7 +646,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		first_compile = source.index("if (!compile())", default_class_load_start)
 		cache_read = source.index("if (!default_class.IsEmpty())", default_class_load_start)
 		self.assertLess(first_compile, cache_read)
-		ensure_compiled = source.index("GodeTypeScriptCompiler::ensure_script_compiled", default_class_load_start)
+		ensure_compiled = source.index("ensure_typescript_script_compiled", default_class_load_start)
 		v8_locker = source.index("v8::Locker locker(NodeRuntime::isolate);", default_class_load_start)
 		self.assertLess(ensure_compiled, v8_locker)
 		self.assertIn("if (!compile()) {\n\t\treturn Error::ERR_INVALID_PARAMETER;\n\t}", runtime_source)
@@ -1232,7 +1245,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		):
 			self.assertFalse(path.exists(), f"{path.relative_to(ROOT)} should not exist")
 
-		register_source = (ROOT / "src/register_types.cpp").read_text(encoding="utf-8")
+		register_source = (ROOT / "src/register_runtime_types.cpp").read_text(encoding="utf-8")
 		self.assertNotIn("JavascriptLanguage", register_source)
 		self.assertNotIn("GDREGISTER_ABSTRACT_CLASS", register_source)
 		self.assertIn("GDREGISTER_CLASS(gode::TypeScriptScript);", register_source)
@@ -1309,8 +1322,13 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("addons/gode/tsc", template["exclude"])
 
 		compiler_header = (ROOT / "include/compiler/typescript_compiler.h").read_text(encoding="utf-8")
-		compiler_source = (ROOT / "src/compiler/typescript_compiler.cpp").read_text(encoding="utf-8")
-		register_source = (ROOT / "src/register_types.cpp").read_text(encoding="utf-8")
+		compiler_wrapper_source = (ROOT / "src/compiler/typescript_compiler.cpp").read_text(encoding="utf-8")
+		compiler_source = (ROOT / "src/compiler/typescript_project_compiler.cpp").read_text(encoding="utf-8")
+		compile_service_header = (ROOT / "include/script/typescript_compile_service.h").read_text(encoding="utf-8")
+		compile_service_source = (ROOT / "src/script/typescript_compile_service.cpp").read_text(encoding="utf-8")
+		project_compiler_header = (ROOT / "include/compiler/typescript_project_compiler.h").read_text(encoding="utf-8")
+		runtime_bridge_source = (ROOT / "src/runtime/gode_runtime_bridge.cpp").read_text(encoding="utf-8")
+		register_source = (ROOT / "src/register_editor_types.cpp").read_text(encoding="utf-8")
 		self.assertIn('PROJECT_TYPESCRIPT_CONFIG_PATH = "res://tsconfig.json"', compiler_source)
 		self.assertIn('DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config/tsconfig.json"', compiler_source)
 		self.assertIn('TYPESCRIPT_COMPILER_BRIDGE_PATH = "res://addons/gode/runtime/typescript_compiler.js"', compiler_source)
@@ -1320,8 +1338,13 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("collect_project_sources(source_diagnostics)", compiler_source)
 		self.assertIn("Failed to read one or more TypeScript project sources.", compiler_source)
 		self.assertIn('TYPESCRIPT_BUILD_ROOT = "res://.gode/build/typescript"', compiler_source)
-		self.assertIn("static bool ensure_script_compiled(const godot::String &p_source_path, godot::String *r_compiled_path = nullptr, bool *r_retryable_failure = nullptr);", compiler_header)
+		self.assertNotIn("ensure_script_compiled", compiler_header)
+		self.assertIn("bool ensure_typescript_script_compiled(const godot::String &p_source_path, godot::String *r_compiled_path = nullptr, bool *r_retryable_failure = nullptr);", compile_service_header)
+		self.assertIn("godot::Dictionary compile_typescript_project(bool p_force = false);", project_compiler_header)
+		self.assertIn("godot::Dictionary compile_typescript_source(const godot::String &p_source_path, bool p_force = false);", project_compiler_header)
 		self.assertIn("static void clear_compile_cache();", compiler_header)
+		self.assertNotIn("compile_project_static", compiler_header)
+		self.assertNotIn("compile_project_static", compiler_wrapper_source)
 		self.assertIn("#include <mutex>", compiler_source)
 		self.assertIn("#include <algorithm>", compiler_source)
 		self.assertIn("#include <cstdint>", compiler_source)
@@ -1337,19 +1360,24 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('result["retryable"] = !ok;', compiler_source)
 		self.assertIn("const bool cacheable_failure = compile_failure_is_cacheable(compile_result);", compiler_source)
 		self.assertIn('result["retryable"] = !cacheable_failure;', compiler_source)
-		self.assertIn('if (!bool(result.get("cached", false)))', compiler_source)
-		self.assertIn('bool(result.get("retryable", true))', compiler_source)
+		self.assertIn('if (!bool(result.get("cached", false)))', compile_service_source)
+		self.assertIn('bool(result.get("retryable", true))', compile_service_source)
 		self.assertIn("cache.input_hash = input_hash;", compiler_source)
 		self.assertIn("cache.result = duplicate_compile_result(result);", compiler_source)
 		self.assertIn("reset_project_compile_cache", compiler_source)
-		self.assertIn("void GodeTypeScriptCompiler::clear_compile_cache()", compiler_source)
+		self.assertIn("void GodeTypeScriptCompiler::clear_compile_cache()", compiler_wrapper_source)
 		self.assertIn("GodeTypeScriptCompiler::clear_compile_cache();", register_source)
+		self.assertIn('#include "compiler/typescript_project_compiler.h"', compiler_wrapper_source)
+		self.assertIn('ClassDB::bind_static_method(get_class_static(), D_METHOD("compile_project", "force")', compiler_wrapper_source)
+		self.assertIn("return compile_typescript_project(p_force);", compiler_wrapper_source)
+		self.assertNotIn("ClassDB::bind_method", compiler_wrapper_source)
 		self.assertIn('"res://package.json"', compiler_source)
 		self.assertIn('"res://pnpm-lock.yaml"', compiler_source)
 		self.assertIn("GODE_MODULE_TYPES_PATH", compiler_source)
 		self.assertIn("String normalize_path_string(const String &path)", compiler_source)
 		self.assertIn('return path.replace("\\\\", "/").simplify_path();', compiler_source)
 		self.assertIn("bool path_has_parent_segment(const String &path)", compiler_source)
+		self.assertIn("bool path_has_parent_segment(const String &path)", compile_service_source)
 		self.assertIn("clear_generated_output_root", compiler_source)
 		self.assertIn("clear_generated_directory_contents", compiler_source)
 		self.assertIn("remove_generated_file_if_safe", compiler_source)
@@ -1358,11 +1386,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("append_error_diagnostic", compiler_source)
 		self.assertIn("Source was not emitted by the active TypeScript project", compiler_source)
 		self.assertIn('result["path"] = output.get("path", result["path"])', compiler_source)
-		self.assertIn("manifest_outputs_are_valid", compiler_source)
 		self.assertIn("output_entry_is_valid", compiler_source)
+		self.assertIn("output_entry_is_valid", compile_service_source)
 		self.assertIn("source_output_path_is_valid", compiler_source)
+		self.assertIn("source_output_path_is_valid", compile_service_source)
 		self.assertIn("normalize_typescript_source_path", compiler_source)
+		self.assertIn("normalize_typescript_source_path", compile_service_source)
 		self.assertIn("TypeScript source path cannot contain parent-directory segments", compiler_source)
+		self.assertIn("TypeScript source path cannot contain parent-directory segments", compile_service_source)
 		self.assertIn("Invalid TypeScript source path, expected a .ts or .tsx file under res://", compiler_source)
 		self.assertIn("if (!normalize_typescript_source_path(p_source_path, source_path, &path_error))", compiler_source)
 		self.assertIn("if (!normalize_typescript_source_path(p_source_path, source_path))", compiler_source)
@@ -1371,12 +1402,20 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("if (path_has_parent_segment(path))", compiler_source)
 		self.assertIn("path_is_under_root(output_path, cache_root())", compiler_source)
 		self.assertIn('path_is_under_root(String(output["exported_path"]), exported_build_root())', compiler_source)
-		self.assertIn("exported_manifest_path", compiler_source)
-		self.assertIn("load_manifest_outputs_from_path(exported_manifest_path(), exported_outputs)", compiler_source)
-		self.assertIn("Source was not included in the exported TypeScript manifest", compiler_source)
-		self.assertIn("Exported TypeScript output is missing", compiler_source)
+		self.assertIn("exported_manifest_path", compile_service_source)
+		self.assertIn("ExportManifestCache", compile_service_source)
+		self.assertIn("std::lock_guard<std::mutex> lock(export_manifest_mutex())", compile_service_source)
+		self.assertIn("load_exported_manifest_outputs(exported_outputs)", compile_service_source)
+		self.assertIn("bool is_export_runtime_process()", compile_service_source)
+		self.assertIn('!os || !os->has_feature("editor")', compile_service_source)
+		self.assertIn("if (is_export_runtime_process())", compile_service_source)
+		self.assertIn("return ensure_from_export_manifest(source_path, r_compiled_path, r_retryable_failure);", compile_service_source)
+		self.assertIn("Exported TypeScript manifest is missing or invalid", compile_service_source)
+		self.assertIn("Source was not included in the exported TypeScript manifest", compile_service_source)
+		self.assertIn("Exported TypeScript output is missing", compile_service_source)
 		self.assertIn('path_has_extension(output_path, ".js")', compiler_source)
 		self.assertIn('path_has_extension(String(output["exported_path"]), ".js")', compiler_source)
+		self.assertIn('path_has_extension(String(output["exported_path"]), ".js")', compile_service_source)
 		self.assertIn("DirAccess::remove_absolute(normalized_path)", compiler_source)
 		self.assertNotIn(".compile-manifest.json", compiler_source)
 		self.assertNotIn("String input_signature", compiler_source)
@@ -1389,6 +1428,15 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("user://.gode/typescript/", compiler_source)
 		self.assertNotIn("!engine->is_editor_hint() && FileAccess::file_exists(exported_path)", compiler_source)
 		self.assertNotIn("is_emittable_typescript_path", compiler_source)
+		self.assertIn('GODE_RUNTIME_BRIDGE_CLASS = "GodeRuntimeBridge"', compiler_source)
+		self.assertIn('compile_method("compile_typescript_project")', compiler_source)
+		self.assertIn("ClassDB::class_call_static(bridge_class, compile_method, sources)", compiler_source)
+		self.assertNotIn("NodeRuntime::compile_typescript_project", compiler_source)
+		self.assertNotIn("NodeRuntime::compile_typescript_project", compiler_wrapper_source)
+		self.assertIn("NodeRuntime::compile_typescript_project(p_files)", runtime_bridge_source)
+		self.assertNotIn("compile_project(bool p_force)", runtime_bridge_source)
+		self.assertNotIn("bridge_dictionary_result", compiler_wrapper_source)
+		self.assertNotIn("bridge_string_result", compiler_wrapper_source)
 		compile_start = compiler_source.index("Dictionary compile_project_internal(bool force)")
 		cache_hit = compiler_source.index("compile_result_outputs_are_present(cache.result)", compile_start)
 		clear_outputs = compiler_source.index("if (!clear_generated_output_root())", compile_start)
@@ -1407,11 +1455,15 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_package_script_requires_typescript_plugin_assets(self):
 		package_script = (ROOT / ".github/shell/package-plugin.sh").read_text(encoding="utf-8")
+		gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
 		for path in (
 			"plugin.cfg",
 			"gode.gd",
 			"binary/gode.gdextension",
+			"binary/gode.gdextension.uid",
+			"binary/gode_editor.gdextension",
+			"binary/gode_editor.gdextension.uid",
 			"config/gode.json",
 			"config/tsconfig.json",
 			"icons/typescript.svg",
@@ -1420,14 +1472,26 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"runtime/typescript_compiler.js",
 			"types/globals.d.ts",
 			"types/godot.d.ts",
+			"binary/windows/x64/libgode_runtime.dll",
 			"binary/windows/x64/node.dll",
+			"binary/linux/x64/libgode_runtime.so",
+			"binary/macos/arm64/libgode_runtime.dylib",
+			"binary/android/arm64/libgode_runtime.so",
+			"binary/ios/arm64/libgode_runtime.dylib",
+			"binary/editor/windows/x64/libgode_editor.dll",
+			"binary/editor/linux/x64/libgode_editor.so",
+			"binary/editor/macos/arm64/libgode_editor.dylib",
 		):
 			self.assertIn(f'"{path}"', package_script)
 		self.assertNotIn("icons/typescript.svg.import", package_script)
+		for stale_name in ("libgode.dll", "libgode.so", "libgode.dylib"):
+			self.assertIn(stale_name, package_script)
 
 		self.assertIn("prepare-typescript.sh", package_script)
 		self.assertIn("tsc/package.json", package_script)
 		self.assertIn("tsc/lib/typescript.js", package_script)
+		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension", gitignore)
+		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension.uid", gitignore)
 
 	def test_prepare_typescript_scripts_cover_shell_and_powershell(self):
 		prepare_sh = (ROOT / ".github/shell/prepare-typescript.sh").read_text(encoding="utf-8")
@@ -1532,12 +1596,43 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		for token in (
 			"NPM_MANIFEST_FILES",
+			"GODE_RUNTIME_EXTENSION_PATH",
+			"GODE_EDITOR_EXTENSION_PATH",
+			"res://.godot/extension_list.cfg",
+			"LOCAL_EXTENSION_LIST_PATH",
+			"editor_extension_list_entry_removed_for_export",
+			"res://addons/gode/gode.gdc",
+			"res://addons/gode/gode.gd.remap",
+			"res://addons/gode/runtime/export_plugin.gdc",
+			"res://addons/gode/runtime/export_plugin.gd.remap",
+			"_prepare_local_extension_list_for_export",
+			"_restore_local_extension_list_after_export",
+			"_read_local_extension_list",
+			"_write_or_remove_local_extension_list",
+			"DirAccess.remove_absolute(global_path)",
+			"res://addons/gode/binary/gode_editor.gdextension.uid",
 			"_prepare_npm_export",
+			"_export_file",
+			"_is_gode_editor_only_export_path",
+			"_is_gode_binary_resource_path",
+			"_is_target_runtime_binary_path",
+			"_target_runtime_binary_paths",
+			"_features_has",
+			"res://addons/gode/binary/windows/x64/libgode_runtime.dll",
+			"res://addons/gode/binary/windows/x64/node.dll",
+			"res://addons/gode/binary/linux/x64/libgode_runtime.so",
+			"res://addons/gode/binary/macos/arm64/libgode_runtime.dylib",
+			"res://addons/gode/binary/android/arm64/libgode_runtime.so",
+			"res://addons/gode/binary/ios/arm64/libgode_runtime.dylib",
+			"res://addons/gode/binary/editor/",
+			"res://addons/gode/tsc/",
+			"res://addons/gode/types/",
 			"_export_npm_runtime_snapshot",
 			"_add_export_directory(\"res://node_modules\")",
 			"_add_file_from_bytes(exported_path, source_path, \"Failed to read Gode TypeScript output: %s\")",
 			"_add_file_from_bytes(source_path, source_path, \"Failed to read Gode export file: %s\")",
 			"FileAccess.get_open_error() != OK",
+			"GodeTypeScriptCompiler.compile_project(true)",
 			"INLINE_SOURCE_MAP_MARKER",
 			"TYPESCRIPT_EXPORT_MANIFEST_PATH",
 			"_strip_inline_source_map",
@@ -1567,8 +1662,56 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"allowYarnPnP",
 			"packageManager",
 			".pnp.cjs",
+			"_compile_typescript_project_for_export",
+			"_collect_typescript_sources",
+			"_clear_generated_output_root",
+			"_remove_directory_recursive",
 		):
 			self.assertNotIn(token, export_source)
+		self.assertIn("_ensure_native_extension_registered(RUNTIME_EXTENSION_PATH)", plugin_source)
+		self.assertNotIn("_ensure_native_extension_registered(EDITOR_EXTENSION_PATH)", plugin_source)
+		self.assertIn("if normalized_path == EDITOR_EXTENSION_PATH:", plugin_source)
+		self.assertIn("normalized_paths.append(normalized_path)", plugin_source)
+		self.assertIn("func _enter_tree() -> void:", plugin_source)
+		self.assertIn("func _exit_tree() -> void:", plugin_source)
+		self.assertIn("func _setup_plugin() -> void:", plugin_source)
+		self.assertIn("func _teardown_editor_session() -> void:", plugin_source)
+		self.assertIn('LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"', plugin_source)
+		self.assertIn("var command_line_export := _is_command_line_export()", plugin_source)
+		self.assertIn("if not command_line_export:", plugin_source)
+		self.assertIn("func _is_command_line_export() -> bool:", plugin_source)
+		self.assertIn('"--export-release", "--export-debug", "--export-pack", "--export-patch"', plugin_source)
+		self.assertIn("_ensure_local_native_extension_registered(EDITOR_EXTENSION_PATH)", plugin_source)
+		self.assertIn("ProjectSettings.globalize_path(LOCAL_EXTENSION_LIST_PATH.get_base_dir())", plugin_source)
+
+	def test_export_plugin_filters_target_runtime_binaries_by_feature(self):
+		export_source = (EXAMPLE_ROOT / "addons/gode/runtime/export_plugin.gd").read_text(encoding="utf-8")
+		target_body = gdscript_function_body(export_source, "_target_runtime_binary_paths")
+		binary_filter_body = gdscript_function_body(export_source, "_is_gode_binary_resource_path")
+
+		expected_by_platform = {
+			"windows": [
+				"res://addons/gode/binary/windows/x64/libgode_runtime.dll",
+				"res://addons/gode/binary/windows/x64/node.dll",
+			],
+			"linux": ["res://addons/gode/binary/linux/x64/libgode_runtime.so"],
+			"macos": ["res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"],
+			"android": ["res://addons/gode/binary/android/arm64/libgode_runtime.so"],
+			"ios": ["res://addons/gode/binary/ios/arm64/libgode_runtime.dylib"],
+		}
+
+		for platform_name, paths in expected_by_platform.items():
+			self.assertIn(f'_features_has(features, "{platform_name}")', target_body)
+			for path in paths:
+				self.assertEqual(1, target_body.count(f'"{path}"'))
+
+		self.assertIn("return PackedStringArray()", target_body)
+		self.assertNotIn("binary/editor/", target_body)
+		self.assertNotIn("libgode.dll", target_body)
+		self.assertNotIn("libgode.so", target_body)
+		self.assertNotIn("libgode.dylib", target_body)
+		self.assertIn("if path == GODE_RUNTIME_EXTENSION_PATH:\n\t\treturn false", binary_filter_body)
+		self.assertIn("return not _is_target_runtime_binary_path(path, features)", binary_filter_body)
 
 	def test_gode_json_controls_node_inspector_debug_policy(self):
 		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
@@ -1728,18 +1871,38 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 	def test_extension_entrypoint_is_self_contained(self):
 		header = ROOT / "include/register_types.h"
+		cmake_source = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+		project_config = (EXAMPLE_ROOT / "project.godot").read_text(encoding="utf-8")
 		self.assertFalse(header.exists(), "register_types is an internal extension entrypoint, not a public header")
 
-		source = (ROOT / "src/register_types.cpp").read_text(encoding="utf-8")
-		self.assertNotIn('#include "register_types.h"', source)
-		self.assertIn("namespace {", source)
-		self.assertIn("void initialize_node_module(godot::ModuleInitializationLevel p_level)", source)
-		self.assertIn("void uninitialize_node_module(godot::ModuleInitializationLevel p_level)", source)
-		self.assertIn('extern "C"', source)
-		self.assertIn("GDE_EXPORT node_library_init", source)
+		runtime_source = (ROOT / "src/register_runtime_types.cpp").read_text(encoding="utf-8")
+		editor_source = (ROOT / "src/register_editor_types.cpp").read_text(encoding="utf-8")
+		for source in (runtime_source, editor_source):
+			self.assertNotIn('#include "register_types.h"', source)
+			self.assertIn("namespace {", source)
+			self.assertIn('extern "C"', source)
+		self.assertIn("void initialize_gode_runtime_module(godot::ModuleInitializationLevel p_level)", runtime_source)
+		self.assertIn("void uninitialize_gode_runtime_module(godot::ModuleInitializationLevel p_level)", runtime_source)
+		self.assertIn("GDE_EXPORT gode_runtime_library_init", runtime_source)
+		self.assertIn("void initialize_gode_editor_module(godot::ModuleInitializationLevel p_level)", editor_source)
+		self.assertIn("void uninitialize_gode_editor_module(godot::ModuleInitializationLevel p_level)", editor_source)
+		self.assertIn("GDE_EXPORT gode_editor_library_init", editor_source)
 
 		extension_config = (EXAMPLE_ROOT / "addons/gode/binary/gode.gdextension").read_text(encoding="utf-8")
-		self.assertIn('entry_symbol = "node_library_init"', extension_config)
+		editor_extension_config = (EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension").read_text(encoding="utf-8")
+		self.assertIn('entry_symbol = "gode_runtime_library_init"', extension_config)
+		self.assertIn('entry_symbol = "gode_editor_library_init"', editor_extension_config)
+		self.assertIn("libgode_runtime", extension_config)
+		self.assertIn("libgode_editor", editor_extension_config)
+		self.assertIn("[dependencies]", extension_config)
+		self.assertIn("node.dll", extension_config)
+		self.assertNotIn("TypeScriptLanguage", editor_source)
+		self.assertNotIn("GodeTypeScriptCompiler", runtime_source)
+		self.assertIn("add_library(gode_runtime SHARED ${GODE_RUNTIME_SOURCES})", cmake_source)
+		self.assertIn("add_library(gode_editor SHARED ${GODE_EDITOR_SOURCES})", cmake_source)
+		self.assertIn("GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE", cmake_source)
+		self.assertIn('paths=["res://addons/gode/binary/gode.gdextension"]', project_config)
+		self.assertNotIn("gode_editor.gdextension\"]", project_config)
 
 	def test_godot_module_no_longer_exports_legacy_globals(self):
 		for path in (
@@ -2093,15 +2256,21 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("Godot vararg MethodBind call failed: TOO_FEW_ARGUMENTS", runtime_test)
 
 	def test_addon_manifest_paths_exist(self):
-		manifest = EXAMPLE_ROOT / "addons/gode/binary/gode.gdextension"
-		text = manifest.read_text(encoding="utf-8")
 		missing = []
-		for match in re.finditer(r'=\s*"(res://[^"]+)"', text):
-			resource_path = match.group(1)
-			if "/binary/" in resource_path and resource_path != "res://addons/gode/binary/gode.gdextension":
-				continue
-			if not res_path_to_file(resource_path).exists():
-				missing.append(resource_path)
+		for manifest in (
+			EXAMPLE_ROOT / "addons/gode/binary/gode.gdextension",
+			EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension",
+		):
+			text = manifest.read_text(encoding="utf-8")
+			for match in re.finditer(r'=\s*"(res://[^"]+)"', text):
+				resource_path = match.group(1)
+				if "/binary/" in resource_path and resource_path not in (
+					"res://addons/gode/binary/gode.gdextension",
+					"res://addons/gode/binary/gode_editor.gdextension",
+				):
+					continue
+				if not res_path_to_file(resource_path).exists():
+					missing.append(resource_path)
 
 		self.assertEqual([], sorted(missing))
 

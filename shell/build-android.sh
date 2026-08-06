@@ -91,7 +91,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 build_root="$repo_root/build"
 build_dir="$build_root/android/$architecture/$config_dir"
 bin_dir="$repo_root/example/addons/gode/binary/android/$architecture"
-expected_library="$bin_dir/libgode.so"
+expected_library="$bin_dir/libgode_runtime.so"
 libnode_library="$repo_root/libnode/android/$architecture/libnode.a"
 
 if [ -z "$python_executable" ]; then

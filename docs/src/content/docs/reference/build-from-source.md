@@ -46,7 +46,7 @@ Linux:
 ./shell/build-linux.sh
 ```
 
-These commands default to `Debug`, use incremental builds, choose an available CMake generator automatically, and output binaries into the example addon.
+These commands default to `Debug`, use incremental builds, choose an available CMake generator automatically, and output binaries into the example addon. Runtime libraries are written under `binary/<platform>/<arch>/`; desktop builds also produce the editor-only library under `binary/editor/<platform>/<arch>/`.
 
 ## Common options
 
@@ -66,13 +66,19 @@ Build directories are separated by platform, architecture, and configuration:
 build/<platform>/<arch>/<config>/
 ```
 
-Plugin binaries are written to:
+Runtime plugin binaries are written to:
 
 ```text
 example/addons/gode/binary/<platform>/<arch>/
 ```
 
-Debug and Release builds for the same platform and architecture overwrite the same example addon binary. This makes the sample project load the most recent build.
+Desktop builds also write the development-only editor extension to:
+
+```text
+example/addons/gode/binary/editor/<platform>/<arch>/
+```
+
+Debug and Release builds for the same platform and architecture overwrite the same example addon binaries. This makes the sample project load the most recent build.
 
 ## CI behavior
 

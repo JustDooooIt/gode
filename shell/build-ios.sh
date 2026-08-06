@@ -83,7 +83,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 build_root="$repo_root/build"
 build_dir="$build_root/ios/$architecture/$config_dir"
 bin_dir="$repo_root/example/addons/gode/binary/ios/$architecture"
-expected_library="$bin_dir/libgode.dylib"
+expected_library="$bin_dir/libgode_runtime.dylib"
 libnode_library="$repo_root/libnode/ios/$architecture/libnode.a"
 toolchain_file="$repo_root/third/godot-cpp/cmake/ios.toolchain.cmake"
 

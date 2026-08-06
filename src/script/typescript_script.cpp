@@ -1,7 +1,7 @@
 #include "script/typescript_script.h"
-#include "compiler/typescript_compiler.h"
 #include "runtime/node_runtime.h"
 #include "runtime/value_convert.h"
+#include "script/typescript_compile_service.h"
 #include "script/typescript_language.h"
 
 #include <tree_sitter/api.h>
@@ -2953,7 +2953,7 @@ bool TypeScriptScript::compile() const {
 
 	String js_path;
 	bool retryable_compile_failure = true;
-	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path, &retryable_compile_failure)) {
+	if (!ensure_typescript_script_compiled(path, &js_path, &retryable_compile_failure)) {
 		if (retryable_compile_failure) {
 			is_valid = false;
 			return false;
@@ -3032,7 +3032,7 @@ bool TypeScriptScript::ensure_default_class_loaded() const {
 	}
 
 	String js_path;
-	if (!GodeTypeScriptCompiler::ensure_script_compiled(path, &js_path)) {
+	if (!ensure_typescript_script_compiled(path, &js_path)) {
 		return false;
 	}
 

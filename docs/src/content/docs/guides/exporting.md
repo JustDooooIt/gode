@@ -42,6 +42,8 @@ Debug exports include source maps. Release exports include runtime JavaScript on
 
 Do not point scene files at generated JavaScript. The source of truth remains the original `.ts` or `.tsx` resource.
 
+Gode exports only the runtime native extension for the selected target platform. Editor-only files such as `gode_editor.gdextension`, `binary/editor/`, the bundled TypeScript compiler, and generated type declarations are development assets and are excluded from exported games.
+
 ## Platform export expectations
 
 Gode embeds Node.js in the native extension and runs TypeScript output inside that runtime. A successful export depends on three layers working together:

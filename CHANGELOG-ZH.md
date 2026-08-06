@@ -1,3 +1,11 @@
+## 2.4.0
+
+- Breaking：将原生插件拆分为 `gode_runtime` 和桌面专用 `gode_editor`；导出的游戏现在只保留目标平台运行时库，并排除 editor-only 原生文件。
+- 将项目级 TypeScript 编译移动到 editor 扩展。runtime 脚本加载只会在编辑器进程中调用 `GodeTypeScriptCompiler`，导出运行时只加载 export manifest 中列出的产物。
+- 导出运行时首次校验 TypeScript export manifest 后会缓存结果，避免每次加载脚本都重新读取和解析 manifest。
+- 简化 editor 编译 API：`GodeTypeScriptCompiler` 现在直接暴露静态编译方法，并移除 `compile_project_static`。
+- 更新 CMake、构建脚本、打包校验和 CI 检查以适配 `libgode_runtime` / `libgode_editor` 布局，包括 Windows `node.dll` Node-API forwarder。
+
 ## 2.3.3
 
 - 修复 TypeScript 脚本资源注册和导出 metadata 上下文处理。

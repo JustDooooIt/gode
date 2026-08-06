@@ -1,6 +1,6 @@
 # Gode
 
-[EN Doc](https://godothub.github.io/gode) &nbsp;&nbsp;&nbsp; [中文文档](https://godothub.github.io/gode/zh)
+[EN Doc](https://godothub.com/oss/gode/) &nbsp;&nbsp;&nbsp; [中文文档](https://godothub.com/oss/gode/zh/)
 
 JavaScript/TypeScript scripting support for the Godot engine, running on all native platforms.
 

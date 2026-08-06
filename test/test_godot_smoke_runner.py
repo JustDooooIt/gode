@@ -40,11 +40,13 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			manifest = project / "addons/gode/binary/gode.gdextension"
 			manifest.parent.mkdir(parents=True)
 			manifest.write_text("[configuration]\n", encoding="utf-8")
+			editor_manifest = project / "addons/gode/binary/gode_editor.gdextension"
+			editor_manifest.write_text("[configuration]\n", encoding="utf-8")
 
-			run_godot_smoke.ensure_extension_list(project, run_godot_smoke.DEFAULT_EXTENSION)
+			run_godot_smoke.ensure_extension_list(project, [run_godot_smoke.DEFAULT_EXTENSION, run_godot_smoke.DEFAULT_EDITOR_EXTENSION])
 
 			self.assertEqual(
-				run_godot_smoke.DEFAULT_EXTENSION + "\n",
+				run_godot_smoke.DEFAULT_EXTENSION + "\n" + run_godot_smoke.DEFAULT_EDITOR_EXTENSION + "\n",
 				(project / ".godot/extension_list.cfg").read_text(encoding="utf-8"),
 			)
 
@@ -54,6 +56,8 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			manifest = project / "addons/gode/binary/gode.gdextension"
 			manifest.parent.mkdir(parents=True)
 			manifest.write_text("[configuration]\n", encoding="utf-8")
+			editor_manifest = project / "addons/gode/binary/gode_editor.gdextension"
+			editor_manifest.write_text("[configuration]\n", encoding="utf-8")
 			extension_list = project / ".godot/extension_list.cfg"
 			extension_list.parent.mkdir()
 			extension_list.write_text(
@@ -63,12 +67,13 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 				encoding="utf-8",
 			)
 
-			run_godot_smoke.ensure_extension_list(project, run_godot_smoke.DEFAULT_EXTENSION)
+			run_godot_smoke.ensure_extension_list(project, [run_godot_smoke.DEFAULT_EXTENSION, run_godot_smoke.DEFAULT_EDITOR_EXTENSION])
 
 			self.assertEqual(
 				[
 					"res://addons/other/other.gdextension",
 					run_godot_smoke.DEFAULT_EXTENSION,
+					run_godot_smoke.DEFAULT_EDITOR_EXTENSION,
 				],
 				extension_list.read_text(encoding="utf-8").splitlines(),
 			)

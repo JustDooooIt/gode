@@ -46,7 +46,7 @@ Linux：
 ./shell/build-linux.sh
 ```
 
-这些命令默认构建 `Debug`，使用增量构建，自动选择可用 CMake generator，并把二进制输出到示例 addon。
+这些命令默认构建 `Debug`，使用增量构建，自动选择可用 CMake generator，并把二进制输出到示例 addon。运行时库写入 `binary/<platform>/<arch>/`；桌面构建还会把编辑器专用库写入 `binary/editor/<platform>/<arch>/`。
 
 ## 常用选项
 
@@ -66,13 +66,19 @@ Linux：
 build/<platform>/<arch>/<config>/
 ```
 
-插件二进制写入：
+运行时插件二进制写入：
 
 ```text
 example/addons/gode/binary/<platform>/<arch>/
 ```
 
-同一平台和架构下，Debug 与 Release 构建会覆盖示例 addon 的同一个二进制文件。这样示例项目会加载最近一次构建结果。
+桌面构建还会把开发期专用的编辑器扩展写入：
+
+```text
+example/addons/gode/binary/editor/<platform>/<arch>/
+```
+
+同一平台和架构下，Debug 与 Release 构建会覆盖示例 addon 的同一组二进制文件。这样示例项目会加载最近一次构建结果。
 
 ## CI 行为
 
