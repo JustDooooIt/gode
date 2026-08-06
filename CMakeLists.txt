@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "Select the MSVC runtime library." FORCE)
 
-project(gode VERSION 2.3.3 LANGUAGES C CXX)
+project(gode VERSION 2.4.0 LANGUAGES C CXX)
 
 if(NOT CMAKE_CONFIGURATION_TYPES)
 	if(NOT CMAKE_BUILD_TYPE)
@@ -20,6 +20,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(GODE_RUN_CODEGEN "Run the Python binding generator at configure time" ON)
 option(GODE_USE_COMPILER_CACHE "Use sccache or ccache as the C/C++ compiler launcher when available" ON)
 option(GODE_UNITY_GENERATED_BINDINGS "Build generated binding sources in CMake unity batches" ON)
+option(GODE_BUILD_EDITOR_EXTENSION "Build the desktop editor-only Gode extension" ON)
 
 set(GODOT_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/godot-cpp" CACHE PATH "Path to godot-cpp")
 set(NODE_ADDON_API_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/node-addon-api" CACHE PATH "Path to node-addon-api")
@@ -247,27 +248,50 @@ file(GLOB_RECURSE GODE_GENERATED_SOURCES CONFIGURE_DEPENDS
 if(GODE_GENERATED_SOURCES)
 	list(REMOVE_ITEM GODE_MANUAL_SOURCES ${GODE_GENERATED_SOURCES})
 endif()
-set(GODE_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})
 
-set(GODE_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/example/addons/gode/binary/${GODE_PLATFORM}/${GODE_ARCH}")
-
-add_library(gode SHARED ${GODE_SOURCES})
-set_target_properties(gode PROPERTIES
-	PREFIX "lib"
-	RUNTIME_OUTPUT_DIRECTORY "${GODE_OUTPUT_DIR}"
-	LIBRARY_OUTPUT_DIRECTORY "${GODE_OUTPUT_DIR}"
-	ARCHIVE_OUTPUT_DIRECTORY "${GODE_OUTPUT_DIR}"
+set(GODE_RUNTIME_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})
+set(GODE_EDITOR_SOURCES
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/compiler/typescript_compiler.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/compiler/typescript_project_compiler.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/register_editor_types.cpp"
 )
-foreach(_GODE_CONFIG Debug Release RelWithDebInfo MinSizeRel)
-	string(TOUPPER "${_GODE_CONFIG}" _GODE_CONFIG_UPPER)
-	set_target_properties(gode PROPERTIES
-		"RUNTIME_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
-		"LIBRARY_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
-		"ARCHIVE_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${GODE_OUTPUT_DIR}"
-	)
+foreach(_GODE_EDITOR_SOURCE IN LISTS GODE_EDITOR_SOURCES)
+	list(REMOVE_ITEM GODE_RUNTIME_SOURCES "${_GODE_EDITOR_SOURCE}")
 endforeach()
+list(REMOVE_ITEM GODE_RUNTIME_SOURCES
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/register_runtime_types.cpp"
+)
+list(APPEND GODE_RUNTIME_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/register_runtime_types.cpp")
+
+set(GODE_RUNTIME_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/example/addons/gode/binary/${GODE_PLATFORM}/${GODE_ARCH}")
+set(GODE_EDITOR_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/example/addons/gode/binary/editor/${GODE_PLATFORM}/${GODE_ARCH}")
+set(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE OFF)
+if(GODE_BUILD_EDITOR_EXTENSION AND (GODE_PLATFORM STREQUAL "windows" OR GODE_PLATFORM STREQUAL "linux" OR GODE_PLATFORM STREQUAL "macos"))
+	set(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE ON)
+endif()
+
+function(gode_configure_extension_target p_target p_output_dir)
+	set_target_properties(${p_target} PROPERTIES
+		PREFIX "lib"
+		RUNTIME_OUTPUT_DIRECTORY "${p_output_dir}"
+		LIBRARY_OUTPUT_DIRECTORY "${p_output_dir}"
+		ARCHIVE_OUTPUT_DIRECTORY "${p_output_dir}"
+	)
+	foreach(_GODE_CONFIG Debug Release RelWithDebInfo MinSizeRel)
+		string(TOUPPER "${_GODE_CONFIG}" _GODE_CONFIG_UPPER)
+		set_target_properties(${p_target} PROPERTIES
+			"RUNTIME_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
+			"LIBRARY_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
+			"ARCHIVE_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
+		)
+	endforeach()
+endfunction()
+
+add_library(gode_runtime SHARED ${GODE_RUNTIME_SOURCES})
+set_target_properties(gode_runtime PROPERTIES OUTPUT_NAME "gode_runtime")
+gode_configure_extension_target(gode_runtime "${GODE_RUNTIME_OUTPUT_DIR}")
 if(GODE_UNITY_GENERATED_BINDINGS AND GODE_GENERATED_SOURCES)
-	set_target_properties(gode PROPERTIES
+	set_target_properties(gode_runtime PROPERTIES
 		UNITY_BUILD ON
 		UNITY_BUILD_BATCH_SIZE "${GODE_UNITY_GENERATED_BATCH_SIZE}"
 	)
@@ -276,7 +300,7 @@ if(GODE_UNITY_GENERATED_BINDINGS AND GODE_GENERATED_SOURCES)
 	endif()
 	message(STATUS "Generated binding unity build enabled with batch size ${GODE_UNITY_GENERATED_BATCH_SIZE}")
 endif()
-target_include_directories(gode PRIVATE
+target_include_directories(gode_runtime PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/include/generated"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -284,19 +308,19 @@ target_include_directories(gode PRIVATE
 	"${TREE_SITTER_DIR}/lib/include"
 	"${CMAKE_CURRENT_SOURCE_DIR}/libnode/include"
 )
-target_compile_definitions(gode PRIVATE
+target_compile_definitions(gode_runtime PRIVATE
 	NAPI_CPP_EXCEPTIONS
 	NAPI_VERSION=10
 )
-target_link_libraries(gode PRIVATE
+target_link_libraries(gode_runtime PRIVATE
 	godot-cpp
 	${GODE_LIBNODE_LINK_ITEMS}
 	gode_tree_sitter
 	gode_tree_sitter_typescript
 	${GODE_LIBNODE_SYSTEM_LIBS}
 )
-target_link_options(gode PRIVATE ${GODE_LIBNODE_LINK_OPTIONS})
-set_property(TARGET gode APPEND PROPERTY LINK_DEPENDS "${GODE_LIBNODE_FILE}")
+target_link_options(gode_runtime PRIVATE ${GODE_LIBNODE_LINK_OPTIONS})
+set_property(TARGET gode_runtime APPEND PROPERTY LINK_DEPENDS "${GODE_LIBNODE_FILE}")
 if(WIN32)
 	set(GODE_WINDOWS_NODE_SHIM_DEF "${CMAKE_CURRENT_BINARY_DIR}/gode_node_api_forwarders.def")
 	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -329,7 +353,7 @@ if(WIN32)
 	list(SORT _GODE_NODE_API_FORWARDER_SYMBOLS)
 	set(_GODE_NODE_API_FORWARDER_DEF "LIBRARY node\nEXPORTS\n")
 	foreach(_GODE_NODE_API_SYMBOL IN LISTS _GODE_NODE_API_FORWARDER_SYMBOLS)
-		string(APPEND _GODE_NODE_API_FORWARDER_DEF "\t${_GODE_NODE_API_SYMBOL}=libgode.${_GODE_NODE_API_SYMBOL}\n")
+		string(APPEND _GODE_NODE_API_FORWARDER_DEF "\t${_GODE_NODE_API_SYMBOL}=libgode_runtime.${_GODE_NODE_API_SYMBOL}\n")
 	endforeach()
 	file(WRITE "${GODE_WINDOWS_NODE_SHIM_DEF}" "${_GODE_NODE_API_FORWARDER_DEF}")
 
@@ -344,9 +368,9 @@ if(WIN32)
 		message(FATAL_ERROR "Unsupported Windows architecture for node.dll shim: ${GODE_ARCH}")
 	endif()
 	set(GODE_WINDOWS_NODE_SHIM_IMPORT_DIR "${CMAKE_CURRENT_BINARY_DIR}/gode-node-shim/$<CONFIG>")
-	add_custom_command(TARGET gode POST_BUILD
-		COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:gode>" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}"
-		COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE_DIR:gode>/node.dll" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}/node.lib"
+	add_custom_command(TARGET gode_runtime POST_BUILD
+		COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:gode_runtime>" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}"
+		COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE_DIR:gode_runtime>/node.dll" "${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}/node.lib"
 		COMMAND "${CMAKE_LINKER}"
 			/nologo
 			/dll
@@ -354,7 +378,7 @@ if(WIN32)
 			/ignore:4001
 			"/machine:${GODE_WINDOWS_NODE_SHIM_MACHINE}"
 			"/def:${GODE_WINDOWS_NODE_SHIM_DEF}"
-			"/out:$<TARGET_FILE_DIR:gode>/node.dll"
+			"/out:$<TARGET_FILE_DIR:gode_runtime>/node.dll"
 			"/implib:${GODE_WINDOWS_NODE_SHIM_IMPORT_DIR}/node.lib"
 		COMMENT "Generating Windows node.dll Node-API forwarder"
 		VERBATIM
@@ -362,5 +386,23 @@ if(WIN32)
 endif()
 
 if(MSVC)
-	target_compile_options(gode PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
+	target_compile_options(gode_runtime PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
+endif()
+
+if(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE)
+	add_library(gode_editor SHARED ${GODE_EDITOR_SOURCES})
+	set_target_properties(gode_editor PROPERTIES OUTPUT_NAME "gode_editor")
+	gode_configure_extension_target(gode_editor "${GODE_EDITOR_OUTPUT_DIR}")
+	target_include_directories(gode_editor PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/include"
+		"${CMAKE_CURRENT_SOURCE_DIR}/include/generated"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src"
+	)
+	target_link_libraries(gode_editor PRIVATE godot-cpp)
+	if(MSVC)
+		target_compile_options(gode_editor PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
+	endif()
+	add_custom_target(gode DEPENDS gode_runtime gode_editor)
+else()
+	add_custom_target(gode DEPENDS gode_runtime)
 endif()

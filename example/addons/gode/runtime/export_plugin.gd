@@ -5,6 +5,9 @@ const GODE_CONFIG_PATH := "res://gode.json"
 const DEFAULT_GODE_CONFIG_PATH := "res://addons/gode/config/gode.json"
 const INLINE_SOURCE_MAP_MARKER := "//# sourceMappingURL=data:application/json;base64,"
 const TYPESCRIPT_EXPORT_MANIFEST_PATH := "res://.gode/build/typescript/manifest.json"
+const GODE_RUNTIME_EXTENSION_PATH := "res://addons/gode/binary/gode.gdextension"
+const GODE_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
+const LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"
 
 const NPM_MANIFEST_FILES := [
 	"package.json",
@@ -22,25 +25,35 @@ const NPM_MANIFEST_FILES := [
 var npm_exported_files := 0
 var npm_config: Dictionary = {}
 var config_error := ""
+var editor_extension_list_entry_removed_for_export := false
 
 func _get_name() -> String:
 	return "GodeTypeScriptExport"
 
+func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
+	_prepare_local_extension_list_for_export()
+	var normalized := _normalize_res_path(path)
+	if _is_gode_editor_only_export_path(normalized) or _is_gode_binary_resource_path(normalized, features):
+		skip()
+
 func _export_begin(features: PackedStringArray, is_debug: bool, path: String, flags: int) -> void:
+	_prepare_local_extension_list_for_export()
 	npm_exported_files = 0
 	var has_npm_project := _has_npm_project()
 	npm_config = _load_npm_config(has_npm_project)
 	if not config_error.is_empty():
 		push_error(config_error)
+		_restore_local_extension_list_after_export()
 		return
 	if not _prepare_npm_export():
+		_restore_local_extension_list_after_export()
 		return
 
-	var compiler := GodeTypeScriptCompiler.new()
-	var result: Dictionary = compiler.compile_project(true)
+	var result: Dictionary = GodeTypeScriptCompiler.compile_project(true)
 	if not result.get("ok", false):
 		_print_diagnostics(result.get("diagnostics", []))
 		push_error("Gode TypeScript export failed. Fix TypeScript diagnostics before exporting.")
+		_restore_local_extension_list_after_export()
 		return
 
 	var export_manifest_outputs: Array = []
@@ -49,9 +62,11 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 		var source_path: String = output.get("path", "")
 		var exported_path: String = output.get("exported_path", "")
 		if not _add_compiled_file(exported_path, source_path, is_debug):
+			_restore_local_extension_list_after_export()
 			return
 		if is_debug and FileAccess.file_exists(source_path + ".map"):
 			if not _add_compiled_file(exported_path + ".map", source_path + ".map"):
+				_restore_local_extension_list_after_export()
 				return
 		if not source_resource_path.is_empty() and not exported_path.is_empty():
 			export_manifest_outputs.append({
@@ -63,9 +78,13 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 
 	if _should_export_npm_dependencies() and has_npm_project:
 		if not _export_npm_runtime_snapshot():
+			_restore_local_extension_list_after_export()
 			return
 		if npm_exported_files > 0:
 			print("[Gode Export] Added npm runtime snapshot files: %d" % npm_exported_files)
+
+func _export_end() -> void:
+	_restore_local_extension_list_after_export()
 
 func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> bool:
 	if exported_path.is_empty() or source_path.is_empty():
@@ -146,6 +165,127 @@ func _has_npm_project() -> bool:
 
 func _should_export_npm_dependencies() -> bool:
 	return _get_npm_bool("exportDependencies")
+
+func _is_gode_editor_only_export_path(path: String) -> bool:
+	if path.is_empty():
+		return false
+	if path == GODE_EDITOR_EXTENSION_PATH:
+		return true
+	for exact_path: String in [
+		LOCAL_EXTENSION_LIST_PATH,
+		"res://addons/gode/binary/gode_editor.gdextension.uid",
+		"res://addons/gode/plugin.cfg",
+		"res://addons/gode/gode.gd",
+		"res://addons/gode/gode.gdc",
+		"res://addons/gode/gode.gd.uid",
+		"res://addons/gode/gode.gd.remap",
+		"res://addons/gode/runtime/export_plugin.gd",
+		"res://addons/gode/runtime/export_plugin.gdc",
+		"res://addons/gode/runtime/export_plugin.gd.uid",
+		"res://addons/gode/runtime/export_plugin.gd.remap",
+		"res://addons/gode/runtime/typescript_compiler.js",
+	]:
+		if path == exact_path:
+			return true
+	for prefix: String in [
+		"res://addons/gode/binary/editor/",
+		"res://addons/gode/config/",
+		"res://addons/gode/icons/",
+		"res://addons/gode/tsc/",
+		"res://addons/gode/types/",
+	]:
+		if path.begins_with(prefix):
+			return true
+	return false
+
+func _is_gode_binary_resource_path(path: String, features: PackedStringArray) -> bool:
+	if path == GODE_RUNTIME_EXTENSION_PATH:
+		return false
+	if not path.begins_with("res://addons/gode/binary/"):
+		return false
+	return not _is_target_runtime_binary_path(path, features)
+
+func _is_target_runtime_binary_path(path: String, features: PackedStringArray) -> bool:
+	return _target_runtime_binary_paths(features).has(path)
+
+func _target_runtime_binary_paths(features: PackedStringArray) -> PackedStringArray:
+	if _features_has(features, "windows") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
+		return PackedStringArray([
+			"res://addons/gode/binary/windows/x64/libgode_runtime.dll",
+			"res://addons/gode/binary/windows/x64/node.dll",
+		])
+	if _features_has(features, "linux") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
+		return PackedStringArray(["res://addons/gode/binary/linux/x64/libgode_runtime.so"])
+	if _features_has(features, "macos") and _features_has(features, "arm64"):
+		return PackedStringArray(["res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"])
+	if _features_has(features, "android") and _features_has(features, "arm64"):
+		return PackedStringArray(["res://addons/gode/binary/android/arm64/libgode_runtime.so"])
+	if _features_has(features, "ios") and _features_has(features, "arm64"):
+		return PackedStringArray(["res://addons/gode/binary/ios/arm64/libgode_runtime.dylib"])
+	return PackedStringArray()
+
+func _features_has(features: PackedStringArray, feature: String) -> bool:
+	for value: String in features:
+		if value == feature:
+			return true
+	return false
+
+func _prepare_local_extension_list_for_export() -> void:
+	if editor_extension_list_entry_removed_for_export:
+		return
+	if not FileAccess.file_exists(LOCAL_EXTENSION_LIST_PATH):
+		return
+
+	var lines := _read_local_extension_list()
+	var filtered := PackedStringArray()
+	for line: String in lines:
+		if line.strip_edges() == GODE_EDITOR_EXTENSION_PATH:
+			editor_extension_list_entry_removed_for_export = true
+			continue
+		filtered.append(line)
+	if not editor_extension_list_entry_removed_for_export:
+		return
+	_write_or_remove_local_extension_list(filtered)
+
+func _restore_local_extension_list_after_export() -> void:
+	if not editor_extension_list_entry_removed_for_export:
+		return
+	editor_extension_list_entry_removed_for_export = false
+
+	var lines := _read_local_extension_list()
+	for line: String in lines:
+		if line.strip_edges() == GODE_EDITOR_EXTENSION_PATH:
+			return
+	lines.append(GODE_EDITOR_EXTENSION_PATH)
+	_write_or_remove_local_extension_list(lines)
+
+func _read_local_extension_list() -> PackedStringArray:
+	if not FileAccess.file_exists(LOCAL_EXTENSION_LIST_PATH):
+		return PackedStringArray()
+	var content := FileAccess.get_file_as_string(LOCAL_EXTENSION_LIST_PATH)
+	if FileAccess.get_open_error() != OK:
+		push_warning("Gode export could not read local GDExtension list: %s" % LOCAL_EXTENSION_LIST_PATH)
+		return PackedStringArray()
+	return content.replace("\r\n", "\n").replace("\r", "\n").split("\n", false)
+
+func _write_or_remove_local_extension_list(lines: PackedStringArray) -> void:
+	var global_path := ProjectSettings.globalize_path(LOCAL_EXTENSION_LIST_PATH)
+	if lines.is_empty():
+		if FileAccess.file_exists(LOCAL_EXTENSION_LIST_PATH):
+			var remove_error := DirAccess.remove_absolute(global_path)
+			if remove_error != OK:
+				push_warning("Gode export could not remove local GDExtension list: %s" % LOCAL_EXTENSION_LIST_PATH)
+		return
+
+	var directory := ProjectSettings.globalize_path(LOCAL_EXTENSION_LIST_PATH.get_base_dir())
+	if DirAccess.make_dir_recursive_absolute(directory) != OK:
+		push_warning("Gode export could not create local GDExtension directory: %s" % LOCAL_EXTENSION_LIST_PATH.get_base_dir())
+		return
+	var file := FileAccess.open(LOCAL_EXTENSION_LIST_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("Gode export could not write local GDExtension list: %s" % LOCAL_EXTENSION_LIST_PATH)
+		return
+	file.store_string("\n".join(lines) + "\n")
 
 func _command_exists(command: String) -> bool:
 	var candidates := PackedStringArray([command])

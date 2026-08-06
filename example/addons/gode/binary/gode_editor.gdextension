@@ -1,0 +1,12 @@
+[configuration]
+
+entry_symbol = "gode_editor_library_init"
+compatibility_minimum = "4.6.2"
+
+[libraries]
+
+windows.editor.x86_64 = "res://addons/gode/binary/editor/windows/x64/libgode_editor.dll"
+
+linux.editor.x86_64 = "res://addons/gode/binary/editor/linux/x64/libgode_editor.so"
+
+macos.editor.arm64 = "res://addons/gode/binary/editor/macos/arm64/libgode_editor.dylib"
