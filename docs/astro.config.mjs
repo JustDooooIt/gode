@@ -1,11 +1,14 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-const docsBase = '/gode';
-const withBase = (path) => (docsBase === '/' ? path : `${docsBase}${path}`);
+const docsBase = '/oss/gode';
+const withBase = (path) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return docsBase === '/' ? normalizedPath : `${docsBase}${normalizedPath}`;
+};
 
 export default defineConfig({
-  site: 'https://godothub.github.io',
+  site: 'https://godothub.com',
   base: docsBase,
   integrations: [
     starlight({

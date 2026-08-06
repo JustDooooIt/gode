@@ -1,6 +1,6 @@
 # Gode
 
-[EN Doc](https://godothub.github.io/gode) &nbsp;&nbsp;&nbsp; [中文文档](https://godothub.github.io/gode/zh)
+[EN Doc](https://godothub.com/oss/gode/) &nbsp;&nbsp;&nbsp; [中文文档](https://godothub.com/oss/gode/zh/)
 
 Godot 引擎的 JavaScript/TypeScript 脚本支持，运行在所有原生平台！
 
