@@ -11,6 +11,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_MARKER = "[GodeTest] all tests passed"
 DEFAULT_EXTENSION = "res://addons/gode/binary/gode.gdextension"
+DEFAULT_EDITOR_EXTENSION = "res://addons/gode/binary/gode_editor.gdextension"
 
 LEAK_RE = re.compile(
 	r"(WARNING|ERROR): .*leaked|Leaked instance:|Orphan StringName: (Gode|TypeScriptScript)",
@@ -71,27 +72,38 @@ def godot_resource_path(project, resource_path):
 	return project / resource_path.removeprefix("res://")
 
 
-def ensure_extension_list(project, extension_path):
-	if not extension_path:
+def ensure_extension_list(project, extension_paths):
+	if not extension_paths:
 		return
+	if isinstance(extension_paths, str):
+		extension_paths = [extension_paths]
 
-	manifest = godot_resource_path(project, extension_path)
-	if not manifest.exists():
-		raise FileNotFoundError(f"GDExtension manifest was not found: {manifest}")
+	for extension_path in extension_paths:
+		manifest = godot_resource_path(project, extension_path)
+		if not manifest.exists():
+			raise FileNotFoundError(f"GDExtension manifest was not found: {manifest}")
 
 	godot_dir = project / ".godot"
 	extension_list = godot_dir / "extension_list.cfg"
 	if extension_list.exists():
 		lines = extension_list.read_text(encoding="utf-8").splitlines()
-		if extension_path in [line.strip() for line in lines]:
-			return
 	else:
 		lines = []
 
+	registered = {line.strip() for line in lines}
+	added = []
+	for extension_path in extension_paths:
+		if extension_path in registered:
+			continue
+		lines.append(extension_path)
+		registered.add(extension_path)
+		added.append(extension_path)
+	if not added:
+		return
+
 	godot_dir.mkdir(exist_ok=True)
-	lines.append(extension_path)
 	extension_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
-	print(f"[gode-smoke] Registered GDExtension: {extension_path}")
+	print(f"[gode-smoke] Registered GDExtension: {', '.join(added)}")
 
 
 def output_lines(output):
@@ -131,7 +143,10 @@ def run_smoke(args):
 	project = (ROOT / args.project).resolve()
 	if not project.exists():
 		raise FileNotFoundError(f"Godot project directory was not found: {project}")
-	ensure_extension_list(project, args.extension)
+	extensions = [args.extension]
+	if args.editor_extension:
+		extensions.append(args.editor_extension)
+	ensure_extension_list(project, extensions)
 
 	command = [
 		str(godot),
@@ -188,6 +203,7 @@ def build_parser():
 	parser.add_argument("--project", default="example", help="Path to the Godot project directory relative to the repo root.")
 	parser.add_argument("--scene", default="res://scenes/tests_runner.tscn", help="Godot scene path to run.")
 	parser.add_argument("--extension", default=DEFAULT_EXTENSION, help="GDExtension manifest path to register before running.")
+	parser.add_argument("--editor-extension", default=DEFAULT_EDITOR_EXTENSION, help="Editor GDExtension manifest path to register for development-time TypeScript compilation.")
 	parser.add_argument("--marker", default=DEFAULT_MARKER, help="Output marker that proves the JS test completed.")
 	parser.add_argument("--timeout", type=int, default=45, help="Seconds before the Godot process is terminated.")
 	parser.add_argument("--strict-exit-leaks", action="store_true", help="Fail if Godot reports exit-time leaks.")
