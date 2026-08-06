@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/script.hpp>
 #include <godot_cpp/classes/script_extension.hpp>
 #include <godot_cpp/classes/script_language.hpp>
+#include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/core/object.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
@@ -34,6 +35,7 @@ protected:
 	mutable godot::StringName base_class_name;
 	mutable godot::String base_script_path;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> methods;
+	mutable godot::HashMap<godot::StringName, godot::MethodInfo> static_methods;
 	mutable godot::HashMap<godot::StringName, godot::Dictionary> rpc_configs;
 	mutable godot::HashMap<godot::StringName, godot::MethodInfo> signals;
 	mutable godot::HashMap<godot::StringName, godot::PropertyInfo> properties;
@@ -60,6 +62,10 @@ public:
 	bool compile() const;
 	godot::Error reload_source_code(const godot::String &p_code, bool p_keep_state, bool p_force_dirty = false);
 	void release_runtime_state();
+	bool has_static_method(const godot::StringName &p_method) const;
+	int32_t get_static_method_argument_count(const godot::StringName &p_method) const;
+	godot::Variant call_static(const godot::Variant **p_args, GDExtensionInt p_argcount, GDExtensionCallError &r_error);
+	godot::Variant call_static_method(const godot::StringName &p_method, const godot::Variant **p_args, int32_t p_argcount, GDExtensionCallError &r_error) const;
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }
 	const godot::HashMap<godot::StringName, godot::Variant> &get_property_defaults() const { return property_defaults; }

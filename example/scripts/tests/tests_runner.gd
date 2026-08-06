@@ -71,6 +71,19 @@ func _run_next() -> void:
 		if current_test.get("static_number_array") != [4, 5.5]:
 			_fail("RuntimeIntegrationTest static export Array did not round-trip through ScriptInstance")
 			return
+		if current_test.has_method("staticBridgeAdd"):
+			_fail("RuntimeIntegrationTest static method leaked into ScriptInstance method table")
+			return
+		var script: Object = current_test.get_script()
+		if not script.call("has_static_method", "staticBridgeAdd"):
+			_fail("RuntimeIntegrationTest script did not expose staticBridgeAdd as a static method")
+			return
+		if script.call("get_static_method_argument_count", "staticBridgeAdd") != 2:
+			_fail("RuntimeIntegrationTest staticBridgeAdd argument count was not reported")
+			return
+		if script.call("call_static", "staticBridgeAdd", 6, 7) != 13:
+			_fail("RuntimeIntegrationTest staticBridgeAdd did not return the expected value")
+			return
 
 	current_test.call(RUN_TEST_METHOD)
 

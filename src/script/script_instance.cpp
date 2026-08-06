@@ -62,20 +62,6 @@ bool _find_script_method_from_prototype_chain(const Napi::Object &p_instance, co
 	return false;
 }
 
-void _attach_promise_rejection_handler(Napi::Value value, const std::string &method_name) {
-	if (!value.IsPromise()) {
-		return;
-	}
-
-	Napi::Env env = value.Env();
-	Napi::Function on_rejected = Napi::Function::New(env, [method_name](const Napi::CallbackInfo &info) {
-		std::string message = info.Length() > 0 ? js_error_to_string(info[0]) : "Unknown async JavaScript exception";
-		log_js_error("Async JS exception in " + method_name, message);
-		return info.Env().Undefined(); }, "__gode_async_rejection_handler");
-
-	value.As<Napi::Promise>().Catch(on_rejected);
-}
-
 } // namespace
 
 static bool variant_can_hold_godot_object_reference(const Variant &p_value) {
@@ -594,7 +580,7 @@ Variant ScriptInstance::call(const StringName &p_method, const Variant *p_args, 
 			return Variant();
 		}
 		if (result.IsPromise()) {
-			_attach_promise_rejection_handler(result, method_name);
+			attach_promise_rejection_handler(result, method_name);
 			r_error.error = GDEXTENSION_CALL_OK;
 			r_error.argument = 0;
 			r_error.expected = 0;
@@ -650,7 +636,7 @@ void ScriptInstance::notification_bind(Napi::Object instance, int32_t p_what, bo
 			try {
 				Napi::Value result = method.Call(instance, { Napi::Number::New(instance.Env(), p_what), Napi::Boolean::New(instance.Env(), p_reversed) });
 				if (!log_and_clear_pending_js_exception(instance.Env(), "JS notification " + notification_method_name)) {
-					_attach_promise_rejection_handler(result, notification_method_name);
+					attach_promise_rejection_handler(result, notification_method_name);
 				}
 			} catch (const Napi::Error &e) {
 				log_js_error("JS exception in " + notification_method_name, js_error_to_string(e));

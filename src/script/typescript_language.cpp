@@ -171,27 +171,6 @@ String format_function_argument(const String &p_arg, int64_t p_index) {
 	return sanitize_typescript_identifier(arg, fallback) + String(": unknown");
 }
 
-String strip_typescript_method_modifiers(String p_line) {
-	static const char *MODIFIERS[] = {
-		"public", "private", "protected", "static", "override", "async", "declare", "readonly"
-	};
-
-	bool removed = true;
-	while (removed) {
-		removed = false;
-		p_line = p_line.strip_edges();
-		for (const char *modifier : MODIFIERS) {
-			String token = String(modifier) + String(" ");
-			if (p_line.begins_with(token)) {
-				p_line = p_line.substr(token.length());
-				removed = true;
-				break;
-			}
-		}
-	}
-	return p_line.strip_edges();
-}
-
 String tree_sitter_node_text(TSNode node, const std::string &source) {
 	if (ts_node_is_null(node)) {
 		return String();
@@ -363,26 +342,102 @@ void collect_tree_sitter_errors(TSNode node, const String &path, Array &errors) 
 	}
 }
 
-void append_validate_function_names(TSNode node, const std::string &source, PackedStringArray &functions) {
-	if (ts_node_is_null(node)) {
+bool is_script_method_node(TSNode node) {
+	return strcmp(ts_node_type(node), "method_definition") == 0;
+}
+
+bool is_script_method_name_node(TSNode name_node) {
+	return !ts_node_is_null(name_node) && strcmp(ts_node_type(name_node), "property_identifier") == 0;
+}
+
+TSNode class_body_node(TSNode class_node) {
+	if (ts_node_is_null(class_node)) {
+		return {};
+	}
+	return ts_node_child_by_field_name(class_node, "body", 4);
+}
+
+bool method_node_is_accessor(TSNode method_node, TSNode name_node) {
+	const uint32_t child_count = ts_node_child_count(method_node);
+	const uint32_t name_start = ts_node_start_byte(name_node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(method_node, i);
+		if (ts_node_end_byte(child) > name_start) {
+			break;
+		}
+
+		const char *child_type = ts_node_type(child);
+		if (strcmp(child_type, "get") == 0 || strcmp(child_type, "set") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool method_node_is_static(TSNode method_node) {
+	const uint32_t child_count = ts_node_child_count(method_node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		if (strcmp(ts_node_type(ts_node_child(method_node, i)), "static") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool script_method_name(TSNode method_node, const std::string &source, String &r_name) {
+	if (!is_script_method_node(method_node)) {
+		return false;
+	}
+
+	TSNode name_node = ts_node_child_by_field_name(method_node, "name", 4);
+	if (!is_script_method_name_node(name_node)) {
+		return false;
+	}
+
+	r_name = tree_sitter_node_text(name_node, source);
+	if (r_name.is_empty() ||
+			r_name == String("constructor") ||
+			method_node_is_accessor(method_node, name_node) ||
+			method_node_is_static(method_node)) {
+		return false;
+	}
+	return true;
+}
+
+void append_validate_function_names(TSNode class_node, const std::string &source, PackedStringArray &functions) {
+	TSNode body = class_body_node(class_node);
+	if (ts_node_is_null(body)) {
 		return;
 	}
 
-	const char *node_type = ts_node_type(node);
-	if (strcmp(node_type, "function_declaration") == 0 ||
-			strcmp(node_type, "method_definition") == 0 ||
-			strcmp(node_type, "abstract_method_signature") == 0) {
-		TSNode name_node = ts_node_child_by_field_name(node, "name", 4);
-		String name = tree_sitter_node_text(name_node, source);
-		if (!name.is_empty()) {
-			functions.push_back(name);
+	const uint32_t child_count = ts_node_named_child_count(body);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_named_child(body, i);
+		String name;
+		if (script_method_name(child, source, name)) {
+			TSNode name_node = ts_node_child_by_field_name(child, "name", 4);
+			// ScriptTextEditor expects "name:line" with a one-based line number.
+			functions.push_back(name + ":" + String::num_int64(ts_node_start_point(name_node).row + 1));
 		}
 	}
+}
 
-	const uint32_t child_count = ts_node_named_child_count(node);
-	for (uint32_t i = 0; i < child_count; i++) {
-		append_validate_function_names(ts_node_named_child(node, i), source, functions);
+int32_t find_function_line(TSNode class_node, const std::string &source, const String &name) {
+	TSNode body = class_body_node(class_node);
+	if (ts_node_is_null(body)) {
+		return -1;
 	}
+
+	const uint32_t child_count = ts_node_named_child_count(body);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_named_child(body, i);
+		String method_name;
+		if (script_method_name(child, source, method_name) && method_name == name) {
+			TSNode name_node = ts_node_child_by_field_name(child, "name", 4);
+			return static_cast<int32_t>(ts_node_start_point(name_node).row);
+		}
+	}
+	return -1;
 }
 
 TSNode find_default_class(TSNode root_node, uint32_t child_count, const std::string &source) {
@@ -687,7 +742,8 @@ Dictionary TypeScriptLanguage::_validate(const String &p_script, const String &p
 	}
 	if (p_validate_functions) {
 		PackedStringArray functions;
-		append_validate_function_names(root, source, functions);
+		TSNode script_class = find_default_class(root, ts_node_child_count(root), source);
+		append_validate_function_names(script_class, source, functions);
 		d["functions"] = functions;
 	}
 	ts_tree_delete(tree);
@@ -733,16 +789,27 @@ bool TypeScriptLanguage::_can_inherit_from_file() const {
 }
 
 int32_t TypeScriptLanguage::_find_function(const String &p_function, const String &p_code) const {
-	String function_name = sanitize_typescript_identifier(p_function, "method");
-	PackedStringArray lines = p_code.split("\n", true);
-	for (int64_t i = 0; i < lines.size(); i++) {
-		String line = strip_typescript_method_modifiers(lines[i]);
-		if (line.begins_with(function_name + String("(")) ||
-				line.begins_with(String("function ") + function_name + String("("))) {
-			return static_cast<int32_t>(i);
-		}
+	TSParser *parser = ts_parser_new();
+	if (!parser) {
+		return -1;
 	}
-	return -1;
+	if (!ts_parser_set_language(parser, tree_sitter_typescript())) {
+		ts_parser_delete(parser);
+		return -1;
+	}
+
+	std::string source = p_code.utf8().get_data();
+	TSTree *tree = ts_parser_parse_string(parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
+	ts_parser_delete(parser);
+	if (!tree) {
+		return -1;
+	}
+
+	TSNode root = ts_tree_root_node(tree);
+	TSNode script_class = find_default_class(root, ts_node_child_count(root), source);
+	const int32_t line = find_function_line(script_class, source, p_function);
+	ts_tree_delete(tree);
+	return line;
 }
 
 String TypeScriptLanguage::_make_function(const String &p_class_name, const String &p_function_name, const PackedStringArray &p_function_args) const {

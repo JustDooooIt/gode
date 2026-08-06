@@ -85,4 +85,18 @@ bool log_and_clear_pending_js_exception(Napi::Env env, const std::string &contex
 	return true;
 }
 
+void attach_promise_rejection_handler(Napi::Value value, const std::string &context) {
+	if (!value.IsPromise()) {
+		return;
+	}
+
+	Napi::Env env = value.Env();
+	Napi::Function on_rejected = Napi::Function::New(env, [context](const Napi::CallbackInfo &info) {
+		std::string message = info.Length() > 0 ? js_error_to_string(info[0]) : "Unknown async JavaScript exception";
+		log_js_error("Async JS exception in " + context, message);
+		return info.Env().Undefined(); }, "__gode_async_rejection_handler");
+
+	value.As<Napi::Promise>().Catch(on_rejected);
+}
+
 } // namespace gode

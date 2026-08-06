@@ -1,10 +1,11 @@
 ## 2.4.0
 
-- Breaking: split the native plugin into `gode_runtime` and desktop-only `gode_editor`; exported games now keep only the selected target platform's runtime library and exclude editor-only native files.
-- Moved project TypeScript compilation into the editor extension. Runtime script loading now calls `GodeTypeScriptCompiler` only in editor processes, while exported runtimes load only files listed in the export manifest.
-- Cached the exported TypeScript manifest after first validation so exported games do not re-read and re-parse it for every script load.
-- Simplified the editor compile API: `GodeTypeScriptCompiler` now exposes static compile methods directly and `compile_project_static` has been removed.
-- Updated CMake, build scripts, package validation, and CI checks for the `libgode_runtime` / `libgode_editor` layout, including the Windows `node.dll` Node-API forwarder.
+- Breaking: split the native extension into `gode_runtime` and desktop-only `gode_editor`; exports now include only the target platform runtime binaries and exclude editor-only files.
+- Breaking: TypeScript static methods no longer appear on script instances. Use script-resource APIs `has_static_method()`, `get_static_method_argument_count()`, and `call_static()` for default-class static methods.
+- Moved project TypeScript compilation into the editor extension; `GodeTypeScriptCompiler` exposes direct static compile methods, `compile_project_static` is removed, and exported runtimes load only manifest-listed outputs with cached manifest validation.
+- Tightened TypeScript editor method discovery to direct instance methods on the default exported class, excluding static methods, constructors, accessors, and nested declarations.
+- Shared async Promise rejection reporting across instance calls, notifications, and static-method calls.
+- Updated build, package, CI, and test coverage for the split library layout, Windows `node.dll` Node-API forwarder, iOS deployment target 16.0, static-method calls, and editor method filtering.
 
 ## 2.3.3
 

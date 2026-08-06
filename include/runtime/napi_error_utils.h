@@ -17,6 +17,7 @@ std::string js_error_to_string(const Napi::Error &error);
 void log_js_error(const std::string &context, const std::string &message);
 void log_v8_exception(v8::Isolate *isolate, v8::TryCatch &try_catch, const std::string &context);
 bool log_and_clear_pending_js_exception(Napi::Env env, const std::string &context);
+void attach_promise_rejection_handler(Napi::Value value, const std::string &context);
 
 } // namespace gode
 

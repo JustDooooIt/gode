@@ -152,7 +152,7 @@ iOS：
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--arch arm64` | `arm64` | 当前只支持 arm64。 |
-| `--deployment-target <version>` | `12.0` | iOS deployment target。 |
+| `--deployment-target <version>` | `16.0` | iOS deployment target。 |
 
 Android：
 

@@ -181,6 +181,10 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 	@Export(GodotModule.PropertyHint.PROPERTY_HINT_RANGE, "0,4,1")
 	editor_range_namespace: number = 3;
 
+	static staticBridgeAdd(left: number, right: number): number {
+		return left + right;
+	}
+
 	run_test(): void {
 		void this.run();
 	}

@@ -8,7 +8,7 @@ jobs=0
 fresh=0
 clean=0
 skip_codegen=0
-deployment_target="12.0"
+deployment_target="16.0"
 python_executable="${PYTHON3_EXECUTABLE:-}"
 
 usage() {
