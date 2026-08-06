@@ -171,27 +171,6 @@ String format_function_argument(const String &p_arg, int64_t p_index) {
 	return sanitize_typescript_identifier(arg, fallback) + String(": unknown");
 }
 
-String strip_typescript_method_modifiers(String p_line) {
-	static const char *MODIFIERS[] = {
-		"public", "private", "protected", "static", "override", "async", "declare", "readonly"
-	};
-
-	bool removed = true;
-	while (removed) {
-		removed = false;
-		p_line = p_line.strip_edges();
-		for (const char *modifier : MODIFIERS) {
-			String token = String(modifier) + String(" ");
-			if (p_line.begins_with(token)) {
-				p_line = p_line.substr(token.length());
-				removed = true;
-				break;
-			}
-		}
-	}
-	return p_line.strip_edges();
-}
-
 String tree_sitter_node_text(TSNode node, const std::string &source) {
 	if (ts_node_is_null(node)) {
 		return String();
@@ -375,7 +354,10 @@ void append_validate_function_names(TSNode node, const std::string &source, Pack
 		TSNode name_node = ts_node_child_by_field_name(node, "name", 4);
 		String name = tree_sitter_node_text(name_node, source);
 		if (!name.is_empty()) {
-			functions.push_back(name);
+			// ScriptTextEditor expects each entry as "name:line", with a
+			// one-based line number. Omitting the line makes it resolve to -1
+			// when the editor adds connection and override gutter icons.
+			functions.push_back(name + ":" + String::num_int64(ts_node_start_point(name_node).row + 1));
 		}
 	}
 
@@ -383,6 +365,31 @@ void append_validate_function_names(TSNode node, const std::string &source, Pack
 	for (uint32_t i = 0; i < child_count; i++) {
 		append_validate_function_names(ts_node_named_child(node, i), source, functions);
 	}
+}
+
+int32_t find_function_line(TSNode node, const std::string &source, const String &name) {
+	if (ts_node_is_null(node)) {
+		return -1;
+	}
+
+	const char *node_type = ts_node_type(node);
+	if (strcmp(node_type, "function_declaration") == 0 ||
+			strcmp(node_type, "method_definition") == 0 ||
+			strcmp(node_type, "abstract_method_signature") == 0) {
+		TSNode name_node = ts_node_child_by_field_name(node, "name", 4);
+		if (tree_sitter_node_text(name_node, source) == name) {
+			return static_cast<int32_t>(ts_node_start_point(node).row);
+		}
+	}
+
+	const uint32_t child_count = ts_node_named_child_count(node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		const int32_t line = find_function_line(ts_node_named_child(node, i), source, name);
+		if (line >= 0) {
+			return line;
+		}
+	}
+	return -1;
 }
 
 TSNode find_default_class(TSNode root_node, uint32_t child_count, const std::string &source) {
@@ -733,16 +740,25 @@ bool TypeScriptLanguage::_can_inherit_from_file() const {
 }
 
 int32_t TypeScriptLanguage::_find_function(const String &p_function, const String &p_code) const {
-	String function_name = sanitize_typescript_identifier(p_function, "method");
-	PackedStringArray lines = p_code.split("\n", true);
-	for (int64_t i = 0; i < lines.size(); i++) {
-		String line = strip_typescript_method_modifiers(lines[i]);
-		if (line.begins_with(function_name + String("(")) ||
-				line.begins_with(String("function ") + function_name + String("("))) {
-			return static_cast<int32_t>(i);
-		}
+	TSParser *parser = ts_parser_new();
+	if (!parser) {
+		return -1;
 	}
-	return -1;
+	if (!ts_parser_set_language(parser, tree_sitter_typescript())) {
+		ts_parser_delete(parser);
+		return -1;
+	}
+
+	std::string source = p_code.utf8().get_data();
+	TSTree *tree = ts_parser_parse_string(parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
+	ts_parser_delete(parser);
+	if (!tree) {
+		return -1;
+	}
+
+	const int32_t line = find_function_line(ts_tree_root_node(tree), source, p_function);
+	ts_tree_delete(tree);
+	return line;
 }
 
 String TypeScriptLanguage::_make_function(const String &p_class_name, const String &p_function_name, const PackedStringArray &p_function_args) const {
