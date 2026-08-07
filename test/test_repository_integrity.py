@@ -1732,6 +1732,35 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			static_body.index("Run repository integrity tests"),
 		)
 
+	def test_identity_workflow_rejects_ai_attributed_pull_request_commits(self):
+		workflow = (ROOT / ".github/workflows/identity-check.yml").read_text(encoding="utf-8")
+
+		for token in (
+			"pull_request_target:",
+			"contents: read",
+			"issues: write",
+			"pull-requests: write",
+			"actions/github-script@v9",
+			"github.rest.pulls.listCommits",
+			"commit.commit.author?.email",
+			"commit.commit.committer?.email",
+			"co-authored-by|signed-off-by",
+			"commit.commit.message",
+			"state: \"closed\"",
+			"Anthropic Claude",
+			"OpenAI Codex",
+			"GitHub Copilot",
+			"Cursor",
+			"Gemini Code Assist",
+			"Devin AI",
+			"Aider",
+			"OpenHands",
+		):
+			self.assertIn(token, workflow)
+		self.assertIn("Never check out or execute code from the pull request", workflow)
+		self.assertNotIn("actions/checkout", workflow)
+		self.assertNotIn("ag" + "ent", workflow.lower())
+
 	def test_gode_json_controls_commercial_npm_export_policy(self):
 		template_path = EXAMPLE_ROOT / "addons/gode/config/gode.json"
 		self.assertTrue(template_path.exists())
