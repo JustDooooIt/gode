@@ -38,6 +38,10 @@ constexpr const char *TS_CONTROL_FLOW_WORDS[] = {
 	"finally", "for", "if", "return", "switch", "throw", "try", "while", "yield"
 };
 
+// Mirrors ScriptLanguage::TemplateLocation::TEMPLATE_BUILT_IN, which godot-cpp
+// does not expose as a GDExtension enum.
+constexpr int SCRIPT_TEMPLATE_ORIGIN_BUILT_IN = 0;
+
 bool contains_word(const String &p_word, const char *const *p_words, size_t p_count) {
 	const String word = p_word.strip_edges();
 	for (size_t i = 0; i < p_count; i++) {
@@ -148,7 +152,7 @@ Dictionary make_template_entry(const String &p_inherit, const String &p_name, co
 	entry["description"] = p_description;
 	entry["content"] = p_content;
 	entry["id"] = p_id;
-	entry["origin"] = 0;
+	entry["origin"] = SCRIPT_TEMPLATE_ORIGIN_BUILT_IN;
 	return entry;
 }
 
