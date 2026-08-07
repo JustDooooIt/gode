@@ -148,6 +148,7 @@ Dictionary make_template_entry(const String &p_inherit, const String &p_name, co
 	entry["description"] = p_description;
 	entry["content"] = p_content;
 	entry["id"] = p_id;
+	entry["origin"] = 0;
 	return entry;
 }
 
