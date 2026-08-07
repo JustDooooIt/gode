@@ -1103,6 +1103,18 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("script->_get_global_name()", global_class_body)
 		self.assertNotIn("script->get_base_class_name()", global_class_body)
 
+	def test_typescript_builtin_template_entries_include_godot_required_fields(self):
+		source = (ROOT / "src/script/typescript_language.cpp").read_text(encoding="utf-8")
+		match = re.search(r"Dictionary make_template_entry\(.*?\n\}", source, re.DOTALL)
+		self.assertIsNotNone(match)
+		body = match.group(0)
+
+		for key in ("inherit", "name", "description", "content", "id", "origin"):
+			self.assertIn(f'entry["{key}"]', body)
+		self.assertIn("SCRIPT_TEMPLATE_ORIGIN_BUILT_IN", source)
+		self.assertIn('entry["origin"] = SCRIPT_TEMPLATE_ORIGIN_BUILT_IN;', body)
+		self.assertNotIn('entry["origin"] = 0;', body)
+
 	def test_typescript_metadata_parser_resolves_project_imports_like_compiler(self):
 		source = (ROOT / "src/script/typescript_script.cpp").read_text(encoding="utf-8")
 
