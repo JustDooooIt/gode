@@ -63,8 +63,26 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 archive="$tmp_dir/typescript.tgz"
 
+download_archive() {
+	local attempt=1
+	local max_attempts=5
+	while [ "$attempt" -le "$max_attempts" ]; do
+		if curl -L --fail --silent --show-error --connect-timeout 20 -o "$archive" "$typescript_url"; then
+			return 0
+		fi
+		rm -f "$archive"
+		if [ "$attempt" -eq "$max_attempts" ]; then
+			break
+		fi
+		printf 'TypeScript download failed; retrying in %s seconds (%s/%s)...\n' "$((attempt * 2))" "$attempt" "$max_attempts" >&2
+		sleep "$((attempt * 2))"
+		attempt=$((attempt + 1))
+	done
+	return 1
+}
+
 printf 'Downloading TypeScript %s...\n' "$typescript_version"
-curl -L --fail --silent --show-error -o "$archive" "$typescript_url"
+download_archive
 
 if command -v sha256sum >/dev/null 2>&1; then
 	actual_sha256="$(sha256sum "$archive" | awk '{print $1}')"

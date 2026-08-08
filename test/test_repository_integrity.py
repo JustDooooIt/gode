@@ -1713,9 +1713,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"https://github.com/microsoft/TypeScript/releases/download/v6.0.3/typescript-6.0.3.tgz",
 			"33cd0ee1beaa8c9e9d15a9da836c62ddea4c34a42d7c2d349dbc80d94165d22a",
 			"lib/typescript.js",
+			"TypeScript download failed; retrying",
 		):
 			self.assertIn(token, prepare_sh)
 			self.assertIn(token, prepare_ps1)
+		self.assertIn("download_archive", prepare_sh)
+		self.assertIn("Invoke-DownloadWithRetry", prepare_ps1)
 		self.assertIn("./.github/shell/prepare-typescript.sh", build_doc)
 		self.assertIn("./.github/shell/prepare-typescript.ps1", build_doc)
 

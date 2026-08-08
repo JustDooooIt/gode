@@ -38,20 +38,45 @@ if (-not $tar) {
 $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("gode-typescript-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
+function Invoke-DownloadWithRetry {
+	param(
+		[string] $Uri,
+		[string] $OutFile
+	)
+
+	$maxAttempts = 5
+	for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+		try {
+			if (Test-Path $OutFile) {
+				Remove-Item -LiteralPath $OutFile -Force
+			}
+			$downloadArgs = @{
+				Uri = $Uri
+				OutFile = $OutFile
+			}
+			if ($PSVersionTable.PSVersion.Major -lt 6) {
+				$downloadArgs.UseBasicParsing = $true
+			}
+			Invoke-WebRequest @downloadArgs
+			return
+		} catch {
+			if ($attempt -eq $maxAttempts) {
+				throw
+			}
+			$delaySeconds = $attempt * 2
+			Write-Warning "TypeScript download failed; retrying in $delaySeconds seconds ($attempt/$maxAttempts)..."
+			Start-Sleep -Seconds $delaySeconds
+		}
+	}
+}
+
 try {
 	$archive = Join-Path $tmpDir "typescript.tgz"
 	Write-Host "Downloading TypeScript $Version..."
 	$previousProgressPreference = $ProgressPreference
 	$ProgressPreference = "SilentlyContinue"
 	try {
-		$downloadArgs = @{
-			Uri = $Url
-			OutFile = $archive
-		}
-		if ($PSVersionTable.PSVersion.Major -lt 6) {
-			$downloadArgs.UseBasicParsing = $true
-		}
-		Invoke-WebRequest @downloadArgs
+		Invoke-DownloadWithRetry -Uri $Url -OutFile $archive
 	} finally {
 		$ProgressPreference = $previousProgressPreference
 	}
