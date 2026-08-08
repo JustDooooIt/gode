@@ -30,6 +30,8 @@ Gode 会参与 Godot 导出流程：编译 TypeScript，并把生成的运行时
 
 这种模型让依赖导出明确、可复现，但也意味着项目自身需要负责依赖治理。
 
+导出游戏中，Gode 会把 `node_modules` 快照保留在资源包内，避免启动时展开整棵依赖树。需要真实文件系统路径的包，例如包含 `.node` 二进制、旁路动态库、ESM `import.meta.url` 路径推导或隔离探测脚本的 npm 原生包，会在需要时按包从 `res://node_modules` 物化到 `user://.gode/npm/node_modules` 缓存，并在导出的 npm manifest 变化后刷新这些包缓存。
+
 ## 导出输出
 
 导出前，Gode 会编译 TypeScript 资源，并把生成的 ESM JavaScript 注入到：
@@ -42,7 +44,9 @@ Debug 导出包含 source map。Release 导出只包含运行时 JavaScript。
 
 不要让场景文件指向生成的 JavaScript。源码仍然是原始 `.ts` 或 `.tsx` 资源。
 
-Gode 导出时只保留所选目标平台的运行时原生扩展。`gode_editor.gdextension`、`binary/editor/`、内置 TypeScript 编译器和生成类型声明都属于开发期资产，不会进入导出的游戏包。
+Gode 导出时只保留所选目标平台的运行时原生文件。桌面导出会包含 runtime GDExtension，以及用于 npm 原生包隔离探测的 `gode_node` helper；Windows 还会包含 `node.dll` Node-API forwarder。`gode_editor.gdextension`、`binary/editor/`、内置 TypeScript 编译器和生成类型声明都属于开发期资产，不会进入导出的游戏包。
+
+包含 npm 依赖的导出包还会带有内部 npm 快照 manifest：`res://.gode/build/npm/manifest.json`。它只用于校验运行时物化缓存，项目代码不应依赖这个文件。
 
 ## 平台导出预期
 

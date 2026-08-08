@@ -46,7 +46,7 @@ Linux:
 ./shell/build-linux.sh
 ```
 
-These commands default to `Debug`, use incremental builds, choose an available CMake generator automatically, and output binaries into the example addon. Runtime libraries are written under `binary/<platform>/<arch>/`; desktop builds also produce the editor-only library under `binary/editor/<platform>/<arch>/`.
+These commands default to `Debug`, use incremental builds, choose an available CMake generator automatically, and output binaries into the example addon. Runtime libraries are written under `binary/<platform>/<arch>/`; desktop builds also produce the `gode_node` helper in the same runtime directory for native npm package probes, plus the editor-only library under `binary/editor/<platform>/<arch>/`.
 
 ## Common options
 
@@ -71,6 +71,8 @@ Runtime plugin binaries are written to:
 ```text
 example/addons/gode/binary/<platform>/<arch>/
 ```
+
+Desktop builds also place the `gode_node` helper in this directory. It is used by exported games when npm native packages need an isolated Node-compatible probe process.
 
 Desktop builds also write the development-only editor extension to:
 

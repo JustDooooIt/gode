@@ -72,6 +72,8 @@ When root npm project files exist, Gode's export path validates and packages dep
 - Root package manifests and lockfiles are included by default.
 - A `res://node_modules` snapshot is included by default.
 
+When an exported game loads packages that need real filesystem paths, Gode materializes only the needed package directories from the exported dependency snapshot to `user://.gode/npm/node_modules` on demand. This gives native `.node` binaries, sibling DLLs/shared libraries, ESM `import.meta.url` path lookups, and package probe scripts real paths while keeping the export package reproducible.
+
 Gode does not audit package internals. If a dependency contains native binaries, wasm files, large data sets, or platform-specific runtime assets, the game project is responsible for making those assets valid for the target export.
 
 ## Production checklist
@@ -82,6 +84,7 @@ Gode does not audit package internals. If a dependency contains native binaries,
 | Install dependencies before export | Gode packages the installed snapshot; it does not run package installs during export. |
 | Use `node-linker=hoisted` with pnpm | Godot and exported builds need a regular `node_modules` tree rather than pnpm's default symlink graph. |
 | Approve required pnpm build scripts | Native packages may need postinstall work before Godot can load their `.node` binaries and side libraries. |
+| Run an exported build once with native packages | First native load may populate package directories under the `user://.gode/npm` cache and should be measured on target hardware. |
 | Review dependency size | Native game exports are sensitive to unexpected package weight. |
 | Test each target platform | Node packages may assume desktop-only APIs or filesystem layouts. |
 | Keep `gode.json` explicit | Export policy should be visible in code review. |

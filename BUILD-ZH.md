@@ -178,7 +178,7 @@ build/macos/arm64/release/
 build/windows/x64/debug/
 ```
 
-插件二进制产物仍输出到 Godot 插件目录。`gode_runtime` 是运行游戏和导出包需要的库，覆盖所有支持的目标平台：
+插件二进制产物仍输出到 Godot 插件目录。`gode_runtime` 是运行游戏和导出包需要的库，覆盖所有支持的目标平台；桌面平台同目录还会输出 `gode_node` helper，用于 npm 原生包的隔离探测：
 
 ```text
 example/addons/gode/binary/<platform>/<arch>/

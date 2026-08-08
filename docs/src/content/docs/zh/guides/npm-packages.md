@@ -72,6 +72,8 @@ ESM 包按 ESM 加载。CommonJS 包会桥接为 default 和 named import。项�
 - 默认包含根目录 package manifest 和 lockfile。
 - 默认包含 `res://node_modules` 快照。
 
+导出游戏加载需要真实文件系统路径的包时，Gode 只会按需把导出依赖快照中的相关包目录物化到 `user://.gode/npm/node_modules`。这样原生 `.node` 二进制、旁路 DLL/共享库、ESM `import.meta.url` 路径推导和包探测脚本都有真实路径，同时导出包本身仍然可复现。
+
 Gode 不审计包内部内容。如果依赖包含原生二进制、wasm、大型数据文件或平台相关运行时资源，项目需要自行保证这些资源适用于目标平台。
 
 ## 生产检查表
@@ -82,6 +84,7 @@ Gode 不审计包内部内容。如果依赖包含原生二进制、wasm、大�
 | 导出前安装依赖 | Gode 打包已安装快照，不在导出时执行 install。 |
 | pnpm 使用 `node-linker=hoisted` | Godot 和导出构建需要常规 `node_modules` 树，而不是 pnpm 默认 symlink 图。 |
 | 批准必要的 pnpm 构建脚本 | 原生包可能需要 postinstall 才能让 Godot 加载 `.node` 二进制和旁边的动态库。 |
+| 带原生包跑一次导出包 | 第一次原生加载可能会在 `user://.gode/npm` 下填充包目录缓存，应在目标机器上测量。 |
 | 审查依赖体积 | 原生游戏导出对意外包体积很敏感。 |
 | 测试每个目标平台 | npm 包可能假设桌面 API 或特定文件系统结构。 |
 | 保持 `gode.json` 明确 | 导出策略应能在 code review 中被看见。 |

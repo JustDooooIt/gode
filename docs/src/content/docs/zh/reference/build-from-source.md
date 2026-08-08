@@ -46,7 +46,7 @@ Linux：
 ./shell/build-linux.sh
 ```
 
-这些命令默认构建 `Debug`，使用增量构建，自动选择可用 CMake generator，并把二进制输出到示例 addon。运行时库写入 `binary/<platform>/<arch>/`；桌面构建还会把编辑器专用库写入 `binary/editor/<platform>/<arch>/`。
+这些命令默认构建 `Debug`，使用增量构建，自动选择可用 CMake generator，并把二进制输出到示例 addon。运行时库写入 `binary/<platform>/<arch>/`；桌面构建还会在同一运行时目录输出用于 npm 原生包隔离探测的 `gode_node` helper，并把编辑器专用库写入 `binary/editor/<platform>/<arch>/`。
 
 ## 常用选项
 
@@ -71,6 +71,8 @@ build/<platform>/<arch>/<config>/
 ```text
 example/addons/gode/binary/<platform>/<arch>/
 ```
+
+桌面构建也会把 `gode_node` helper 放在这个目录。导出游戏中，npm 原生包需要隔离的 Node 兼容探测进程时会使用它。
 
 桌面构建还会把开发期专用的编辑器扩展写入：
 

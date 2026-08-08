@@ -30,6 +30,8 @@ If the project root contains `package.json` or `node_modules`, Gode treats the p
 
 This model makes dependency export explicit and reproducible, but it also means the project owns dependency hygiene.
 
+For exported games, Gode keeps the `node_modules` snapshot inside the resource package and avoids expanding the whole dependency tree at startup. Packages that need real filesystem paths, such as native npm packages with `.node` binaries, sibling dynamic libraries, ESM `import.meta.url` path lookups, or isolated probe scripts, are materialized by package from `res://node_modules` into `user://.gode/npm/node_modules` on demand. Those package caches are refreshed when the exported npm manifest changes.
+
 ## Export output
 
 Before export, Gode compiles TypeScript resources and injects generated ESM JavaScript under:
@@ -42,7 +44,9 @@ Debug exports include source maps. Release exports include runtime JavaScript on
 
 Do not point scene files at generated JavaScript. The source of truth remains the original `.ts` or `.tsx` resource.
 
-Gode exports only the runtime native extension for the selected target platform. Editor-only files such as `gode_editor.gdextension`, `binary/editor/`, the bundled TypeScript compiler, and generated type declarations are development assets and are excluded from exported games.
+Gode exports only the selected target platform's runtime native files. Desktop exports include the runtime GDExtension and the `gode_node` helper used for isolated native npm package probes; Windows also includes the `node.dll` Node-API forwarder. Editor-only files such as `gode_editor.gdextension`, `binary/editor/`, the bundled TypeScript compiler, and generated type declarations are development assets and are excluded from exported games.
+
+Exports that include npm dependencies also contain an internal npm snapshot manifest under `res://.gode/build/npm/manifest.json`. It is used only to validate the runtime materialization cache; project code should not depend on this file.
 
 ## Platform export expectations
 
