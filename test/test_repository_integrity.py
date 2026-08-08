@@ -364,6 +364,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("__gode_strip_virtual_generation", bootstrap_source)
 		self.assertIn("crypto.createHash('sha256')", bootstrap_source)
 		self.assertIn("__gode_exported_npm_manifest_fingerprint", bootstrap_source)
+		self.assertIn("__gode_materialize_node_modules_tree", bootstrap_source)
+		self.assertIn("__gode_node_modules_tree_marker_path", bootstrap_source)
+		self.assertIn("_forkNeedsNodeModulesTree", bootstrap_source)
 		self.assertIn("const _originalFork = cp.fork", bootstrap_source)
 		self.assertIn("gode.native_probe_executable", bootstrap_source)
 		self.assertIn("fs.chmodSync(value, 0o755)", bootstrap_source)
@@ -1776,6 +1779,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		package_json = json.loads((fixture_root / "package.json").read_text(encoding="utf-8"))
 		self.assertIn("node-llama-cpp", package_json["dependencies"])
+		smoke_source = (fixture_root / "scripts/npm_native_smoke.ts").read_text(encoding="utf-8")
+		self.assertIn("require.resolve(\"node-llama-cpp\")", smoke_source)
+		self.assertIn("node_modules fork dependency OK", smoke_source)
 
 		for path in (
 			ROOT / "test/run_npm_native_smoke.py",
