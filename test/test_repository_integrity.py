@@ -359,6 +359,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("gode.materialize_path", bootstrap_source)
 		self.assertIn("gode.globalize_path", bootstrap_source)
 		self.assertIn("global.__gode_real_path_for_virtual_path", bootstrap_source)
+		self.assertIn("__gode_strip_virtual_generation", bootstrap_source)
 		self.assertIn("crypto.createHash('sha256')", bootstrap_source)
 		self.assertIn("__gode_exported_npm_manifest_fingerprint", bootstrap_source)
 		self.assertIn("const _originalFork = cp.fork", bootstrap_source)
