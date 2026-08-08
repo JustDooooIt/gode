@@ -363,6 +363,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("__gode_exported_npm_manifest_fingerprint", bootstrap_source)
 		self.assertIn("const _originalFork = cp.fork", bootstrap_source)
 		self.assertIn("gode.native_probe_executable", bootstrap_source)
+		self.assertIn("fs.chmodSync(value, 0o755)", bootstrap_source)
 		self.assertIn("_gode_strip_js_comments", bootstrap_source)
 		self.assertIn("_gode_is_esm_module_source", bootstrap_source)
 		self.assertNotIn("simulate success", bootstrap_source)
