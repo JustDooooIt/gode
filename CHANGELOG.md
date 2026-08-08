@@ -1,3 +1,10 @@
+## 2.4.1
+
+- Fixed TypeScript built-in script templates so Godot no longer drops the Default and Tool templates in the New Script dialog because of missing template `origin` metadata.
+- Added a bundled `gode_node` helper and package-level npm snapshot materialization so `child_process.fork()`, ESM `import.meta.url` path lookups, and native `.node` loading can run real desktop package probes without relying on a user-installed Node executable at runtime.
+- Added packaged-plugin export smoke coverage for Windows, Linux, and macOS using a minimal Godot `node-llama-cpp` project.
+- Added a pull-request identity workflow that rejects commits attributed to blocked AI coding tools by checking commit authors, committers, and `Co-authored-by` / `Signed-off-by` trailers without checking out pull-request code.
+
 ## 2.4.0
 
 - Breaking: split the native extension into `gode_runtime` and desktop-only `gode_editor`; exports now include only the target platform runtime binaries and exclude editor-only files.
