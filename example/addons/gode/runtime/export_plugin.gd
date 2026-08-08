@@ -232,7 +232,18 @@ func _add_native_probe_helper(features: PackedStringArray) -> bool:
 		return false
 	if _features_has(features, "macos"):
 		return _add_macos_native_probe_helper(helper_path)
-	add_shared_object(ProjectSettings.globalize_path(helper_path), features, _to_resource_relative(helper_path.get_base_dir()))
+	for dependency_path: String in _target_runtime_binary_paths(features):
+		if not _add_shared_object_path(dependency_path, features, "Missing Gode runtime binary required by native probe helper: %s"):
+			return false
+	if not _add_shared_object_path(helper_path, features, "Missing Gode native probe helper: %s"):
+		return false
+	return true
+
+func _add_shared_object_path(source_path: String, features: PackedStringArray, missing_message: String) -> bool:
+	if not _file_exists(source_path):
+		push_error(missing_message % source_path)
+		return false
+	add_shared_object(ProjectSettings.globalize_path(source_path), features, _to_resource_relative(source_path.get_base_dir()))
 	return true
 
 func _add_macos_native_probe_helper(helper_path: String) -> bool:

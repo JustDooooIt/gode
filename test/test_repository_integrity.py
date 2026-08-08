@@ -1889,6 +1889,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"_is_target_runtime_binary_path",
 			"_is_target_native_probe_helper_path",
 			"_add_native_probe_helper",
+			"_add_shared_object_path",
 			"_target_native_probe_helper_path",
 			"_target_runtime_binary_paths",
 			"_features_has",
@@ -1984,8 +1985,13 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"res://addons/gode/binary/macos/arm64/gode_node",
 		):
 			self.assertEqual(1, helper_body.count(f'"{path}"'))
-		self.assertIn("add_shared_object(", export_source)
-		self.assertIn("_to_resource_relative(helper_path.get_base_dir())", export_source)
+		add_helper_body = gdscript_function_body(export_source, "_add_native_probe_helper")
+		shared_object_body = gdscript_function_body(export_source, "_add_shared_object_path")
+		self.assertIn("for dependency_path: String in _target_runtime_binary_paths(features):", add_helper_body)
+		self.assertIn("_add_shared_object_path(dependency_path, features", add_helper_body)
+		self.assertIn("_add_shared_object_path(helper_path, features", add_helper_body)
+		self.assertIn("add_shared_object(", shared_object_body)
+		self.assertIn("_to_resource_relative(source_path.get_base_dir())", shared_object_body)
 		self.assertIn("if _is_target_native_probe_helper_path(normalized, features):\n\t\tskip()\n\t\treturn", export_source)
 		self.assertIn("return not _is_target_runtime_binary_path(path, features)", binary_filter_body)
 
