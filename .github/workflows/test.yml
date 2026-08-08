@@ -134,6 +134,10 @@ jobs:
             echo "Packaged plugin is missing the Linux x64 binary" >&2
             exit 1
           fi
+          if [ ! -x "$package_root/gode/binary/linux/x64/gode_node" ]; then
+            echo "Packaged plugin is missing the Linux x64 Node helper" >&2
+            exit 1
+          fi
           if [ ! -f "$package_root/gode/binary/editor/linux/x64/libgode_editor.so" ]; then
             echo "Packaged plugin is missing the Linux x64 editor binary" >&2
             exit 1

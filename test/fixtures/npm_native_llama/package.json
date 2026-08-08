@@ -1,0 +1,9 @@
+{
+  "name": "gode-npm-native-smoke",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@types/node": "^24.0.0",
+    "node-llama-cpp": "3.19.1"
+  }
+}

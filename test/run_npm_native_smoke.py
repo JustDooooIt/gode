@@ -7,14 +7,16 @@ import platform
 import shutil
 import subprocess
 import sys
-import textwrap
 
 from run_godot_smoke import captured_output_text, ensure_extension_list, non_leak_error_lines, resolve_godot
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+FIXTURE_PROJECT = ROOT / "test/fixtures/npm_native_llama"
 DEFAULT_MARKER = "[GodeNpmNativeSmoke] node-llama-cpp dryRun OK"
+DEFAULT_HELPER_MARKER = "[GodeNpmNativeSmoke] fork helper OK"
 DEFAULT_EXTENSION = "res://addons/gode/binary/gode.gdextension"
+DEFAULT_PACKAGE_VERSION = "3.19.1"
 
 
 def parse_node_major(version_text):
@@ -67,11 +69,6 @@ def run_command(command, cwd, timeout):
 	return result.stdout
 
 
-def write_text(path, text):
-	path.parent.mkdir(parents=True, exist_ok=True)
-	path.write_text(textwrap.dedent(text).lstrip(), encoding="utf-8")
-
-
 def copy_addon(source_addon, project):
 	destination = project / "addons/gode"
 	if destination.exists():
@@ -93,7 +90,12 @@ def ensure_platform_binaries(addon_root):
 		"linux": f"binary/editor/linux/{arch}/libgode_editor.so",
 		"macos": f"binary/editor/macos/{arch}/libgode_editor.dylib",
 	}[gode_platform]
-	required = [extension_binary, editor_binary, "binary/gode_editor.gdextension"]
+	node_helper = {
+		"windows": f"binary/windows/{arch}/gode_node.exe",
+		"linux": f"binary/linux/{arch}/gode_node",
+		"macos": f"binary/macos/{arch}/gode_node",
+	}[gode_platform]
+	required = [extension_binary, node_helper, editor_binary, "binary/gode_editor.gdextension"]
 	if gode_platform == "windows":
 		required.append(f"binary/windows/{arch}/node.dll")
 
@@ -119,93 +121,41 @@ def ensure_typescript_compiler(addon_root, timeout):
 		run_command([str(script), "--output-directory", str(output_directory)], ROOT, timeout)
 
 
-def write_project(project, package_version):
-	write_text(
-		project / "project.godot",
-		"""
-		config_version=5
-
-		[application]
-		config/name="gode-npm-native-smoke"
-		run/main_scene="res://main.tscn"
-		config/features=PackedStringArray("4.7")
-
-		[autoload]
-		EventLoop="*res://addons/gode/runtime/event_loop.gd"
-
-		[editor_plugins]
-		enabled=PackedStringArray("res://addons/gode/plugin.cfg")
-
-		[native_extensions]
-		paths=["res://addons/gode/binary/gode.gdextension"]
-		""",
+def copy_project_fixture(project):
+	if not FIXTURE_PROJECT.is_dir():
+		raise FileNotFoundError(f"npm native smoke fixture was not found: {FIXTURE_PROJECT}")
+	shutil.copytree(
+		FIXTURE_PROJECT,
+		project,
+		dirs_exist_ok=True,
+		ignore=shutil.ignore_patterns("node_modules", ".godot", ".gode", "export_presets.cfg"),
 	)
-	write_text(
-		project / "main.tscn",
-		"""
-		[gd_scene load_steps=2 format=3]
 
-		[ext_resource type="Script" path="res://scripts/npm_native_smoke.ts" id="1_script"]
 
-		[node name="NpmNativeSmoke" type="Node"]
-		script = ExtResource("1_script")
-		""",
-	)
-	write_text(
-		project / "tsconfig.json",
-		"""
-		{
-		  "compilerOptions": {
-		    "target": "ES2022",
-		    "module": "ESNext",
-		    "moduleResolution": "Bundler",
-		    "strict": true,
-		    "isolatedModules": true,
-		    "forceConsistentCasingInFileNames": true,
-		    "useDefineForClassFields": true,
-		    "experimentalDecorators": true,
-		    "esModuleInterop": true,
-		    "allowSyntheticDefaultImports": true,
-		    "skipLibCheck": true,
-		    "types": []
-		  },
-		  "include": ["**/*.ts", "**/*.d.ts"],
-		  "exclude": ["node_modules", ".godot", ".gode", "addons/gode/tsc"]
-		}
-		""",
-	)
-	package_json = {
-		"name": "gode-npm-native-smoke",
-		"private": True,
-		"type": "module",
-		"dependencies": {
-			"@types/node": "^24.0.0",
-			"node-llama-cpp": package_version,
-		},
-	}
-	write_text(project / "package.json", json.dumps(package_json, indent=2) + "\n")
-	write_text(
-		project / "scripts/npm_native_smoke.ts",
-		"""
-		import { GD, Node } from "godot";
-		import { getLlama } from "node-llama-cpp";
+def set_package_version(project, package_version):
+	package_path = project / "package.json"
+	package_json = json.loads(package_path.read_text(encoding="utf-8"))
+	dependencies = package_json.setdefault("dependencies", {})
+	dependencies["node-llama-cpp"] = package_version
+	package_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
 
-		export default class NpmNativeSmoke extends Node {
-			public async _ready(): Promise<void> {
-				try {
-					GD.print("[GodeNpmNativeSmoke] before node-llama-cpp dryRun");
-					const llama = await getLlama({ dryRun: true } as any);
-					GD.print("[GodeNpmNativeSmoke] node-llama-cpp dryRun OK: " + typeof llama);
-					this.get_tree().quit(0);
-				} catch (error) {
-					const message = error instanceof Error ? error.stack || error.message : String(error);
-					GD.push_error("[GodeNpmNativeSmoke] " + message);
-					this.get_tree().quit(1);
-				}
-			}
-		}
-		""",
-	)
+
+def install_npm_dependencies(project, skip_install, timeout):
+	if skip_install:
+		return
+	node = shutil.which("node")
+	if not node:
+		raise FileNotFoundError("node was not found in PATH.")
+	node_version = run_command([node, "--version"], ROOT, timeout)
+	if parse_node_major(node_version) < 20:
+		raise RuntimeError(
+			"node-llama-cpp smoke requires Node.js 20 or newer; "
+			f"found {node_version.strip()} at {node}."
+		)
+	npm = shutil.which("npm")
+	if not npm:
+		raise FileNotFoundError("npm was not found in PATH.")
+	run_command([npm, "install", "--foreground-scripts"], project, timeout)
 
 
 def prepare_project(args):
@@ -213,6 +163,8 @@ def prepare_project(args):
 	if args.fresh and project.exists():
 		shutil.rmtree(project)
 	project.mkdir(parents=True, exist_ok=True)
+	copy_project_fixture(project)
+	set_package_version(project, args.package_version)
 
 	source_addon = (ROOT / args.addon).resolve()
 	if not source_addon.exists():
@@ -221,7 +173,6 @@ def prepare_project(args):
 	addon_root = copy_addon(source_addon, project)
 	ensure_platform_binaries(addon_root)
 	ensure_typescript_compiler(addon_root, args.prepare_typescript_timeout)
-	write_project(project, args.package_version)
 	ensure_extension_list(project, [DEFAULT_EXTENSION, "res://addons/gode/binary/gode_editor.gdextension"])
 	return project
 
@@ -229,21 +180,7 @@ def prepare_project(args):
 def run_smoke(args):
 	godot = resolve_godot(args.godot)
 	project = prepare_project(args)
-
-	if not args.skip_npm_install:
-		node = shutil.which("node")
-		if not node:
-			raise FileNotFoundError("node was not found in PATH.")
-		node_version = run_command([node, "--version"], ROOT, args.npm_install_timeout)
-		if parse_node_major(node_version) < 20:
-			raise RuntimeError(
-				"node-llama-cpp smoke requires Node.js 20 or newer; "
-				f"found {node_version.strip()} at {node}."
-			)
-		npm = shutil.which("npm")
-		if not npm:
-			raise FileNotFoundError("npm was not found in PATH.")
-		run_command([npm, "install", "--foreground-scripts"], project, args.npm_install_timeout)
+	install_npm_dependencies(project, args.skip_npm_install, args.npm_install_timeout)
 
 	command = [str(godot), "--headless", "--path", str(project), "res://main.tscn"]
 	output = run_command(command, ROOT, args.timeout)
@@ -251,6 +188,8 @@ def run_smoke(args):
 	failures = []
 	if args.marker not in output:
 		failures.append(f"Expected marker was not found: {args.marker}")
+	if DEFAULT_HELPER_MARKER not in output:
+		failures.append(f"Expected marker was not found: {DEFAULT_HELPER_MARKER}")
 
 	errors = non_leak_error_lines(output)
 	if errors:
@@ -270,7 +209,7 @@ def build_parser():
 	parser.add_argument("--godot", help="Path to the Godot executable. Defaults to GODOT_BIN or common install locations.")
 	parser.add_argument("--addon", default="example/addons/gode", help="Addon directory to copy into the temporary project.")
 	parser.add_argument("--work-dir", default="build/npm-native-smoke/node-llama-cpp", help="Temporary Godot project directory.")
-	parser.add_argument("--package-version", default="3.19.1", help="node-llama-cpp version to install.")
+	parser.add_argument("--package-version", default=DEFAULT_PACKAGE_VERSION, help="node-llama-cpp version to install.")
 	parser.add_argument("--marker", default=DEFAULT_MARKER, help="Output marker that proves the native package completed.")
 	parser.add_argument("--timeout", type=int, default=120, help="Seconds before the Godot process is terminated.")
 	parser.add_argument("--npm-install-timeout", type=int, default=420, help="Seconds before npm install is terminated.")

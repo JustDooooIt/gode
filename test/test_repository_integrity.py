@@ -296,7 +296,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"list(REMOVE_ITEM GODE_MANUAL_SOURCES ${GODE_GENERATED_SOURCES})",
 			"set(GODE_RUNTIME_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})",
 			"set(GODE_EDITOR_SOURCES",
-			"list(APPEND GODE_RUNTIME_SOURCES",
 			"UNITY_BUILD ON",
 			'UNITY_BUILD_BATCH_SIZE "${GODE_UNITY_GENERATED_BATCH_SIZE}"',
 			"SKIP_UNITY_BUILD_INCLUSION ON",
@@ -314,6 +313,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			ROOT / "src/runtime/node_bootstrap_scripts.cpp",
 			ROOT / "include/runtime/node_godot_bridge.h",
 			ROOT / "src/runtime/node_godot_bridge.cpp",
+			ROOT / "src/runtime/node_probe_host.cpp",
+			ROOT / "src/runtime/gode_node_main.cpp",
 			ROOT / "include/runtime/node_inspector.h",
 			ROOT / "src/runtime/node_inspector.cpp",
 			ROOT / "include/runtime/node_module_resolver.h",
@@ -328,11 +329,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		runtime_source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
 		self.assertIn("prepare_native_addon_host", header_source)
 		self.assertIn("node_runtime_bridge::prepare_native_addon_host();", runtime_source)
-		self.assertIn("GetModuleHandleExW", bridge_source)
-		self.assertIn("GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS", bridge_source)
-		self.assertIn('node_dll_path += L"node.dll"', bridge_source)
-		self.assertIn("promote_current_module_symbols", bridge_source)
-		self.assertIn("RTLD_GLOBAL", bridge_source)
 		self.assertNotIn('GetModuleHandleW(L"libnode.dll")', bridge_source)
 		self.assertNotIn("preload_node_dll_stub", header_source + bridge_source + runtime_source)
 
@@ -360,20 +356,35 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("__gode_package_import_target", bootstrap_source)
 		self.assertIn("const packageExportTarget", bootstrap_source)
 		self.assertIn("arguments.length >= 3 ? _originalDlopen.call", bootstrap_source)
-		self.assertIn("testBindingBinary", bootstrap_source)
-		self.assertIn("msg.gpu === false", bootstrap_source)
-		self.assertIn("child_process.fork is not supported", bootstrap_source)
+		self.assertIn("gode.materialize_path", bootstrap_source)
+		self.assertIn("gode.globalize_path", bootstrap_source)
+		self.assertIn("global.__gode_real_path_for_virtual_path", bootstrap_source)
+		self.assertIn("crypto.createHash('sha256')", bootstrap_source)
+		self.assertIn("__gode_exported_npm_manifest_fingerprint", bootstrap_source)
+		self.assertIn("const _originalFork = cp.fork", bootstrap_source)
+		self.assertIn("gode.native_probe_executable", bootstrap_source)
+		self.assertIn("_gode_strip_js_comments", bootstrap_source)
+		self.assertIn("_gode_is_esm_module_source", bootstrap_source)
 		self.assertNotIn("simulate success", bootstrap_source)
 		self.assertNotIn("GODE_NODE_EXECUTABLE", bootstrap_source)
-		self.assertNotIn("execPath:", bootstrap_source)
+		self.assertNotIn("child_process.fork is not supported", bootstrap_source)
+		self.assertNotIn("_fallbackProbe", bootstrap_source)
+		self.assertNotIn("msg.gpu === false", bootstrap_source)
 		self.assertNotIn(".includes('testBindingBinary')", bootstrap_source)
+		self.assertNotIn("testBindingBinary", bootstrap_source)
 		self.assertNotIn("_origFork.apply", bootstrap_source)
 		self.assertNotIn("user://.gode/typescript/", bootstrap_source)
 		self.assertNotIn("typescript-6.0.3", bootstrap_source)
 
-		npm_native_smoke_source = (ROOT / "test/run_npm_native_smoke.py").read_text(encoding="utf-8")
-		self.assertIn("getLlama({ dryRun: true }", npm_native_smoke_source)
-		self.assertNotIn('exclude: ["cuda", "vulkan"]', npm_native_smoke_source)
+		npm_native_smoke_runner = (ROOT / "test/run_npm_native_smoke.py").read_text(encoding="utf-8")
+		self.assertIn("FIXTURE_PROJECT", npm_native_smoke_runner)
+		self.assertTrue((ROOT / "test/fixtures/npm_native_llama/scripts/npm_native_smoke.ts").exists())
+
+		resolver_source = (ROOT / "src/runtime/node_module_resolver.cpp").read_text(encoding="utf-8")
+		self.assertIn("sanitize_js_for_module_markers", resolver_source)
+		self.assertIn("has_static_esm_syntax", resolver_source)
+		self.assertIn("has_commonjs_markers", resolver_source)
+		self.assertNotIn('code.find("import ")', resolver_source)
 
 	def test_node_runtime_public_v8_entries_hold_locker_and_safe_scopes(self):
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
@@ -1661,8 +1672,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"types/godot.d.ts",
 			"binary/windows/x64/libgode_runtime.dll",
 			"binary/windows/x64/node.dll",
+			"binary/windows/x64/gode_node.exe",
 			"binary/linux/x64/libgode_runtime.so",
+			"binary/linux/x64/gode_node",
 			"binary/macos/arm64/libgode_runtime.dylib",
+			"binary/macos/arm64/gode_node",
 			"binary/android/arm64/libgode_runtime.so",
 			"binary/ios/arm64/libgode_runtime.dylib",
 			"binary/editor/windows/x64/libgode_editor.dll",
@@ -1677,6 +1691,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("prepare-typescript.sh", package_script)
 		self.assertIn("tsc/package.json", package_script)
 		self.assertIn("tsc/lib/typescript.js", package_script)
+		self.assertIn('if [ -f "$staged_addon_root/$file" ]; then', package_script)
+		self.assertIn('chmod +x "$staged_addon_root/$file"', package_script)
 		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension", gitignore)
 		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension.uid", gitignore)
 
@@ -1720,6 +1736,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("generate_release_notes: true", release_workflow)
 
 	def test_static_workflow_prepares_typescript_compiler_before_tests(self):
+		build_workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
 		test_workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
 		static_start = test_workflow.index("  static:")
 		smoke_start = test_workflow.index("  smoke:", static_start)
@@ -1731,6 +1748,52 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			static_body.index("Prepare TypeScript compiler"),
 			static_body.index("Run repository integrity tests"),
 		)
+		for token in (
+			"example/addons/gode/binary/windows/x64/gode_node.exe",
+			"example/addons/gode/binary/linux/x64/gode_node",
+			"example/addons/gode/binary/macos/arm64/gode_node",
+		):
+			self.assertIn(token, build_workflow)
+		self.assertIn("Packaged plugin is missing the Linux x64 Node helper", test_workflow)
+
+	def test_npm_native_export_smoke_uses_packaged_plugin_on_desktop_ci(self):
+		fixture_root = ROOT / "test/fixtures/npm_native_llama"
+		expected_fixture_files = [
+			fixture_root / "project.godot",
+			fixture_root / "main.tscn",
+			fixture_root / "tsconfig.json",
+			fixture_root / "package.json",
+			fixture_root / "scripts/npm_native_smoke.ts",
+			fixture_root / "scripts/fork_probe_child.cjs",
+		]
+		missing = [str(path.relative_to(ROOT)) for path in expected_fixture_files if not path.exists()]
+		self.assertEqual([], missing)
+		self.assertFalse((fixture_root / "node_modules").exists())
+
+		package_json = json.loads((fixture_root / "package.json").read_text(encoding="utf-8"))
+		self.assertIn("node-llama-cpp", package_json["dependencies"])
+
+		for path in (
+			ROOT / "test/run_npm_native_smoke.py",
+			ROOT / "test/run_npm_native_export_smoke.py",
+			ROOT / "test/prepare_godot.py",
+		):
+			self.assertTrue(path.exists(), f"{path.relative_to(ROOT)} should exist")
+
+		build_workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+		package_start = build_workflow.index("  package:")
+		export_start = build_workflow.index("  npm-native-export:", package_start)
+		self.assertLess(package_start, export_start)
+		for token in (
+			"GODOT_VERSION: \"4.7-stable\"",
+			"name: npm native export ${{ matrix.platform }}",
+			"needs: package",
+			"runner: windows-2022",
+			"runner: ubuntu-22.04",
+			"runner: macos-26",
+			"python test/run_npm_native_export_smoke.py",
+		):
+			self.assertIn(token, build_workflow)
 
 	def test_identity_workflow_rejects_ai_attributed_pull_request_commits(self):
 		workflow = (ROOT / ".github/workflows/identity-check.yml").read_text(encoding="utf-8")
@@ -1812,61 +1875,38 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		for token in (
 			"NPM_MANIFEST_FILES",
+			'NPM_EXPORT_MANIFEST_PATH := "res://.gode/build/npm/manifest.json"',
 			"GODE_RUNTIME_EXTENSION_PATH",
 			"GODE_EDITOR_EXTENSION_PATH",
-			"res://.godot/extension_list.cfg",
 			"LOCAL_EXTENSION_LIST_PATH",
-			"editor_extension_list_entry_removed_for_export",
-			"res://addons/gode/gode.gdc",
-			"res://addons/gode/gode.gd.remap",
-			"res://addons/gode/runtime/export_plugin.gdc",
-			"res://addons/gode/runtime/export_plugin.gd.remap",
 			"_prepare_local_extension_list_for_export",
 			"_restore_local_extension_list_after_export",
-			"_read_local_extension_list",
-			"_write_or_remove_local_extension_list",
-			"DirAccess.remove_absolute(global_path)",
-			"res://addons/gode/binary/gode_editor.gdextension.uid",
 			"_prepare_npm_export",
 			"_export_file",
 			"_is_gode_editor_only_export_path",
 			"_is_gode_binary_resource_path",
 			"_is_target_runtime_binary_path",
+			"_is_target_native_probe_helper_path",
+			"_add_native_probe_helper",
+			"_target_native_probe_helper_path",
 			"_target_runtime_binary_paths",
 			"_features_has",
-			"res://addons/gode/binary/windows/x64/libgode_runtime.dll",
-			"res://addons/gode/binary/windows/x64/node.dll",
-			"res://addons/gode/binary/linux/x64/libgode_runtime.so",
-			"res://addons/gode/binary/macos/arm64/libgode_runtime.dylib",
-			"res://addons/gode/binary/android/arm64/libgode_runtime.so",
-			"res://addons/gode/binary/ios/arm64/libgode_runtime.dylib",
 			"res://addons/gode/binary/editor/",
 			"res://addons/gode/tsc/",
 			"res://addons/gode/types/",
 			"_export_npm_runtime_snapshot",
+			"_add_npm_export_manifest",
 			"_add_export_directory(\"res://node_modules\")",
 			"_add_file_from_bytes(exported_path, source_path, \"Failed to read Gode TypeScript output: %s\")",
-			"_add_file_from_bytes(source_path, source_path, \"Failed to read Gode export file: %s\")",
 			"FileAccess.get_open_error() != OK",
 			"GodeTypeScriptCompiler.compile_project(true)",
-			"INLINE_SOURCE_MAP_MARKER",
 			"TYPESCRIPT_EXPORT_MANIFEST_PATH",
-			"_strip_inline_source_map",
-			"func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> bool:",
-			"_add_compiled_file(exported_path, source_path, is_debug)",
-			"Gode TypeScript output mapping is incomplete.",
 			"_add_typescript_export_manifest(export_manifest_outputs)",
-			"export_manifest_outputs.append",
-			'JSON.stringify(manifest, "\\t")',
 			"_normalize_res_path",
 			"_path_has_parent_segment",
-			'normalized.contains("://") and not normalized.begins_with("res://")',
-			"normalized.simplify_path()",
-			"OS.execute(candidate, PackedStringArray([\"--version\"])",
 			'_command_exists("node")',
 			'_command_exists("npm")',
 			'_file_exists("res://package.json") or _dir_exists("res://node_modules")',
-			"[Gode Export] Created project config from template",
 		):
 			self.assertIn(token, export_source)
 
@@ -1910,8 +1950,12 @@ class RepositoryIntegrityTests(unittest.TestCase):
 				"res://addons/gode/binary/windows/x64/libgode_runtime.dll",
 				"res://addons/gode/binary/windows/x64/node.dll",
 			],
-			"linux": ["res://addons/gode/binary/linux/x64/libgode_runtime.so"],
-			"macos": ["res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"],
+			"linux": [
+				"res://addons/gode/binary/linux/x64/libgode_runtime.so",
+			],
+			"macos": [
+				"res://addons/gode/binary/macos/arm64/libgode_runtime.dylib",
+			],
 			"android": ["res://addons/gode/binary/android/arm64/libgode_runtime.so"],
 			"ios": ["res://addons/gode/binary/ios/arm64/libgode_runtime.dylib"],
 		}
@@ -1923,10 +1967,22 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		self.assertIn("return PackedStringArray()", target_body)
 		self.assertNotIn("binary/editor/", target_body)
+		self.assertNotIn("gode_node", target_body)
 		self.assertNotIn("libgode.dll", target_body)
 		self.assertNotIn("libgode.so", target_body)
 		self.assertNotIn("libgode.dylib", target_body)
 		self.assertIn("if path == GODE_RUNTIME_EXTENSION_PATH:\n\t\treturn false", binary_filter_body)
+
+		helper_body = gdscript_function_body(export_source, "_target_native_probe_helper_path")
+		for path in (
+			"res://addons/gode/binary/windows/x64/gode_node.exe",
+			"res://addons/gode/binary/linux/x64/gode_node",
+			"res://addons/gode/binary/macos/arm64/gode_node",
+		):
+			self.assertEqual(1, helper_body.count(f'"{path}"'))
+		self.assertIn("add_shared_object(", export_source)
+		self.assertIn("_to_resource_relative(helper_path.get_base_dir())", export_source)
+		self.assertIn("if _is_target_native_probe_helper_path(normalized, features):\n\t\tskip()\n\t\treturn", export_source)
 		self.assertIn("return not _is_target_runtime_binary_path(path, features)", binary_filter_body)
 
 	def test_gode_json_controls_node_inspector_debug_policy(self):

@@ -22,6 +22,7 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.14"
+  GODOT_VERSION: "4.7-stable"
   LIBNODE_URL: "https://github.com/moluopro/libnode/releases/download/24.18.0/libnode.zip"
 
 jobs:
@@ -39,18 +40,23 @@ jobs:
             artifact_path: |
               example/addons/gode/binary/windows/x64/libgode_runtime.dll
               example/addons/gode/binary/windows/x64/node.dll
+              example/addons/gode/binary/windows/x64/gode_node.exe
             editor_artifact_path: example/addons/gode/binary/editor/windows/x64/libgode_editor.dll
           - platform: linux
             arch: x64
             runner: ubuntu-22.04
             script: ./shell/build-linux.sh --arch x64 --config Release --fresh
-            artifact_path: example/addons/gode/binary/linux/x64/libgode_runtime.so
+            artifact_path: |
+              example/addons/gode/binary/linux/x64/libgode_runtime.so
+              example/addons/gode/binary/linux/x64/gode_node
             editor_artifact_path: example/addons/gode/binary/editor/linux/x64/libgode_editor.so
           - platform: macos
             arch: arm64
             runner: macos-26
             script: ./shell/build-macos.sh --arch arm64 --config Release --deployment-target 10.15 --fresh
-            artifact_path: example/addons/gode/binary/macos/arm64/libgode_runtime.dylib
+            artifact_path: |
+              example/addons/gode/binary/macos/arm64/libgode_runtime.dylib
+              example/addons/gode/binary/macos/arm64/gode_node
             editor_artifact_path: example/addons/gode/binary/editor/macos/arm64/libgode_editor.dylib
           - platform: ios
             arch: arm64
@@ -204,3 +210,75 @@ jobs:
           name: gode-plugin
           path: ${{ steps.package.outputs.archive }}
           if-no-files-found: error
+
+  npm-native-export:
+    name: npm native export ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+          - platform: linux
+            runner: ubuntu-22.04
+          - platform: macos
+            runner: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Download packaged plugin
+        uses: actions/download-artifact@v8
+        with:
+          name: gode-plugin
+          path: ${{ runner.temp }}/gode-plugin
+
+      - name: Install packaged plugin
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import shutil
+          import zipfile
+
+          archive = pathlib.Path(os.environ["RUNNER_TEMP"]) / "gode-plugin/gode.zip"
+          package_root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "gode-package"
+          if not archive.is_file():
+              raise SystemExit(f"Packaged plugin archive was not found: {archive}")
+          if package_root.exists():
+              shutil.rmtree(package_root)
+          package_root.mkdir(parents=True)
+          with zipfile.ZipFile(archive) as zip_file:
+              zip_file.extractall(package_root)
+          addon = package_root / "gode"
+          if not (addon / "plugin.cfg").is_file():
+              raise SystemExit(f"Packaged plugin is missing plugin.cfg: {addon}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as github_env:
+              github_env.write(f"GODE_PACKAGED_ADDON={addon.as_posix()}\n")
+
+      - name: Download Godot
+        run: python test/prepare_godot.py --version "${{ env.GODOT_VERSION }}"
+
+      - name: Run exported npm native smoke
+        shell: bash
+        run: >
+          python test/run_npm_native_export_smoke.py
+          --godot "$GODOT_BIN"
+          --addon "$GODE_PACKAGED_ADDON"
+          --install-export-templates
+          --godot-version "${GODOT_VERSION}"
