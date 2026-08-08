@@ -326,9 +326,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
 		bridge_source = (ROOT / "src/runtime/node_godot_bridge.cpp").read_text(encoding="utf-8")
 		header_source = (ROOT / "include/runtime/node_godot_bridge.h").read_text(encoding="utf-8")
+		probe_source = (ROOT / "src/runtime/node_probe_host.cpp").read_text(encoding="utf-8")
 		runtime_source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
 		self.assertIn("prepare_native_addon_host", header_source)
 		self.assertIn("node_runtime_bridge::prepare_native_addon_host();", runtime_source)
+		self.assertIn("node_runtime_bridge::prepare_native_addon_host();", probe_source)
 		self.assertNotIn('GetModuleHandleW(L"libnode.dll")', bridge_source)
 		self.assertNotIn("preload_node_dll_stub", header_source + bridge_source + runtime_source)
 
