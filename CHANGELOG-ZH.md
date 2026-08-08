@@ -1,7 +1,7 @@
 ## 2.4.1
 
 - 修复 TypeScript 内置脚本模板：Godot 新建脚本对话框不再因为模板缺少 `origin` metadata 而丢弃 Default 和 Tool 模板。
-- 新增桌面版内置 `gode_node` helper 和包级导出 npm 快照物化缓存，让 `child_process.fork()`、ESM `import.meta.url` 路径推导与原生 `.node` 加载可以执行真实桌面包探测，运行时不再依赖用户机器上的 Node 可执行文件。
+- 新增桌面版内置 `gode_node` helper，并为 npm 快照的包路径和 fork 子进程依赖树提供物化缓存，让 `child_process.fork()`、ESM `import.meta.url` 路径推导与原生 `.node` 加载可以执行真实桌面包探测，运行时不再依赖用户机器上的 Node 可执行文件。
 - 新增基于最小 Godot `node-llama-cpp` 项目的打包插件导出 smoke，在 Windows、Linux 和 macOS 上验证导出包基础运行能力。
 - 新增 PR 提交身份检查 workflow：通过提交作者、提交者以及 `Co-authored-by` / `Signed-off-by` trailer 拦截归属于受限 AI 编码工具的提交，且不会 checkout 或执行 PR 代码。
 
