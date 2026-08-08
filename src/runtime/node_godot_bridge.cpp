@@ -450,7 +450,12 @@ static Napi::Value native_probe_executable(const Napi::CallbackInfo &info) {
 	}
 	return env.Null();
 #else
-	return Napi::String::New(env, dir + "/gode_node");
+	std::string helper = dir + "/gode_node";
+	if (native_file_exists(helper)) {
+		make_native_executable(helper);
+		return Napi::String::New(env, helper);
+	}
+	return env.Null();
 #endif
 #else
 	return env.Null();

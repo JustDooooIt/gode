@@ -381,17 +381,42 @@ func _write_or_remove_local_extension_list(lines: PackedStringArray) -> void:
 	file.store_string("\n".join(lines) + "\n")
 
 func _command_exists(command: String) -> bool:
-	var candidates := PackedStringArray([command])
-	if OS.get_name() == "Windows":
-		candidates.append(command + ".cmd")
-		candidates.append(command + ".exe")
+	var resolved := _resolve_command_path(command)
+	if resolved.is_empty():
+		return false
+	var output: Array = []
+	return OS.execute(resolved, PackedStringArray(["--version"]), output, true, false) == 0
 
-	for candidate in candidates:
-		var output: Array = []
-		var exit_code := OS.execute(candidate, PackedStringArray(["--version"]), output, true, false)
-		if exit_code == 0:
-			return true
-	return false
+func _resolve_command_path(command: String) -> String:
+	if command.is_empty():
+		return ""
+	if command.contains("/") or command.contains("\\"):
+		return command if FileAccess.file_exists(command) else ""
+
+	var candidates := PackedStringArray()
+	if OS.get_name() == "Windows":
+		var lower_command := command.to_lower()
+		if lower_command.ends_with(".exe") or lower_command.ends_with(".cmd") or lower_command.ends_with(".bat") or lower_command.ends_with(".com"):
+			candidates.append(command)
+		else:
+			candidates.append(command + ".cmd")
+			candidates.append(command + ".exe")
+			candidates.append(command + ".bat")
+			candidates.append(command + ".com")
+			candidates.append(command)
+	else:
+		candidates.append(command)
+
+	var path_separator := ";" if OS.get_name() == "Windows" else ":"
+	for directory: String in OS.get_environment("PATH").split(path_separator, false):
+		var normalized_directory := directory.strip_edges().trim_prefix("\"").trim_suffix("\"")
+		if normalized_directory.is_empty():
+			continue
+		for candidate: String in candidates:
+			var absolute_candidate := normalized_directory.path_join(candidate)
+			if FileAccess.file_exists(absolute_candidate):
+				return absolute_candidate
+	return ""
 
 func _export_npm_runtime_snapshot() -> bool:
 	if _get_npm_bool("includeManifests"):

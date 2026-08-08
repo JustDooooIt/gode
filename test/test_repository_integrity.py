@@ -1906,6 +1906,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"_path_has_parent_segment",
 			'_command_exists("node")',
 			'_command_exists("npm")',
+			"_resolve_command_path",
+			'OS.get_environment("PATH")',
 			'_file_exists("res://package.json") or _dir_exists("res://node_modules")',
 		):
 			self.assertIn(token, export_source)
@@ -1924,6 +1926,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"_remove_directory_recursive",
 		):
 			self.assertNotIn(token, export_source)
+		self.assertNotIn("OS.execute(command", export_source)
 		self.assertIn("_ensure_native_extension_registered(RUNTIME_EXTENSION_PATH)", plugin_source)
 		self.assertNotIn("_ensure_native_extension_registered(EDITOR_EXTENSION_PATH)", plugin_source)
 		self.assertIn("if normalized_path == EDITOR_EXTENSION_PATH:", plugin_source)
