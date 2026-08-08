@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "Select the MSVC runtime library." FORCE)
 
-project(gode VERSION 2.4.0 LANGUAGES C CXX)
+project(gode VERSION 2.4.1 LANGUAGES C CXX)
 
 if(NOT CMAKE_CONFIGURATION_TYPES)
 	if(NOT CMAKE_BUILD_TYPE)
@@ -21,6 +21,7 @@ option(GODE_RUN_CODEGEN "Run the Python binding generator at configure time" ON)
 option(GODE_USE_COMPILER_CACHE "Use sccache or ccache as the C/C++ compiler launcher when available" ON)
 option(GODE_UNITY_GENERATED_BINDINGS "Build generated binding sources in CMake unity batches" ON)
 option(GODE_BUILD_EDITOR_EXTENSION "Build the desktop editor-only Gode extension" ON)
+option(GODE_BUILD_NODE_HELPER "Build the desktop Node-compatible helper executable used by child_process.fork" ON)
 
 set(GODOT_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/godot-cpp" CACHE PATH "Path to godot-cpp")
 set(NODE_ADDON_API_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third/node-addon-api" CACHE PATH "Path to node-addon-api")
@@ -250,6 +251,10 @@ if(GODE_GENERATED_SOURCES)
 endif()
 
 set(GODE_RUNTIME_SOURCES ${GODE_MANUAL_SOURCES} ${GODE_GENERATED_SOURCES})
+set(GODE_NODE_HELPER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/gode_node_main.cpp")
+set(GODE_NODE_PROBE_HOST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/node_probe_host.cpp")
+list(REMOVE_ITEM GODE_RUNTIME_SOURCES "${GODE_NODE_HELPER_SOURCE}")
+list(REMOVE_ITEM GODE_RUNTIME_SOURCES "${GODE_NODE_PROBE_HOST_SOURCE}")
 set(GODE_EDITOR_SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/compiler/typescript_compiler.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/compiler/typescript_project_compiler.cpp"
@@ -269,6 +274,13 @@ set(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE OFF)
 if(GODE_BUILD_EDITOR_EXTENSION AND (GODE_PLATFORM STREQUAL "windows" OR GODE_PLATFORM STREQUAL "linux" OR GODE_PLATFORM STREQUAL "macos"))
 	set(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE ON)
 endif()
+set(GODE_BUILD_NODE_HELPER_EFFECTIVE OFF)
+if(GODE_BUILD_NODE_HELPER AND (GODE_PLATFORM STREQUAL "windows" OR GODE_PLATFORM STREQUAL "linux" OR GODE_PLATFORM STREQUAL "macos"))
+	set(GODE_BUILD_NODE_HELPER_EFFECTIVE ON)
+endif()
+if(GODE_BUILD_NODE_HELPER_EFFECTIVE)
+	list(APPEND GODE_RUNTIME_SOURCES "${GODE_NODE_PROBE_HOST_SOURCE}")
+endif()
 
 function(gode_configure_extension_target p_target p_output_dir)
 	set_target_properties(${p_target} PROPERTIES
@@ -283,6 +295,18 @@ function(gode_configure_extension_target p_target p_output_dir)
 			"RUNTIME_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
 			"LIBRARY_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
 			"ARCHIVE_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
+		)
+	endforeach()
+endfunction()
+
+function(gode_configure_executable_target p_target p_output_dir)
+	set_target_properties(${p_target} PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY "${p_output_dir}"
+	)
+	foreach(_GODE_CONFIG Debug Release RelWithDebInfo MinSizeRel)
+		string(TOUPPER "${_GODE_CONFIG}" _GODE_CONFIG_UPPER)
+		set_target_properties(${p_target} PROPERTIES
+			"RUNTIME_OUTPUT_DIRECTORY_${_GODE_CONFIG_UPPER}" "${p_output_dir}"
 		)
 	endforeach()
 endfunction()
@@ -389,6 +413,29 @@ if(MSVC)
 	target_compile_options(gode_runtime PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
 endif()
 
+if(GODE_BUILD_NODE_HELPER_EFFECTIVE)
+	add_executable(gode_node "${GODE_NODE_HELPER_SOURCE}")
+	set_target_properties(gode_node PROPERTIES OUTPUT_NAME "gode_node")
+	gode_configure_executable_target(gode_node "${GODE_RUNTIME_OUTPUT_DIR}")
+	target_link_libraries(gode_node PRIVATE gode_runtime)
+	if(APPLE)
+		set_target_properties(gode_node PROPERTIES
+			BUILD_WITH_INSTALL_RPATH TRUE
+			BUILD_RPATH "@loader_path;@loader_path/../../Frameworks;@loader_path/../../../Frameworks"
+			INSTALL_RPATH "@loader_path;@loader_path/../../Frameworks;@loader_path/../../../Frameworks"
+		)
+	elseif(UNIX)
+		set_target_properties(gode_node PROPERTIES
+			BUILD_WITH_INSTALL_RPATH TRUE
+			BUILD_RPATH "$ORIGIN"
+			INSTALL_RPATH "$ORIGIN"
+		)
+	endif()
+	if(MSVC)
+		target_compile_options(gode_node PRIVATE /utf-8 /EHsc /Zc:__cplusplus)
+	endif()
+endif()
+
 if(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE)
 	add_library(gode_editor SHARED ${GODE_EDITOR_SOURCES})
 	set_target_properties(gode_editor PROPERTIES OUTPUT_NAME "gode_editor")
@@ -402,7 +449,11 @@ if(GODE_BUILD_EDITOR_EXTENSION_EFFECTIVE)
 	if(MSVC)
 		target_compile_options(gode_editor PRIVATE /bigobj /utf-8 /EHsc /Zc:__cplusplus)
 	endif()
-	add_custom_target(gode DEPENDS gode_runtime gode_editor)
+	set(_GODE_DEFAULT_TARGETS gode_runtime gode_editor)
 else()
-	add_custom_target(gode DEPENDS gode_runtime)
+	set(_GODE_DEFAULT_TARGETS gode_runtime)
 endif()
+if(GODE_BUILD_NODE_HELPER_EFFECTIVE)
+	list(APPEND _GODE_DEFAULT_TARGETS gode_node)
+endif()
+add_custom_target(gode DEPENDS ${_GODE_DEFAULT_TARGETS})

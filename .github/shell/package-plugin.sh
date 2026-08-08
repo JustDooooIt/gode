@@ -63,8 +63,11 @@ required_files=(
 required_binaries=(
 	"binary/windows/x64/libgode_runtime.dll"
 	"binary/windows/x64/node.dll"
+	"binary/windows/x64/gode_node.exe"
 	"binary/linux/x64/libgode_runtime.so"
+	"binary/linux/x64/gode_node"
 	"binary/macos/arm64/libgode_runtime.dylib"
+	"binary/macos/arm64/gode_node"
 	"binary/android/arm64/libgode_runtime.so"
 	"binary/ios/arm64/libgode_runtime.dylib"
 	"binary/editor/windows/x64/libgode_editor.dll"
@@ -99,6 +102,12 @@ for file in "tsc/package.json" "tsc/lib/typescript.js"; do
 	if [ ! -f "$staged_addon_root/$file" ]; then
 		printf 'Missing packaged TypeScript compiler file: %s\n' "$file" >&2
 		exit 1
+	fi
+done
+
+for file in "binary/linux/x64/gode_node" "binary/macos/arm64/gode_node"; do
+	if [ -f "$staged_addon_root/$file" ]; then
+		chmod +x "$staged_addon_root/$file"
 	fi
 done
 

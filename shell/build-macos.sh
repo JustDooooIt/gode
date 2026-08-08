@@ -85,6 +85,7 @@ build_root="$repo_root/build"
 build_dir="$build_root/macos/$architecture/$config_dir"
 bin_dir="$repo_root/example/addons/gode/binary/macos/$architecture"
 runtime_library="$bin_dir/libgode_runtime.dylib"
+node_helper="$bin_dir/gode_node"
 editor_library="$repo_root/example/addons/gode/binary/editor/macos/$architecture/libgode_editor.dylib"
 libnode_library="$repo_root/libnode/macos/$architecture/libnode.a"
 
@@ -156,11 +157,11 @@ cmake \
 printf 'Building gode (%s, macos/%s)...\n' "$configuration" "$architecture"
 cmake --build "$build_dir" --target gode --config "$configuration" --parallel "$jobs"
 
-for expected_library in "$runtime_library" "$editor_library"; do
+for expected_library in "$runtime_library" "$node_helper" "$editor_library"; do
 	if [ ! -f "$expected_library" ]; then
-		printf 'Build finished, but expected GDExtension library was not found: %s\n' "$expected_library" >&2
+		printf 'Build finished, but expected Gode binary was not found: %s\n' "$expected_library" >&2
 		exit 1
 	fi
 done
 
-printf 'Built GDExtension libraries:\n  %s\n  %s\n' "$runtime_library" "$editor_library"
+printf 'Built Gode binaries:\n  %s\n  %s\n  %s\n' "$runtime_library" "$node_helper" "$editor_library"

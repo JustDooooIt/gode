@@ -280,6 +280,7 @@ $configDir = $Configuration.ToLowerInvariant()
 $buildDir = Join-Path $buildRoot "windows/$Architecture/$configDir"
 $binDir = Join-Path $repoRoot "example/addons/gode/binary/windows/$Architecture"
 $runtimeLibrary = Join-Path $binDir "libgode_runtime.dll"
+$nodeHelper = Join-Path $binDir "gode_node.exe"
 $editorLibrary = Join-Path $repoRoot "example/addons/gode/binary/editor/windows/$Architecture/libgode_editor.dll"
 $libnodeLibrary = Join-Path $repoRoot "libnode/windows/$Architecture/libnode.lib"
 $jobCount = if ($Jobs -gt 0) { $Jobs } else { Get-DefaultJobCount }
@@ -353,12 +354,13 @@ if ($LASTEXITCODE -ne 0) {
 	throw "CMake build failed with exit code $LASTEXITCODE."
 }
 
-foreach ($expectedLibrary in @($runtimeLibrary, $editorLibrary)) {
+foreach ($expectedLibrary in @($runtimeLibrary, $nodeHelper, $editorLibrary)) {
 	if (-not (Test-Path $expectedLibrary)) {
-		throw "Build finished, but expected GDExtension library was not found: $expectedLibrary"
+		throw "Build finished, but expected Gode binary was not found: $expectedLibrary"
 	}
 }
 
-Write-Host "Built GDExtension libraries:"
+Write-Host "Built Gode binaries:"
 Write-Host "  $runtimeLibrary"
+Write-Host "  $nodeHelper"
 Write-Host "  $editorLibrary"

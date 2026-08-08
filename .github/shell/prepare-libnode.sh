@@ -69,6 +69,16 @@ fi
 
 mkdir -p "$build_deps_dir"
 
+python_executable="${PYTHON3_EXECUTABLE:-}"
+if [ -z "$python_executable" ]; then
+	python_executable="$(command -v python3 || command -v python || true)"
+fi
+
+if [ -z "$python_executable" ]; then
+	printf 'Python was not found. Install Python, set PYTHON3_EXECUTABLE, or add python3/python to PATH.\n' >&2
+	exit 1
+fi
+
 printf 'Downloading libnode...\n'
 curl --fail --location --show-error "$url" --output "$archive_path"
 
@@ -76,7 +86,7 @@ rm -rf "$extract_dir"
 mkdir -p "$extract_dir"
 
 printf 'Extracting libnode...\n'
-python - "$archive_path" "$extract_dir" <<'PY'
+"$python_executable" - "$archive_path" "$extract_dir" <<'PY'
 import sys
 import zipfile
 
