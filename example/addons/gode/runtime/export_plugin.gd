@@ -4,10 +4,13 @@ extends EditorExportPlugin
 const GODE_CONFIG_PATH := "res://gode.json"
 const DEFAULT_GODE_CONFIG_PATH := "res://addons/gode/config/gode.json"
 const INLINE_SOURCE_MAP_MARKER := "//# sourceMappingURL=data:application/json;base64,"
+const EMPTY_SHA256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 const TYPESCRIPT_EXPORT_MANIFEST_PATH := "res://.gode/build/typescript/manifest.json"
+const NPM_EXPORT_MANIFEST_PATH := "res://.gode/build/npm/manifest.json"
 const GODE_RUNTIME_EXTENSION_PATH := "res://addons/gode/binary/gode.gdextension"
 const GODE_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
 const LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"
+const MACOS_NATIVE_PROBE_FRAMEWORK_DIR := "user://.gode/export/gode_node.framework"
 
 const NPM_MANIFEST_FILES := [
 	"package.json",
@@ -23,6 +26,7 @@ const NPM_MANIFEST_FILES := [
 ]
 
 var npm_exported_files := 0
+var npm_export_manifest_entries := PackedStringArray()
 var npm_config: Dictionary = {}
 var config_error := ""
 var editor_extension_list_entry_removed_for_export := false
@@ -33,12 +37,19 @@ func _get_name() -> String:
 func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
 	_prepare_local_extension_list_for_export()
 	var normalized := _normalize_res_path(path)
+	if _is_target_native_probe_helper_path(normalized, features):
+		skip()
+		return
 	if _is_gode_editor_only_export_path(normalized) or _is_gode_binary_resource_path(normalized, features):
 		skip()
 
 func _export_begin(features: PackedStringArray, is_debug: bool, path: String, flags: int) -> void:
 	_prepare_local_extension_list_for_export()
 	npm_exported_files = 0
+	npm_export_manifest_entries = PackedStringArray()
+	if not _add_native_probe_helper(features):
+		_restore_local_extension_list_after_export()
+		return
 	var has_npm_project := _has_npm_project()
 	npm_config = _load_npm_config(has_npm_project)
 	if not config_error.is_empty():
@@ -208,6 +219,84 @@ func _is_gode_binary_resource_path(path: String, features: PackedStringArray) ->
 func _is_target_runtime_binary_path(path: String, features: PackedStringArray) -> bool:
 	return _target_runtime_binary_paths(features).has(path)
 
+func _is_target_native_probe_helper_path(path: String, features: PackedStringArray) -> bool:
+	var helper_path := _target_native_probe_helper_path(features)
+	return not helper_path.is_empty() and path == helper_path
+
+func _add_native_probe_helper(features: PackedStringArray) -> bool:
+	var helper_path := _target_native_probe_helper_path(features)
+	if helper_path.is_empty():
+		return true
+	if not _file_exists(helper_path):
+		push_error("Missing Gode native probe helper: %s" % helper_path)
+		return false
+	if _features_has(features, "macos"):
+		return _add_macos_native_probe_helper(helper_path)
+	add_shared_object(ProjectSettings.globalize_path(helper_path), features, _to_resource_relative(helper_path.get_base_dir()))
+	return true
+
+func _add_macos_native_probe_helper(helper_path: String) -> bool:
+	var framework_dir := ProjectSettings.globalize_path(MACOS_NATIVE_PROBE_FRAMEWORK_DIR)
+	var resources_dir := framework_dir.path_join("Resources")
+	if DirAccess.make_dir_recursive_absolute(resources_dir) != OK:
+		push_error("Gode export could not create macOS native probe framework directory: %s" % MACOS_NATIVE_PROBE_FRAMEWORK_DIR)
+		return false
+	var helper_bytes := FileAccess.get_file_as_bytes(helper_path)
+	if FileAccess.get_open_error() != OK:
+		push_error("Failed to read Gode native probe helper: %s" % helper_path)
+		return false
+	var staged_helper := framework_dir.path_join(helper_path.get_file())
+	var file := FileAccess.open(staged_helper, FileAccess.WRITE)
+	if file == null:
+		push_error("Gode export could not stage macOS native probe helper: %s" % staged_helper)
+		return false
+	file.store_buffer(helper_bytes)
+	file.close()
+	OS.execute("chmod", PackedStringArray(["755", staged_helper]), [], true, false)
+	var info_plist := FileAccess.open(resources_dir.path_join("Info.plist"), FileAccess.WRITE)
+	if info_plist == null:
+		push_error("Gode export could not stage macOS native probe Info.plist: %s" % MACOS_NATIVE_PROBE_FRAMEWORK_DIR)
+		return false
+	info_plist.store_string("""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>gode_node</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.godothub.gode.node</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>gode_node</string>
+	<key>CFBundlePackageType</key>
+	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.15</string>
+</dict>
+</plist>
+""")
+	info_plist.close()
+	add_macos_plugin_file(framework_dir)
+	return true
+
+func _target_native_probe_helper_path(features: PackedStringArray) -> String:
+	if _features_has(features, "windows") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
+		return "res://addons/gode/binary/windows/x64/gode_node.exe"
+	if _features_has(features, "linux") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
+		return "res://addons/gode/binary/linux/x64/gode_node"
+	if _features_has(features, "macos") and _features_has(features, "arm64"):
+		return "res://addons/gode/binary/macos/arm64/gode_node"
+	return ""
+
 func _target_runtime_binary_paths(features: PackedStringArray) -> PackedStringArray:
 	if _features_has(features, "windows") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
 		return PackedStringArray([
@@ -215,9 +304,13 @@ func _target_runtime_binary_paths(features: PackedStringArray) -> PackedStringAr
 			"res://addons/gode/binary/windows/x64/node.dll",
 		])
 	if _features_has(features, "linux") and (_features_has(features, "x86_64") or _features_has(features, "x64")):
-		return PackedStringArray(["res://addons/gode/binary/linux/x64/libgode_runtime.so"])
+		return PackedStringArray([
+			"res://addons/gode/binary/linux/x64/libgode_runtime.so",
+		])
 	if _features_has(features, "macos") and _features_has(features, "arm64"):
-		return PackedStringArray(["res://addons/gode/binary/macos/arm64/libgode_runtime.dylib"])
+		return PackedStringArray([
+			"res://addons/gode/binary/macos/arm64/libgode_runtime.dylib",
+		])
 	if _features_has(features, "android") and _features_has(features, "arm64"):
 		return PackedStringArray(["res://addons/gode/binary/android/arm64/libgode_runtime.so"])
 	if _features_has(features, "ios") and _features_has(features, "arm64"):
@@ -324,6 +417,8 @@ func _export_npm_runtime_snapshot() -> bool:
 				return false
 		else:
 			push_warning("Gode export extra npm include path does not exist: %s" % normalized)
+	if npm_exported_files > 0:
+		_add_npm_export_manifest()
 	return true
 
 func _add_export_directory(directory_path: String) -> bool:
@@ -350,10 +445,49 @@ func _add_export_file(source_path: String) -> bool:
 	if not _file_exists(source_path):
 		push_error("Gode export expected file does not exist: %s" % source_path)
 		return false
-	if not _add_file_from_bytes(source_path, source_path, "Failed to read Gode export file: %s"):
+	var bytes := FileAccess.get_file_as_bytes(source_path)
+	if FileAccess.get_open_error() != OK:
+		push_error("Failed to read Gode export file: %s" % source_path)
 		return false
+	add_file(source_path, bytes, false)
 	npm_exported_files += 1
+	if not _record_npm_export_manifest_entry(source_path, bytes):
+		return false
 	return true
+
+func _record_npm_export_manifest_entry(source_path: String, bytes: PackedByteArray) -> bool:
+	var normalized := _normalize_res_path(source_path)
+	if normalized.is_empty() or normalized == NPM_EXPORT_MANIFEST_PATH:
+		return true
+	var sha256 := _sha256_hex(bytes)
+	if sha256.is_empty():
+		push_error("Failed to hash Gode export file: %s" % normalized)
+		return false
+	npm_export_manifest_entries.append("%s\t%d\t%s" % [_to_resource_relative(normalized), bytes.size(), sha256])
+	return true
+
+func _sha256_hex(bytes: PackedByteArray) -> String:
+	if bytes.is_empty():
+		return EMPTY_SHA256
+	var hashing_context := HashingContext.new()
+	if hashing_context == null:
+		return ""
+	if hashing_context.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	if hashing_context.update(bytes) != OK:
+		return ""
+	return hashing_context.finish().hex_encode()
+
+func _add_npm_export_manifest() -> void:
+	var entries: Array = []
+	for entry: String in npm_export_manifest_entries:
+		entries.append(entry)
+	entries.sort()
+	var manifest := {
+		"version": 1,
+		"files": entries,
+	}
+	add_file(NPM_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer(), false)
 
 func _read_package_json() -> Dictionary:
 	if not _file_exists("res://package.json"):
