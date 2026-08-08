@@ -5,6 +5,8 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include <cctype>
+
 namespace gode::node_module_resolver {
 
 static bool is_path_separator(char c) {
@@ -74,6 +76,7 @@ static int read_package_module_type(const std::string &filename) {
 					if (type == "commonjs") {
 						return -1;
 					}
+					return 0;
 				}
 			}
 		}
@@ -86,6 +89,146 @@ static int read_package_module_type(const std::string &filename) {
 	}
 
 	return 0;
+}
+
+static bool is_identifier_continue(char c) {
+	unsigned char value = static_cast<unsigned char>(c);
+	return std::isalnum(value) || c == '_' || c == '$';
+}
+
+static std::string sanitize_js_for_module_markers(const std::string &source) {
+	enum class State {
+		Normal,
+		SingleQuote,
+		DoubleQuote,
+		Template,
+		LineComment,
+		BlockComment,
+	};
+
+	std::string code;
+	code.reserve(source.size());
+	State state = State::Normal;
+	bool escaped = false;
+
+	auto append_masked = [&code](char c) {
+		code.push_back(c == '\n' || c == '\r' ? c : ' ');
+	};
+
+	for (size_t i = 0; i < source.size(); i++) {
+		char c = source[i];
+		char next = i + 1 < source.size() ? source[i + 1] : '\0';
+
+		switch (state) {
+			case State::Normal:
+				if (c == '/' && next == '/') {
+					append_masked(c);
+					append_masked(next);
+					i++;
+					state = State::LineComment;
+				} else if (c == '/' && next == '*') {
+					append_masked(c);
+					append_masked(next);
+					i++;
+					state = State::BlockComment;
+				} else if (c == '\'') {
+					append_masked(c);
+					escaped = false;
+					state = State::SingleQuote;
+				} else if (c == '"') {
+					append_masked(c);
+					escaped = false;
+					state = State::DoubleQuote;
+				} else if (c == '`') {
+					append_masked(c);
+					escaped = false;
+					state = State::Template;
+				} else {
+					code.push_back(c);
+				}
+				break;
+			case State::SingleQuote:
+			case State::DoubleQuote:
+			case State::Template: {
+				append_masked(c);
+				char quote = state == State::SingleQuote ? '\'' : (state == State::DoubleQuote ? '"' : '`');
+				if (escaped) {
+					escaped = false;
+				} else if (c == '\\') {
+					escaped = true;
+				} else if (c == quote) {
+					state = State::Normal;
+				} else if ((state == State::SingleQuote || state == State::DoubleQuote) && (c == '\n' || c == '\r')) {
+					state = State::Normal;
+				}
+				break;
+			}
+			case State::LineComment:
+				append_masked(c);
+				if (c == '\n' || c == '\r') {
+					state = State::Normal;
+				}
+				break;
+			case State::BlockComment:
+				append_masked(c);
+				if (c == '*' && next == '/') {
+					append_masked(next);
+					i++;
+					state = State::Normal;
+				}
+				break;
+		}
+	}
+
+	return code;
+}
+
+static bool module_keyword_at(const std::string &code, size_t pos, const char *keyword) {
+	size_t length = std::char_traits<char>::length(keyword);
+	if (pos + length > code.size() || code.compare(pos, length, keyword) != 0) {
+		return false;
+	}
+	if (pos > 0 && is_identifier_continue(code[pos - 1])) {
+		return false;
+	}
+
+	char next = pos + length < code.size() ? code[pos + length] : '\0';
+	if (std::string(keyword) == "import") {
+		return std::isspace(static_cast<unsigned char>(next)) || next == '{' || next == '*' || next == '.';
+	}
+	return std::isspace(static_cast<unsigned char>(next)) || next == '{' || next == '*';
+}
+
+static bool has_static_esm_syntax(const std::string &code) {
+	bool line_start = true;
+	for (size_t i = 0; i < code.size(); i++) {
+		char c = code[i];
+		if (line_start) {
+			while (i < code.size() && (code[i] == ' ' || code[i] == '\t' || code[i] == '\v' || code[i] == '\f')) {
+				i++;
+			}
+			if (i >= code.size()) {
+				return false;
+			}
+			if (module_keyword_at(code, i, "import") || module_keyword_at(code, i, "export")) {
+				return true;
+			}
+			line_start = false;
+			c = code[i];
+		}
+		if (c == '\n' || c == '\r') {
+			line_start = true;
+		}
+	}
+	return false;
+}
+
+static bool has_commonjs_markers(const std::string &code) {
+	return code.find("module.exports") != std::string::npos ||
+			code.find("exports.") != std::string::npos ||
+			code.find("exports[") != std::string::npos ||
+			code.find("Object.defineProperty(exports") != std::string::npos ||
+			code.find("require(") != std::string::npos;
 }
 
 bool is_esm_file(const std::string &filename, const std::string &code) {
@@ -106,18 +249,13 @@ bool is_esm_file(const std::string &filename, const std::string &code) {
 		}
 	}
 
-	if (code.find("module.exports") != std::string::npos ||
-			code.find("exports.") != std::string::npos ||
-			code.find("require(") != std::string::npos) {
-		return false;
+	const std::string sanitized_code = sanitize_js_for_module_markers(code);
+	if (has_static_esm_syntax(sanitized_code)) {
+		return true;
 	}
 
-	if (code.find("import ") != std::string::npos ||
-			code.find("export ") != std::string::npos ||
-			code.find("import{") != std::string::npos ||
-			code.find("export{") != std::string::npos ||
-			code.find("export default") != std::string::npos) {
-		return true;
+	if (has_commonjs_markers(sanitized_code)) {
+		return false;
 	}
 
 	return false;
