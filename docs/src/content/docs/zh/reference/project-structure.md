@@ -23,7 +23,7 @@ my_project/
 
 | 路径 | 用途 |
 | --- | --- |
-| `binary/` | 运行时 GDExtension manifest、各平台运行时库，以及 `binary/editor/` 下的桌面编辑器专用原生库。 |
+| `binary/` | 运行时 GDExtension manifest、编辑器 manifest 模板、各平台运行时库，以及 `binary/editor/` 下的桌面编辑器专用原生库。 |
 | `config/` | `tsconfig.json`、`gode.json` 等内置模板。 |
 | `gode.gd` | Godot 插件入口。 |
 | `plugin.cfg` | Godot 编辑器插件元数据。 |
@@ -31,7 +31,7 @@ my_project/
 | `tsc/` | 内置 TypeScript 编译器。 |
 | `types/` | Godot API 的生成 TypeScript 声明。 |
 
-`native_extensions/paths` 只应包含 `res://addons/gode/binary/gode.gdextension`。启用编辑器插件时，Gode 会把 `gode_editor.gdextension` 写入本地 `.godot/extension_list.cfg` 缓存，用于开发期专用原生编辑器 API，同时不会把编辑器扩展写进项目设置或导出包。
+`native_extensions/paths` 只应包含 `res://addons/gode/binary/gode.gdextension`。启用编辑器插件时，Gode 会从发布包里的 `gode_editor.gdextension.template` 生成 `res://.godot/gode/gode_editor.gdextension`，并把这个本地 manifest 写入 `.godot/extension_list.cfg`，用于开发期专用原生编辑器 API。真正的 editor manifest 只是本地缓存，不会作为资源进入导出的游戏。
 
 ## 项目根目录文件
 

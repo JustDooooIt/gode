@@ -44,7 +44,7 @@ Debug 导出包含 source map。Release 导出只包含运行时 JavaScript。
 
 不要让场景文件指向生成的 JavaScript。源码仍然是原始 `.ts` 或 `.tsx` 资源。
 
-Gode 导出时只保留所选目标平台的运行时原生文件。桌面导出会包含 runtime GDExtension，以及用于 npm 原生包隔离探测的 `gode_node` helper；Windows 还会包含 `node.dll` Node-API forwarder。`gode_editor.gdextension`、`binary/editor/`、内置 TypeScript 编译器和生成类型声明都属于开发期资产，不会进入导出的游戏包。
+Gode 导出时只保留所选目标平台的运行时原生文件。桌面导出会包含 runtime GDExtension，以及用于 npm 原生包隔离探测的 `gode_node` helper；Windows 还会包含 `node.dll` Node-API forwarder。本地 `.godot/gode/gode_editor.gdextension`、`gode_editor.gdextension.template`、`binary/editor/`、内置 TypeScript 编译器和生成类型声明都属于开发期资产，不会进入导出的游戏包。
 
 包含 npm 依赖的导出包还会带有内部 npm 快照 manifest：`res://.gode/build/npm/manifest.json`。它只用于校验运行时物化缓存，项目代码不应依赖这个文件。
 
