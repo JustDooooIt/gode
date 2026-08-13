@@ -11,7 +11,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_MARKER = "[GodeTest] all tests passed"
 DEFAULT_EXTENSION = "res://addons/gode/binary/gode.gdextension"
-DEFAULT_EDITOR_EXTENSION = "res://addons/gode/binary/gode_editor.gdextension"
+DEFAULT_EDITOR_EXTENSION_TEMPLATE = "res://addons/gode/binary/gode_editor.gdextension.template"
+DEFAULT_EDITOR_EXTENSION = "res://.godot/gode/gode_editor.gdextension"
+LEGACY_EDITOR_EXTENSION = "res://addons/gode/binary/gode_editor.gdextension"
 
 LEAK_RE = re.compile(
 	r"(WARNING|ERROR): .*leaked|Leaked instance:|Orphan StringName: (Gode|TypeScriptScript)",
@@ -72,6 +74,20 @@ def godot_resource_path(project, resource_path):
 	return project / resource_path.removeprefix("res://")
 
 
+def ensure_editor_extension_manifest(project, extension_path):
+	if extension_path != DEFAULT_EDITOR_EXTENSION:
+		return
+	template = godot_resource_path(project, DEFAULT_EDITOR_EXTENSION_TEMPLATE)
+	if not template.exists():
+		raise FileNotFoundError(f"GDExtension template was not found: {template}")
+	manifest = godot_resource_path(project, extension_path)
+	template_text = template.read_text(encoding="utf-8")
+	if manifest.exists() and manifest.read_text(encoding="utf-8") == template_text:
+		return
+	manifest.parent.mkdir(parents=True, exist_ok=True)
+	manifest.write_text(template_text, encoding="utf-8")
+
+
 def ensure_extension_list(project, extension_paths):
 	if not extension_paths:
 		return
@@ -79,6 +95,7 @@ def ensure_extension_list(project, extension_paths):
 		extension_paths = [extension_paths]
 
 	for extension_path in extension_paths:
+		ensure_editor_extension_manifest(project, extension_path)
 		manifest = godot_resource_path(project, extension_path)
 		if not manifest.exists():
 			raise FileNotFoundError(f"GDExtension manifest was not found: {manifest}")
@@ -90,7 +107,17 @@ def ensure_extension_list(project, extension_paths):
 	else:
 		lines = []
 
-	registered = {line.strip() for line in lines}
+	filtered_lines = []
+	registered = set()
+	for line in lines:
+		normalized = line.strip()
+		if not normalized or normalized == LEGACY_EDITOR_EXTENSION or normalized in registered:
+			continue
+		filtered_lines.append(normalized)
+		registered.add(normalized)
+	changed = len(filtered_lines) != len(lines)
+	lines = filtered_lines
+
 	added = []
 	for extension_path in extension_paths:
 		if extension_path in registered:
@@ -98,12 +125,13 @@ def ensure_extension_list(project, extension_paths):
 		lines.append(extension_path)
 		registered.add(extension_path)
 		added.append(extension_path)
-	if not added:
+	if not added and not changed:
 		return
 
 	godot_dir.mkdir(exist_ok=True)
 	extension_list.write_text("\n".join(lines) + "\n", encoding="utf-8")
-	print(f"[gode-smoke] Registered GDExtension: {', '.join(added)}")
+	if added:
+		print(f"[gode-smoke] Registered GDExtension: {', '.join(added)}")
 
 
 def output_lines(output):
