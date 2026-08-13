@@ -183,21 +183,7 @@ jobs:
         run: ./.github/shell/prepare-typescript.sh
 
       - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/godot"
-          curl -fsSL \
-            -o "$RUNNER_TEMP/godot.zip" \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
-          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
-          GODOT_BIN="$(find "$RUNNER_TEMP/godot" -maxdepth 1 -type f -name 'Godot*' | head -n 1)"
-          if [ -z "$GODOT_BIN" ]; then
-            echo "Godot executable was not found in downloaded archive" >&2
-            exit 1
-          fi
-          chmod +x "$GODOT_BIN"
-          echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
+        run: python test/prepare_godot.py --version "${{ env.GODOT_VERSION }}"
 
       - name: Run Godot smoke tests
         run: python test/run_godot_smoke.py --godot "$GODOT_BIN" --strict-exit-leaks

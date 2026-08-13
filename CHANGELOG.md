@@ -1,6 +1,7 @@
 ## 2.4.2
 
 - Fixed non-desktop exports and npm snapshot packaging edge cases.
+- Hardened CI release downloads against transient network failures.
 - Added required GitHub issue templates for bug reports and feature requests.
 
 ## 2.4.1
