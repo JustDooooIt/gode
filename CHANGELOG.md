@@ -1,3 +1,8 @@
+## 2.4.2
+
+- Fixed non-desktop exports and npm snapshot packaging edge cases.
+- Added required GitHub issue templates for bug reports and feature requests.
+
 ## 2.4.1
 
 - Fixed TypeScript built-in script templates so Godot no longer drops the Default and Tool templates in the New Script dialog because of missing template `origin` metadata.

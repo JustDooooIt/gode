@@ -1,3 +1,8 @@
+## 2.4.2
+
+- 修复非桌面导出和 npm 快照打包的边界问题。
+- 新增必填 GitHub issue 模板，覆盖问题反馈和功能建议。
+
 ## 2.4.1
 
 - 修复 TypeScript 内置脚本模板：Godot 新建脚本对话框不再因为模板缺少 `origin` metadata 而丢弃 Default 和 Tool 模板。
