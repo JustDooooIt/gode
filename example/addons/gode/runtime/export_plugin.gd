@@ -8,9 +8,14 @@ const EMPTY_SHA256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7
 const TYPESCRIPT_EXPORT_MANIFEST_PATH := "res://.gode/build/typescript/manifest.json"
 const NPM_EXPORT_MANIFEST_PATH := "res://.gode/build/npm/manifest.json"
 const GODE_RUNTIME_EXTENSION_PATH := "res://addons/gode/binary/gode.gdextension"
-const GODE_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
+const GODE_EDITOR_EXTENSION_TEMPLATE_PATH := "res://addons/gode/binary/gode_editor.gdextension.template"
+const GODE_EDITOR_EXTENSION_PATH := "res://.godot/gode/gode_editor.gdextension"
+const GODE_LEGACY_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
+const GODE_LEGACY_EDITOR_EXTENSION_UID_PATH := "res://addons/gode/binary/gode_editor.gdextension.uid"
 const LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"
 const MACOS_NATIVE_PROBE_FRAMEWORK_DIR := "user://.gode/export/gode_node.framework"
+const GODE_TYPESCRIPT_COMPILER_CLASS := &"GodeTypeScriptCompiler"
+const GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD := &"compile_project"
 
 const NPM_MANIFEST_FILES := [
 	"package.json",
@@ -27,44 +32,55 @@ const NPM_MANIFEST_FILES := [
 
 var npm_exported_files := 0
 var npm_export_manifest_entries := PackedStringArray()
+var npm_export_owned_exact_paths := {}
+var npm_export_owned_prefixes := PackedStringArray()
+var export_injected_path_hashes := {}
 var npm_config: Dictionary = {}
 var config_error := ""
 var editor_extension_list_entry_removed_for_export := false
+var legacy_editor_resources_checked_for_export := false
+var local_extension_list_checked_for_export := false
+var native_extension_paths_checked_for_export := false
 
 func _get_name() -> String:
 	return "GodeTypeScriptExport"
 
 func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
-	_prepare_local_extension_list_for_export()
+	_prepare_extension_state_for_export()
 	var normalized := _normalize_res_path(path)
+	if _is_gode_managed_export_path(normalized):
+		skip()
+		return
 	if _is_target_native_probe_helper_path(normalized, features):
 		skip()
 		return
 	if _is_gode_editor_only_export_path(normalized) or _is_gode_binary_resource_path(normalized, features):
 		skip()
+		return
 
 func _export_begin(features: PackedStringArray, is_debug: bool, path: String, flags: int) -> void:
-	_prepare_local_extension_list_for_export()
-	npm_exported_files = 0
-	npm_export_manifest_entries = PackedStringArray()
+	_reset_export_state()
+	_prepare_extension_state_for_export()
 	if not _add_native_probe_helper(features):
-		_restore_local_extension_list_after_export()
+		_restore_extension_state_after_export()
 		return
 	var has_npm_project := _has_npm_project()
 	npm_config = _load_npm_config(has_npm_project)
 	if not config_error.is_empty():
 		push_error(config_error)
-		_restore_local_extension_list_after_export()
+		_restore_extension_state_after_export()
 		return
 	if not _prepare_npm_export():
-		_restore_local_extension_list_after_export()
+		_restore_extension_state_after_export()
 		return
+	_collect_npm_export_owned_paths(has_npm_project)
 
-	var result: Dictionary = GodeTypeScriptCompiler.compile_project(true)
+	var result := _run_typescript_export_compile()
 	if not result.get("ok", false):
 		_print_diagnostics(result.get("diagnostics", []))
-		push_error("Gode TypeScript export failed. Fix TypeScript diagnostics before exporting.")
-		_restore_local_extension_list_after_export()
+		if not result.get("compiler_unavailable", false):
+			push_error("Gode TypeScript export failed. Fix TypeScript diagnostics before exporting.")
+		_restore_extension_state_after_export()
 		return
 
 	var export_manifest_outputs: Array = []
@@ -73,11 +89,11 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 		var source_path: String = output.get("path", "")
 		var exported_path: String = output.get("exported_path", "")
 		if not _add_compiled_file(exported_path, source_path, is_debug):
-			_restore_local_extension_list_after_export()
+			_restore_extension_state_after_export()
 			return
 		if is_debug and FileAccess.file_exists(source_path + ".map"):
 			if not _add_compiled_file(exported_path + ".map", source_path + ".map"):
-				_restore_local_extension_list_after_export()
+				_restore_extension_state_after_export()
 				return
 		if not source_resource_path.is_empty() and not exported_path.is_empty():
 			export_manifest_outputs.append({
@@ -85,17 +101,37 @@ func _export_begin(features: PackedStringArray, is_debug: bool, path: String, fl
 				"exported_path": exported_path,
 			})
 
-	_add_typescript_export_manifest(export_manifest_outputs)
+	if not _add_typescript_export_manifest(export_manifest_outputs):
+		_restore_extension_state_after_export()
+		return
 
 	if _should_export_npm_dependencies() and has_npm_project:
 		if not _export_npm_runtime_snapshot():
-			_restore_local_extension_list_after_export()
+			_restore_extension_state_after_export()
 			return
 		if npm_exported_files > 0:
 			print("[Gode Export] Added npm runtime snapshot files: %d" % npm_exported_files)
 
 func _export_end() -> void:
+	_restore_extension_state_after_export()
+
+func _restore_extension_state_after_export() -> void:
 	_restore_local_extension_list_after_export()
+	legacy_editor_resources_checked_for_export = false
+	local_extension_list_checked_for_export = false
+	native_extension_paths_checked_for_export = false
+
+func _reset_export_state() -> void:
+	npm_exported_files = 0
+	npm_export_manifest_entries = PackedStringArray()
+	npm_export_owned_exact_paths = {}
+	npm_export_owned_prefixes = PackedStringArray()
+	export_injected_path_hashes = {}
+	npm_config = {}
+	config_error = ""
+	legacy_editor_resources_checked_for_export = false
+	local_extension_list_checked_for_export = false
+	native_extension_paths_checked_for_export = false
 
 func _add_compiled_file(exported_path: String, source_path: String, include_inline_source_map := true) -> bool:
 	if exported_path.is_empty() or source_path.is_empty():
@@ -109,8 +145,7 @@ func _add_compiled_file(exported_path: String, source_path: String, include_inli
 		if FileAccess.get_open_error() != OK:
 			push_error("Failed to read Gode TypeScript output: %s" % source_path)
 			return false
-		add_file(exported_path, _strip_inline_source_map(code).to_utf8_buffer(), false)
-		return true
+		return _add_export_file_bytes(exported_path, _strip_inline_source_map(code).to_utf8_buffer())
 	return _add_file_from_bytes(exported_path, source_path, "Failed to read Gode TypeScript output: %s")
 
 func _add_file_from_bytes(exported_path: String, source_path: String, error_message: String) -> bool:
@@ -118,14 +153,13 @@ func _add_file_from_bytes(exported_path: String, source_path: String, error_mess
 	if FileAccess.get_open_error() != OK:
 		push_error(error_message % source_path)
 		return false
-	add_file(exported_path, bytes, false)
-	return true
+	return _add_export_file_bytes(exported_path, bytes)
 
-func _add_typescript_export_manifest(outputs: Array) -> void:
+func _add_typescript_export_manifest(outputs: Array) -> bool:
 	var manifest := {
 		"outputs": outputs,
 	}
-	add_file(TYPESCRIPT_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer(), false)
+	return _add_export_file_bytes(TYPESCRIPT_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer())
 
 func _strip_inline_source_map(code: String) -> String:
 	var marker_index := code.rfind(INLINE_SOURCE_MAP_MARKER)
@@ -149,6 +183,19 @@ func _print_diagnostics(diagnostics: Array) -> void:
 			push_error("[Gode TypeScript] %s" % message)
 		else:
 			push_error("[Gode TypeScript] %s:%d:%d %s" % [file, line, column, message])
+
+func _run_typescript_export_compile() -> Dictionary:
+	if not ClassDB.class_exists(GODE_TYPESCRIPT_COMPILER_CLASS):
+		push_error("Gode editor extension is not loaded; reopen the project or re-enable the Gode plugin before exporting.")
+		return {"ok": false, "compiler_unavailable": true, "diagnostics": []}
+	if not ClassDB.class_has_method(GODE_TYPESCRIPT_COMPILER_CLASS, GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD):
+		push_error("Gode editor extension does not expose the TypeScript project compiler.")
+		return {"ok": false, "compiler_unavailable": true, "diagnostics": []}
+	var result: Variant = ClassDB.class_call_static(GODE_TYPESCRIPT_COMPILER_CLASS, GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD, true)
+	if typeof(result) != TYPE_DICTIONARY:
+		push_error("Gode TypeScript compiler returned an invalid export result.")
+		return {"ok": false, "compiler_unavailable": true, "diagnostics": []}
+	return result
 
 func _prepare_npm_export() -> bool:
 	if not _has_npm_project():
@@ -177,14 +224,34 @@ func _has_npm_project() -> bool:
 func _should_export_npm_dependencies() -> bool:
 	return _get_npm_bool("exportDependencies")
 
+func _is_gode_managed_export_path(path: String) -> bool:
+	return _is_gode_generated_export_path(path) or _is_npm_export_owned_path(path)
+
+func _is_gode_generated_export_path(path: String) -> bool:
+	if path == TYPESCRIPT_EXPORT_MANIFEST_PATH or path == NPM_EXPORT_MANIFEST_PATH:
+		return true
+	return path.begins_with("res://.gode/build/typescript/") or path.begins_with("res://.gode/build/npm/")
+
+func _is_npm_export_owned_path(path: String) -> bool:
+	if path.is_empty():
+		return false
+	if npm_export_owned_exact_paths.has(path):
+		return true
+	for prefix: String in npm_export_owned_prefixes:
+		if path == prefix or path.begins_with(prefix + "/"):
+			return true
+	return false
+
 func _is_gode_editor_only_export_path(path: String) -> bool:
 	if path.is_empty():
 		return false
-	if path == GODE_EDITOR_EXTENSION_PATH:
+	if _is_gode_editor_extension_path(path):
 		return true
 	for exact_path: String in [
 		LOCAL_EXTENSION_LIST_PATH,
-		"res://addons/gode/binary/gode_editor.gdextension.uid",
+		GODE_EDITOR_EXTENSION_TEMPLATE_PATH,
+		GODE_EDITOR_EXTENSION_TEMPLATE_PATH + ".uid",
+		GODE_LEGACY_EDITOR_EXTENSION_UID_PATH,
 		"res://addons/gode/plugin.cfg",
 		"res://addons/gode/gode.gd",
 		"res://addons/gode/gode.gdc",
@@ -199,6 +266,7 @@ func _is_gode_editor_only_export_path(path: String) -> bool:
 		if path == exact_path:
 			return true
 	for prefix: String in [
+		"res://.godot/gode/",
 		"res://addons/gode/binary/editor/",
 		"res://addons/gode/config/",
 		"res://addons/gode/icons/",
@@ -208,6 +276,9 @@ func _is_gode_editor_only_export_path(path: String) -> bool:
 		if path.begins_with(prefix):
 			return true
 	return false
+
+func _is_gode_editor_extension_path(path: String) -> bool:
+	return path == GODE_EDITOR_EXTENSION_PATH or path == GODE_LEGACY_EDITOR_EXTENSION_PATH
 
 func _is_gode_binary_resource_path(path: String, features: PackedStringArray) -> bool:
 	if path == GODE_RUNTIME_EXTENSION_PATH:
@@ -334,7 +405,48 @@ func _features_has(features: PackedStringArray, feature: String) -> bool:
 			return true
 	return false
 
+func _prepare_extension_state_for_export() -> void:
+	_remove_legacy_editor_extension_resources()
+	_prepare_project_extension_paths_for_export()
+	_prepare_local_extension_list_for_export()
+
+func _prepare_project_extension_paths_for_export() -> void:
+	if native_extension_paths_checked_for_export:
+		return
+	native_extension_paths_checked_for_export = true
+
+	var value: Variant = ProjectSettings.get_setting("native_extensions/paths", PackedStringArray())
+	var paths := PackedStringArray()
+	if typeof(value) == TYPE_PACKED_STRING_ARRAY:
+		paths = value
+	elif typeof(value) == TYPE_ARRAY:
+		var array: Array = value
+		for item in array:
+			paths.append(String(item))
+
+	var filtered := PackedStringArray()
+	var changed := false
+	for existing_path: String in paths:
+		var normalized_path := existing_path.strip_edges()
+		if _is_gode_editor_extension_path(normalized_path):
+			changed = true
+			continue
+		if normalized_path.is_empty() or filtered.has(normalized_path):
+			changed = true
+			continue
+		filtered.append(normalized_path)
+	if not changed:
+		return
+
+	ProjectSettings.set_setting("native_extensions/paths", filtered)
+	var save_error := ProjectSettings.save()
+	if save_error != OK:
+		push_warning("Gode export could not save sanitized native extension paths.")
+
 func _prepare_local_extension_list_for_export() -> void:
+	if local_extension_list_checked_for_export:
+		return
+	local_extension_list_checked_for_export = true
 	if editor_extension_list_entry_removed_for_export:
 		return
 	if not FileAccess.file_exists(LOCAL_EXTENSION_LIST_PATH):
@@ -343,7 +455,7 @@ func _prepare_local_extension_list_for_export() -> void:
 	var lines := _read_local_extension_list()
 	var filtered := PackedStringArray()
 	for line: String in lines:
-		if line.strip_edges() == GODE_EDITOR_EXTENSION_PATH:
+		if _is_gode_editor_extension_path(line.strip_edges()):
 			editor_extension_list_entry_removed_for_export = true
 			continue
 		filtered.append(line)
@@ -362,6 +474,17 @@ func _restore_local_extension_list_after_export() -> void:
 			return
 	lines.append(GODE_EDITOR_EXTENSION_PATH)
 	_write_or_remove_local_extension_list(lines)
+
+func _remove_legacy_editor_extension_resources() -> void:
+	if legacy_editor_resources_checked_for_export:
+		return
+	legacy_editor_resources_checked_for_export = true
+	for path in [GODE_LEGACY_EDITOR_EXTENSION_PATH, GODE_LEGACY_EDITOR_EXTENSION_UID_PATH]:
+		if not FileAccess.file_exists(path):
+			continue
+		var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+		if remove_error != OK:
+			push_warning("Gode export could not remove stale editor extension resource: %s" % path)
 
 func _read_local_extension_list() -> PackedStringArray:
 	if not FileAccess.file_exists(LOCAL_EXTENSION_LIST_PATH):
@@ -454,8 +577,45 @@ func _export_npm_runtime_snapshot() -> bool:
 		else:
 			push_warning("Gode export extra npm include path does not exist: %s" % normalized)
 	if npm_exported_files > 0:
-		_add_npm_export_manifest()
+		if not _add_npm_export_manifest():
+			return false
 	return true
+
+func _collect_npm_export_owned_paths(has_npm_project: bool) -> void:
+	npm_export_owned_exact_paths = {}
+	npm_export_owned_prefixes = PackedStringArray()
+	if not has_npm_project or not _should_export_npm_dependencies():
+		return
+
+	if _get_npm_bool("includeManifests"):
+		for manifest: String in NPM_MANIFEST_FILES:
+			var manifest_path := "res://" + manifest
+			if _file_exists(manifest_path):
+				_remember_npm_export_owned_file(manifest_path)
+
+	if _get_npm_bool("includeNodeModules") and _dir_exists("res://node_modules"):
+		_remember_npm_export_owned_directory("res://node_modules")
+
+	for extra_path: String in _get_npm_string_array("extraIncludePaths"):
+		var normalized := _normalize_res_path(extra_path)
+		if normalized.is_empty():
+			continue
+		if _file_exists(normalized):
+			_remember_npm_export_owned_file(normalized)
+		elif _dir_exists(normalized):
+			_remember_npm_export_owned_directory(normalized)
+
+func _remember_npm_export_owned_file(path: String) -> void:
+	var normalized := _normalize_res_path(path)
+	if normalized.is_empty():
+		return
+	npm_export_owned_exact_paths[normalized] = true
+
+func _remember_npm_export_owned_directory(path: String) -> void:
+	var normalized := _normalize_res_path(path).trim_suffix("/")
+	if normalized.is_empty():
+		return
+	npm_export_owned_prefixes.append(normalized)
 
 func _add_export_directory(directory_path: String) -> bool:
 	if _is_excluded_export_path(directory_path):
@@ -485,21 +645,52 @@ func _add_export_file(source_path: String) -> bool:
 	if FileAccess.get_open_error() != OK:
 		push_error("Failed to read Gode export file: %s" % source_path)
 		return false
-	add_file(source_path, bytes, false)
-	npm_exported_files += 1
-	if not _record_npm_export_manifest_entry(source_path, bytes):
-		return false
-	return true
-
-func _record_npm_export_manifest_entry(source_path: String, bytes: PackedByteArray) -> bool:
 	var normalized := _normalize_res_path(source_path)
-	if normalized.is_empty() or normalized == NPM_EXPORT_MANIFEST_PATH:
-		return true
+	if normalized.is_empty():
+		push_error("Gode export path is invalid: %s" % source_path)
+		return false
 	var sha256 := _sha256_hex(bytes)
 	if sha256.is_empty():
 		push_error("Failed to hash Gode export file: %s" % normalized)
 		return false
-	npm_export_manifest_entries.append("%s\t%d\t%s" % [_to_resource_relative(normalized), bytes.size(), sha256])
+	var already_added := export_injected_path_hashes.has(normalized)
+	if not _add_export_file_bytes(normalized, bytes, sha256):
+		return false
+	if already_added:
+		return true
+	npm_exported_files += 1
+	if not _record_npm_export_manifest_entry(normalized, bytes.size(), sha256):
+		return false
+	return true
+
+func _add_export_file_bytes(exported_path: String, bytes: PackedByteArray, sha256 := "") -> bool:
+	var normalized := _normalize_res_path(exported_path)
+	if normalized.is_empty():
+		push_error("Gode export path is invalid: %s" % exported_path)
+		return false
+	var content_sha256 := sha256
+	if content_sha256.is_empty():
+		content_sha256 = _sha256_hex(bytes)
+	if content_sha256.is_empty():
+		push_error("Failed to hash Gode export file: %s" % normalized)
+		return false
+	if export_injected_path_hashes.has(normalized):
+		if String(export_injected_path_hashes[normalized]) != content_sha256:
+			push_error("Gode export would add conflicting contents for path: %s" % normalized)
+			return false
+		return true
+	add_file(normalized, bytes, false)
+	export_injected_path_hashes[normalized] = content_sha256
+	return true
+
+func _record_npm_export_manifest_entry(source_path: String, size: int, sha256: String) -> bool:
+	var normalized := _normalize_res_path(source_path)
+	if normalized.is_empty() or normalized == NPM_EXPORT_MANIFEST_PATH:
+		return true
+	if sha256.is_empty():
+		push_error("Failed to hash Gode export file: %s" % normalized)
+		return false
+	npm_export_manifest_entries.append("%s\t%d\t%s" % [_to_resource_relative(normalized), size, sha256])
 	return true
 
 func _sha256_hex(bytes: PackedByteArray) -> String:
@@ -514,7 +705,7 @@ func _sha256_hex(bytes: PackedByteArray) -> String:
 		return ""
 	return hashing_context.finish().hex_encode()
 
-func _add_npm_export_manifest() -> void:
+func _add_npm_export_manifest() -> bool:
 	var entries: Array = []
 	for entry: String in npm_export_manifest_entries:
 		entries.append(entry)
@@ -523,7 +714,7 @@ func _add_npm_export_manifest() -> void:
 		"version": 1,
 		"files": entries,
 	}
-	add_file(NPM_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer(), false)
+	return _add_export_file_bytes(NPM_EXPORT_MANIFEST_PATH, JSON.stringify(manifest, "\t").to_utf8_buffer())
 
 func _read_package_json() -> Dictionary:
 	if not _file_exists("res://package.json"):

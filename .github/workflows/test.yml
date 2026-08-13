@@ -126,7 +126,7 @@ jobs:
             echo "Packaged plugin is missing plugin.cfg" >&2
             exit 1
           fi
-          if [ ! -f "$package_root/gode/binary/gode.gdextension" ] || [ ! -f "$package_root/gode/binary/gode_editor.gdextension" ]; then
+          if [ ! -f "$package_root/gode/binary/gode.gdextension" ] || [ ! -f "$package_root/gode/binary/gode_editor.gdextension.template" ]; then
             echo "Packaged plugin is missing one or more GDExtension manifests" >&2
             exit 1
           fi

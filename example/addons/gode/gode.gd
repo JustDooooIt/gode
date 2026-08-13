@@ -2,7 +2,10 @@
 extends EditorPlugin
 
 const RUNTIME_EXTENSION_PATH := "res://addons/gode/binary/gode.gdextension"
-const EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
+const EDITOR_EXTENSION_TEMPLATE_PATH := "res://addons/gode/binary/gode_editor.gdextension.template"
+const EDITOR_EXTENSION_PATH := "res://.godot/gode/gode_editor.gdextension"
+const LEGACY_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"
+const LEGACY_EDITOR_EXTENSION_UID_PATH := "res://addons/gode/binary/gode_editor.gdextension.uid"
 const LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"
 
 var export_plugin: EditorExportPlugin
@@ -23,11 +26,14 @@ func _disable_plugin() -> void:
 
 func _setup_plugin() -> void:
 	var command_line_export := _is_command_line_export()
+	_remove_legacy_editor_extension_resources()
+	var editor_manifest_ready := _ensure_editor_extension_manifest()
 	_ensure_native_extension_registered(RUNTIME_EXTENSION_PATH)
-	if not command_line_export:
+	if not command_line_export and editor_manifest_ready:
 		_ensure_local_native_extension_registered(EDITOR_EXTENSION_PATH)
 	_ensure_native_extension_loaded(RUNTIME_EXTENSION_PATH)
-	_ensure_native_extension_loaded(EDITOR_EXTENSION_PATH)
+	if editor_manifest_ready:
+		_ensure_native_extension_loaded(EDITOR_EXTENSION_PATH)
 	if not ProjectSettings.has_setting("autoload/EventLoop"):
 		add_autoload_singleton("EventLoop", "res://addons/gode/runtime/event_loop.gd")
 	if export_plugin == null:
@@ -62,7 +68,7 @@ func _ensure_native_extension_registered(path: String) -> void:
 	var changed := false
 	for existing_path: String in paths:
 		var normalized_path := existing_path.strip_edges()
-		if normalized_path == EDITOR_EXTENSION_PATH:
+		if _is_editor_extension_path(normalized_path):
 			changed = true
 			continue
 		if normalized_path.is_empty() or normalized_paths.has(normalized_path):
@@ -88,19 +94,72 @@ func _ensure_local_native_extension_registered(path: String) -> void:
 			push_error("Failed to read local GDExtension list: %s" % LOCAL_EXTENSION_LIST_PATH)
 			return
 		lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n", false)
+
+	var filtered := PackedStringArray()
+	var changed := false
 	for line: String in lines:
-		if line.strip_edges() == path:
-			return
+		var normalized_path := line.strip_edges()
+		if _is_editor_extension_path(normalized_path):
+			if normalized_path == path and not filtered.has(path):
+				filtered.append(path)
+			else:
+				changed = true
+			continue
+		if normalized_path.is_empty() or filtered.has(normalized_path):
+			changed = true
+			continue
+		filtered.append(normalized_path)
+	if filtered.has(path) and not changed:
+		return
 	var extension_list_directory := ProjectSettings.globalize_path(LOCAL_EXTENSION_LIST_PATH.get_base_dir())
 	if DirAccess.make_dir_recursive_absolute(extension_list_directory) != OK:
 		push_error("Failed to create local GDExtension directory: %s" % LOCAL_EXTENSION_LIST_PATH.get_base_dir())
 		return
-	lines.append(path)
+	if not filtered.has(path):
+		filtered.append(path)
 	var file := FileAccess.open(LOCAL_EXTENSION_LIST_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("Failed to write local GDExtension list: %s" % LOCAL_EXTENSION_LIST_PATH)
 		return
-	file.store_string("\n".join(lines) + "\n")
+	file.store_string("\n".join(filtered) + "\n")
+
+func _ensure_editor_extension_manifest() -> bool:
+	if not FileAccess.file_exists(EDITOR_EXTENSION_TEMPLATE_PATH):
+		push_error("Gode editor extension template is missing: %s" % EDITOR_EXTENSION_TEMPLATE_PATH)
+		return false
+
+	var template := FileAccess.get_file_as_string(EDITOR_EXTENSION_TEMPLATE_PATH)
+	if FileAccess.get_open_error() != OK:
+		push_error("Failed to read Gode editor extension template: %s" % EDITOR_EXTENSION_TEMPLATE_PATH)
+		return false
+
+	if FileAccess.file_exists(EDITOR_EXTENSION_PATH):
+		var current := FileAccess.get_file_as_string(EDITOR_EXTENSION_PATH)
+		if FileAccess.get_open_error() == OK and current == template:
+			return true
+
+	var directory := ProjectSettings.globalize_path(EDITOR_EXTENSION_PATH.get_base_dir())
+	if DirAccess.make_dir_recursive_absolute(directory) != OK:
+		push_error("Failed to create local Gode editor extension directory: %s" % EDITOR_EXTENSION_PATH.get_base_dir())
+		return false
+
+	var file := FileAccess.open(EDITOR_EXTENSION_PATH, FileAccess.WRITE)
+	if file == null:
+		push_error("Failed to write local Gode editor extension manifest: %s" % EDITOR_EXTENSION_PATH)
+		return false
+	file.store_string(template)
+	return true
+
+func _remove_legacy_editor_extension_resources() -> void:
+	for path in [LEGACY_EDITOR_EXTENSION_PATH, LEGACY_EDITOR_EXTENSION_UID_PATH]:
+		if not FileAccess.file_exists(path):
+			continue
+		var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+		if remove_error != OK:
+			push_warning("Gode could not remove stale editor extension resource: %s" % path)
+
+func _is_editor_extension_path(path: String) -> bool:
+	return path == EDITOR_EXTENSION_PATH or path == LEGACY_EDITOR_EXTENSION_PATH
 
 func _is_command_line_export() -> bool:
 	for argument: String in OS.get_cmdline_args():
