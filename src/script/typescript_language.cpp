@@ -538,6 +538,51 @@ void parse_global_class_metadata(TSNode class_node, const std::string &source, S
 	}
 }
 
+bool is_class_name_decorator_text(String decorator) {
+	// ClassName is declared as a decorator factory: @ClassName().
+	return decorator == String("@ClassName") || decorator == String("@ClassName()");
+}
+
+bool class_node_has_class_name_decorator(TSNode node, const std::string &source) {
+	if (ts_node_is_null(node)) {
+		return false;
+	}
+	for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+		TSNode child = ts_node_child(node, i);
+		if (strcmp(ts_node_type(child), "decorator") != 0) {
+			continue;
+		}
+		if (is_class_name_decorator_text(tree_sitter_node_text(child, source))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+StringName global_class_name_annotation(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source) {
+	if (ts_node_is_null(class_node)) {
+		return StringName();
+	}
+
+	if (class_node_has_class_name_decorator(class_node, source)) {
+		return class_name_from_class_node(class_node, source);
+	}
+
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "export_statement") != 0) {
+			continue;
+		}
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			TSNode node = ts_node_child(child, j);
+			if (strcmp(ts_node_type(node), "decorator") == 0 && is_class_name_decorator_text(tree_sitter_node_text(node, source))) {
+				return class_name_from_class_node(class_node, source);
+			}
+		}
+	}
+	return StringName();
+}
+
 void reload_typescript_script_from_file(const Ref<Script> &p_script, bool p_keep_state) {
 	Ref<TypeScriptScript> script = Ref(p_script);
 	if (script.is_null()) {
@@ -1014,10 +1059,11 @@ Dictionary TypeScriptLanguage::_get_global_class_name(const String &p_path) cons
 	const uint32_t child_count = ts_node_child_count(root_node);
 	TSNode class_node = find_default_class(root_node, child_count, source);
 	if (!ts_node_is_null(class_node)) {
-		StringName name;
-		StringName base_type;
-		parse_global_class_metadata(class_node, source, name, base_type);
+		StringName name = global_class_name_annotation(root_node, child_count, class_node, source);
 		if (name != StringName()) {
+			StringName class_name;
+			StringName base_type;
+			parse_global_class_metadata(class_node, source, class_name, base_type);
 			d["name"] = name;
 			d["base_type"] = base_type == StringName() ? StringName("RefCounted") : base_type;
 			d["icon_path"] = String();

@@ -646,6 +646,7 @@ class DtsGenerator(CodeGenerator):
         lines.append('')
         lines.append('  function Signal(...args: any[]): any;')
         lines.append('  function Tool(...args: any[]): any;')
+        lines.append('  function ClassName(): any;')
         lines.append('')
         lines.append('  interface ExportEntry {')
         lines.append('    type: string;')

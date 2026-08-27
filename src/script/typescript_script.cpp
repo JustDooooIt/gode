@@ -1980,6 +1980,51 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 	return false;
 }
 
+static bool is_class_name_decorator(const std::string &decorator) {
+	// ClassName is declared as a decorator factory: @ClassName().
+	return decorator == "@ClassName" || decorator == "@ClassName()";
+}
+
+static bool class_node_has_class_name_decorator(TSNode node, const std::string &source) {
+	if (ts_node_is_null(node)) {
+		return false;
+	}
+	for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+		TSNode child = ts_node_child(node, i);
+		if (strcmp(ts_node_type(child), "decorator") != 0) {
+			continue;
+		}
+		if (is_class_name_decorator(node_text(source, child))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static StringName global_class_name_annotation(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source) {
+	if (ts_node_is_null(class_node)) {
+		return StringName();
+	}
+
+	if (class_node_has_class_name_decorator(class_node, source)) {
+		return class_name_from_class_node(class_node, source);
+	}
+
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "export_statement") != 0) {
+			continue;
+		}
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			TSNode node = ts_node_child(child, j);
+			if (strcmp(ts_node_type(node), "decorator") == 0 && is_class_name_decorator(node_text(source, node))) {
+				return class_name_from_class_node(class_node, source);
+			}
+		}
+	}
+	return StringName();
+}
+
 static void parse_class_metadata(TSNode class_node, const std::string &source, StringName &class_name, StringName &base_class_name) {
 	class_name = class_name_from_class_node(class_node, source);
 
@@ -2940,6 +2985,7 @@ bool TypeScriptScript::compile() const {
 
 	is_valid = false;
 	is_tool_script = false;
+	global_class_name = StringName();
 	class_name = StringName();
 	base_class_name = StringName();
 	base_script_path = String();
@@ -3005,6 +3051,7 @@ bool TypeScriptScript::compile() const {
 
 	HashMap<StringName, Vector<PropertyInfo>> interfaces = parse_interfaces(root_node, child_count, source, get_path());
 	parse_class_metadata(class_node, source, class_name, base_class_name);
+	global_class_name = global_class_name_annotation(root_node, child_count, class_node, source);
 	StringName base_class_qualifier;
 	TSNode base_class_node = extends_class_node_from_class(class_node);
 	if (!ts_node_is_null(base_class_node)) {
