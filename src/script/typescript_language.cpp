@@ -538,6 +538,71 @@ void parse_global_class_metadata(TSNode class_node, const std::string &source, S
 	}
 }
 
+String strip_decorator_quotes(String value) {
+	if (value.length() >= 2 && (value[0] == '"' || value[0] == '\'')) {
+		return value.substr(1, value.length() - 2);
+	}
+	return value;
+}
+
+bool is_class_name_decorator_text(String decorator) {
+	// ClassName is declared as a decorator factory: @ClassName("GlobalName").
+	return decorator == String("@ClassName") || decorator.begins_with("@ClassName(");
+}
+
+StringName global_class_name_from_decorator(TSNode decorator, const std::string &source) {
+	String text = tree_sitter_node_text(decorator, source);
+	if (!is_class_name_decorator_text(text)) {
+		return StringName();
+	}
+
+	for (uint32_t di = 0; di < ts_node_named_child_count(decorator); di++) {
+		TSNode expr = ts_node_named_child(decorator, di);
+		TSNode args = ts_node_child_by_field_name(expr, "arguments", 9);
+		if (ts_node_is_null(args) || ts_node_named_child_count(args) == 0) {
+			continue;
+		}
+		TSNode first_arg = ts_node_named_child(args, 0);
+		if (!ts_node_is_null(first_arg) && strcmp(ts_node_type(first_arg), "string") == 0) {
+			return StringName(strip_decorator_quotes(tree_sitter_node_text(first_arg, source)));
+		}
+	}
+	return StringName();
+}
+
+StringName global_class_name_annotation(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source) {
+	if (!ts_node_is_null(class_node)) {
+		for (uint32_t i = 0; i < ts_node_child_count(class_node); i++) {
+			TSNode child = ts_node_child(class_node, i);
+			if (strcmp(ts_node_type(child), "decorator") != 0) {
+				continue;
+			}
+			StringName name = global_class_name_from_decorator(child, source);
+			if (!name.is_empty()) {
+				return name;
+			}
+		}
+	}
+
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "export_statement") != 0) {
+			continue;
+		}
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			TSNode node = ts_node_child(child, j);
+			if (strcmp(ts_node_type(node), "decorator") != 0) {
+				continue;
+			}
+			StringName decorated = global_class_name_from_decorator(node, source);
+			if (!decorated.is_empty()) {
+				return decorated;
+			}
+		}
+	}
+	return StringName();
+}
+
 void reload_typescript_script_from_file(const Ref<Script> &p_script, bool p_keep_state) {
 	Ref<TypeScriptScript> script = Ref(p_script);
 	if (script.is_null()) {
@@ -1014,10 +1079,11 @@ Dictionary TypeScriptLanguage::_get_global_class_name(const String &p_path) cons
 	const uint32_t child_count = ts_node_child_count(root_node);
 	TSNode class_node = find_default_class(root_node, child_count, source);
 	if (!ts_node_is_null(class_node)) {
-		StringName name;
-		StringName base_type;
-		parse_global_class_metadata(class_node, source, name, base_type);
+		StringName name = global_class_name_annotation(root_node, child_count, class_node, source);
 		if (name != StringName()) {
+			StringName class_name;
+			StringName base_type;
+			parse_global_class_metadata(class_node, source, class_name, base_type);
 			d["name"] = name;
 			d["base_type"] = base_type == StringName() ? StringName("RefCounted") : base_type;
 			d["icon_path"] = String();

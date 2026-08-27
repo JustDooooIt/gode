@@ -31,6 +31,7 @@ protected:
 	bool source_code_loaded = false;
 	godot::String source_code;
 
+	mutable godot::StringName global_class_name;
 	mutable godot::StringName class_name;
 	mutable godot::StringName base_class_name;
 	mutable godot::String base_script_path;

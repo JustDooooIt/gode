@@ -245,7 +245,7 @@ Ref<Script> TypeScriptScript::_get_base_script() const {
 
 StringName TypeScriptScript::_get_global_name() const {
 	compile();
-	return class_name;
+	return global_class_name;
 }
 
 bool TypeScriptScript::_inherits_script(const Ref<Script> &p_script) const {
@@ -413,7 +413,7 @@ ScriptLanguage *TypeScriptScript::get_script_language() const {
 
 StringName TypeScriptScript::get_global_name() const {
 	compile();
-	return class_name;
+	return global_class_name;
 }
 
 bool TypeScriptScript::_has_script_signal(const StringName &p_signal) const {
