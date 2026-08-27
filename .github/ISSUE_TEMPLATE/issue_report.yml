@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a Gode bug, build, export, runtime, or compatibility issue.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in the required fields. Use `N/A` only when a field is unrelated.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        Gode:
+        Godot:
+        Host OS:
+        CPU architecture:
+        Target:
+        Renderer/GPU:
+        Package manager:
+        Native npm packages:
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      placeholder: "Steps, minimal project link, or minimal code."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false

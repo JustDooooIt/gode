@@ -40,14 +40,18 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			manifest = project / "addons/gode/binary/gode.gdextension"
 			manifest.parent.mkdir(parents=True)
 			manifest.write_text("[configuration]\n", encoding="utf-8")
-			editor_manifest = project / "addons/gode/binary/gode_editor.gdextension"
-			editor_manifest.write_text("[configuration]\n", encoding="utf-8")
+			editor_template = project / "addons/gode/binary/gode_editor.gdextension.template"
+			editor_template.write_text("[configuration]\nentry_symbol = \"gode_editor_library_init\"\n", encoding="utf-8")
 
 			run_godot_smoke.ensure_extension_list(project, [run_godot_smoke.DEFAULT_EXTENSION, run_godot_smoke.DEFAULT_EDITOR_EXTENSION])
 
 			self.assertEqual(
 				run_godot_smoke.DEFAULT_EXTENSION + "\n" + run_godot_smoke.DEFAULT_EDITOR_EXTENSION + "\n",
 				(project / ".godot/extension_list.cfg").read_text(encoding="utf-8"),
+			)
+			self.assertEqual(
+				editor_template.read_text(encoding="utf-8"),
+				(project / ".godot/gode/gode_editor.gdextension").read_text(encoding="utf-8"),
 			)
 
 	def test_extension_list_preserves_existing_entries_without_duplicates(self):
@@ -56,13 +60,15 @@ class GodotSmokeRunnerTests(unittest.TestCase):
 			manifest = project / "addons/gode/binary/gode.gdextension"
 			manifest.parent.mkdir(parents=True)
 			manifest.write_text("[configuration]\n", encoding="utf-8")
-			editor_manifest = project / "addons/gode/binary/gode_editor.gdextension"
-			editor_manifest.write_text("[configuration]\n", encoding="utf-8")
+			editor_template = project / "addons/gode/binary/gode_editor.gdextension.template"
+			editor_template.write_text("[configuration]\nentry_symbol = \"gode_editor_library_init\"\n", encoding="utf-8")
 			extension_list = project / ".godot/extension_list.cfg"
 			extension_list.parent.mkdir()
 			extension_list.write_text(
 				"res://addons/other/other.gdextension\n"
 				+ run_godot_smoke.DEFAULT_EXTENSION
+				+ "\n"
+				+ run_godot_smoke.LEGACY_EDITOR_EXTENSION
 				+ "\n",
 				encoding="utf-8",
 			)

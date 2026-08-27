@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 
-from run_godot_smoke import captured_output_text, ensure_extension_list, non_leak_error_lines, resolve_godot
+from run_godot_smoke import DEFAULT_EDITOR_EXTENSION, captured_output_text, ensure_extension_list, non_leak_error_lines, resolve_godot
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -95,7 +95,7 @@ def ensure_platform_binaries(addon_root):
 		"linux": f"binary/linux/{arch}/gode_node",
 		"macos": f"binary/macos/{arch}/gode_node",
 	}[gode_platform]
-	required = [extension_binary, node_helper, editor_binary, "binary/gode_editor.gdextension"]
+	required = [extension_binary, node_helper, editor_binary, "binary/gode_editor.gdextension.template"]
 	if gode_platform == "windows":
 		required.append(f"binary/windows/{arch}/node.dll")
 
@@ -173,7 +173,7 @@ def prepare_project(args):
 	addon_root = copy_addon(source_addon, project)
 	ensure_platform_binaries(addon_root)
 	ensure_typescript_compiler(addon_root, args.prepare_typescript_timeout)
-	ensure_extension_list(project, [DEFAULT_EXTENSION, "res://addons/gode/binary/gode_editor.gdextension"])
+	ensure_extension_list(project, [DEFAULT_EXTENSION, DEFAULT_EDITOR_EXTENSION])
 	return project
 
 

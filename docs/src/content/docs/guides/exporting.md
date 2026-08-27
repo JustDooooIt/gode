@@ -44,7 +44,7 @@ Debug exports include source maps. Release exports include runtime JavaScript on
 
 Do not point scene files at generated JavaScript. The source of truth remains the original `.ts` or `.tsx` resource.
 
-Gode exports only the selected target platform's runtime native files. Desktop exports include the runtime GDExtension and the `gode_node` helper used for isolated native npm package probes; Windows also includes the `node.dll` Node-API forwarder. Editor-only files such as `gode_editor.gdextension`, `binary/editor/`, the bundled TypeScript compiler, and generated type declarations are development assets and are excluded from exported games.
+Gode exports only the selected target platform's runtime native files. Desktop exports include the runtime GDExtension and the `gode_node` helper used for isolated native npm package probes; Windows also includes the `node.dll` Node-API forwarder. Editor-only files such as the local `.godot/gode/gode_editor.gdextension`, `gode_editor.gdextension.template`, `binary/editor/`, the bundled TypeScript compiler, and generated type declarations are development assets and are excluded from exported games.
 
 Exports that include npm dependencies also contain an internal npm snapshot manifest under `res://.gode/build/npm/manifest.json`. It is used only to validate the runtime materialization cache; project code should not depend on this file.
 

@@ -1667,8 +1667,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"gode.gd",
 			"binary/gode.gdextension",
 			"binary/gode.gdextension.uid",
-			"binary/gode_editor.gdextension",
-			"binary/gode_editor.gdextension.uid",
+			"binary/gode_editor.gdextension.template",
 			"config/gode.json",
 			"config/tsconfig.json",
 			"icons/typescript.svg",
@@ -1700,8 +1699,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("tsc/lib/typescript.js", package_script)
 		self.assertIn('if [ -f "$staged_addon_root/$file" ]; then', package_script)
 		self.assertIn('chmod +x "$staged_addon_root/$file"', package_script)
-		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension", gitignore)
-		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension.uid", gitignore)
+		self.assertIn("!example/addons/gode/binary/gode_editor.gdextension.template", gitignore)
+		self.assertNotIn('"binary/gode_editor.gdextension"', package_script)
+		self.assertNotIn('"binary/gode_editor.gdextension.uid"', package_script)
+		self.assertFalse((EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension").exists())
+		self.assertFalse((EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension.uid").exists())
 
 	def test_prepare_typescript_scripts_cover_shell_and_powershell(self):
 		prepare_sh = (ROOT / ".github/shell/prepare-typescript.sh").read_text(encoding="utf-8")
@@ -1890,13 +1892,24 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"NPM_MANIFEST_FILES",
 			'NPM_EXPORT_MANIFEST_PATH := "res://.gode/build/npm/manifest.json"',
 			"GODE_RUNTIME_EXTENSION_PATH",
+			"GODE_EDITOR_EXTENSION_TEMPLATE_PATH",
 			"GODE_EDITOR_EXTENSION_PATH",
+			"GODE_LEGACY_EDITOR_EXTENSION_PATH",
+			"GODE_LEGACY_EDITOR_EXTENSION_UID_PATH",
 			"LOCAL_EXTENSION_LIST_PATH",
+			"_prepare_extension_state_for_export",
+			"_prepare_project_extension_paths_for_export",
 			"_prepare_local_extension_list_for_export",
+			"_restore_extension_state_after_export",
 			"_restore_local_extension_list_after_export",
+			"_remove_legacy_editor_extension_resources",
 			"_prepare_npm_export",
 			"_export_file",
+			"_is_gode_managed_export_path",
+			"_is_gode_generated_export_path",
+			"_is_npm_export_owned_path",
 			"_is_gode_editor_only_export_path",
+			"_is_gode_editor_extension_path",
 			"_is_gode_binary_resource_path",
 			"_is_target_runtime_binary_path",
 			"_is_target_native_probe_helper_path",
@@ -1905,19 +1918,39 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"_target_native_probe_helper_path",
 			"_target_runtime_binary_paths",
 			"_features_has",
+			"res://.godot/gode/",
 			"res://addons/gode/binary/editor/",
 			"res://addons/gode/tsc/",
 			"res://addons/gode/types/",
+			"npm_export_owned_exact_paths",
+			"npm_export_owned_prefixes",
+			"export_injected_path_hashes",
+			"legacy_editor_resources_checked_for_export",
+			"local_extension_list_checked_for_export",
 			"_export_npm_runtime_snapshot",
+			"_collect_npm_export_owned_paths",
+			"_remember_npm_export_owned_file",
+			"_remember_npm_export_owned_directory",
+			"_add_export_file_bytes",
 			"_add_npm_export_manifest",
 			"_add_export_directory(\"res://node_modules\")",
 			"_add_file_from_bytes(exported_path, source_path, \"Failed to read Gode TypeScript output: %s\")",
 			"FileAccess.get_open_error() != OK",
-			"GodeTypeScriptCompiler.compile_project(true)",
+			"GODE_TYPESCRIPT_COMPILER_CLASS",
+			"GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD",
+			"_run_typescript_export_compile",
+			"ClassDB.class_exists(GODE_TYPESCRIPT_COMPILER_CLASS)",
+			"ClassDB.class_has_method(GODE_TYPESCRIPT_COMPILER_CLASS, GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD)",
+			"ClassDB.class_call_static(GODE_TYPESCRIPT_COMPILER_CLASS, GODE_TYPESCRIPT_COMPILE_PROJECT_METHOD, true)",
+			"compiler_unavailable",
+			"Gode editor extension is not loaded; reopen the project or re-enable the Gode plugin before exporting.",
+			"Gode editor extension does not expose the TypeScript project compiler.",
 			"TYPESCRIPT_EXPORT_MANIFEST_PATH",
 			"_add_typescript_export_manifest(export_manifest_outputs)",
 			"_normalize_res_path",
 			"_path_has_parent_segment",
+			'ProjectSettings.set_setting("native_extensions/paths", filtered)',
+			"Gode export would add conflicting contents for path: %s",
 			'_command_exists("node")',
 			'_command_exists("npm")',
 			"_resolve_command_path",
@@ -1941,9 +1974,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		):
 			self.assertNotIn(token, export_source)
 		self.assertNotIn("OS.execute(command", export_source)
+		self.assertNotIn("GodeTypeScriptCompiler.compile_project(true)", export_source)
 		self.assertIn("_ensure_native_extension_registered(RUNTIME_EXTENSION_PATH)", plugin_source)
 		self.assertNotIn("_ensure_native_extension_registered(EDITOR_EXTENSION_PATH)", plugin_source)
-		self.assertIn("if normalized_path == EDITOR_EXTENSION_PATH:", plugin_source)
+		self.assertIn('EDITOR_EXTENSION_TEMPLATE_PATH := "res://addons/gode/binary/gode_editor.gdextension.template"', plugin_source)
+		self.assertIn('EDITOR_EXTENSION_PATH := "res://.godot/gode/gode_editor.gdextension"', plugin_source)
+		self.assertIn('LEGACY_EDITOR_EXTENSION_PATH := "res://addons/gode/binary/gode_editor.gdextension"', plugin_source)
+		self.assertIn("_remove_legacy_editor_extension_resources()", plugin_source)
+		self.assertIn("var editor_manifest_ready := _ensure_editor_extension_manifest()", plugin_source)
+		self.assertIn("_ensure_editor_extension_manifest", plugin_source)
+		self.assertIn("_is_editor_extension_path(normalized_path)", plugin_source)
 		self.assertIn("normalized_paths.append(normalized_path)", plugin_source)
 		self.assertIn("func _enter_tree() -> void:", plugin_source)
 		self.assertIn("func _exit_tree() -> void:", plugin_source)
@@ -1951,11 +1991,67 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("func _teardown_editor_session() -> void:", plugin_source)
 		self.assertIn('LOCAL_EXTENSION_LIST_PATH := "res://.godot/extension_list.cfg"', plugin_source)
 		self.assertIn("var command_line_export := _is_command_line_export()", plugin_source)
-		self.assertIn("if not command_line_export:", plugin_source)
+		self.assertIn("if not command_line_export and editor_manifest_ready:", plugin_source)
 		self.assertIn("func _is_command_line_export() -> bool:", plugin_source)
 		self.assertIn('"--export-release", "--export-debug", "--export-pack", "--export-patch"', plugin_source)
 		self.assertIn("_ensure_local_native_extension_registered(EDITOR_EXTENSION_PATH)", plugin_source)
 		self.assertIn("ProjectSettings.globalize_path(LOCAL_EXTENSION_LIST_PATH.get_base_dir())", plugin_source)
+
+	def test_export_plugin_skips_gode_owned_npm_files_to_prevent_duplicate_export_entries(self):
+		export_source = (EXAMPLE_ROOT / "addons/gode/runtime/export_plugin.gd").read_text(encoding="utf-8")
+		export_file_body = gdscript_function_body(export_source, "_export_file")
+		generated_body = gdscript_function_body(export_source, "_is_gode_generated_export_path")
+		npm_owned_body = gdscript_function_body(export_source, "_is_npm_export_owned_path")
+		collect_body = gdscript_function_body(export_source, "_collect_npm_export_owned_paths")
+		add_file_body = gdscript_function_body(export_source, "_add_export_file")
+		add_bytes_body = gdscript_function_body(export_source, "_add_export_file_bytes")
+		npm_snapshot_body = gdscript_function_body(export_source, "_export_npm_runtime_snapshot")
+
+		self.assertIn("if _is_gode_managed_export_path(normalized):\n\t\tskip()\n\t\treturn", export_file_body)
+		self.assertLess(
+			export_file_body.index("_is_gode_managed_export_path"),
+			export_file_body.index("_is_target_native_probe_helper_path"),
+		)
+		for path in (
+			"res://.gode/build/typescript/",
+			"res://.gode/build/npm/",
+			"TYPESCRIPT_EXPORT_MANIFEST_PATH",
+			"NPM_EXPORT_MANIFEST_PATH",
+		):
+			self.assertIn(path, generated_body)
+
+		self.assertIn("npm_export_owned_exact_paths.has(path)", npm_owned_body)
+		self.assertIn("path == prefix or path.begins_with(prefix + \"/\")", npm_owned_body)
+		self.assertIn("_remember_npm_export_owned_file(manifest_path)", collect_body)
+		self.assertIn('_remember_npm_export_owned_directory("res://node_modules")', collect_body)
+		self.assertIn('_get_npm_string_array("extraIncludePaths")', collect_body)
+		self.assertIn("_remember_npm_export_owned_file(normalized)", collect_body)
+		self.assertIn("_remember_npm_export_owned_directory(normalized)", collect_body)
+
+		self.assertIn("var already_added := export_injected_path_hashes.has(normalized)", add_file_body)
+		self.assertIn("if already_added:\n\t\treturn true", add_file_body)
+		self.assertIn("export_injected_path_hashes.has(normalized)", add_bytes_body)
+		self.assertIn("Gode export would add conflicting contents for path: %s", add_bytes_body)
+		self.assertIn("add_file(normalized, bytes, false)", add_bytes_body)
+		self.assertIn("if npm_exported_files > 0:\n\t\tif not _add_npm_export_manifest():", npm_snapshot_body)
+
+	def test_export_plugin_sanitizes_stale_editor_extension_project_settings_for_export(self):
+		export_source = (EXAMPLE_ROOT / "addons/gode/runtime/export_plugin.gd").read_text(encoding="utf-8")
+		prepare_body = gdscript_function_body(export_source, "_prepare_extension_state_for_export")
+		settings_body = gdscript_function_body(export_source, "_prepare_project_extension_paths_for_export")
+		restore_body = gdscript_function_body(export_source, "_restore_extension_state_after_export")
+
+		self.assertIn("_prepare_project_extension_paths_for_export()", prepare_body)
+		self.assertIn("_prepare_local_extension_list_for_export()", prepare_body)
+		self.assertIn("_remove_legacy_editor_extension_resources()", prepare_body)
+		self.assertIn('ProjectSettings.get_setting("native_extensions/paths"', settings_body)
+		self.assertIn("_is_gode_editor_extension_path(normalized_path)", settings_body)
+		self.assertIn('ProjectSettings.set_setting("native_extensions/paths", filtered)', settings_body)
+		self.assertIn("ProjectSettings.save()", settings_body)
+		self.assertIn("_restore_local_extension_list_after_export()", restore_body)
+		self.assertIn("legacy_editor_resources_checked_for_export = false", restore_body)
+		self.assertIn("local_extension_list_checked_for_export = false", restore_body)
+		self.assertIn("native_extension_paths_checked_for_export = false", restore_body)
 
 	def test_export_plugin_filters_target_runtime_binaries_by_feature(self):
 		export_source = (EXAMPLE_ROOT / "addons/gode/runtime/export_plugin.gd").read_text(encoding="utf-8")
@@ -2183,7 +2279,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("GDE_EXPORT gode_editor_library_init", editor_source)
 
 		extension_config = (EXAMPLE_ROOT / "addons/gode/binary/gode.gdextension").read_text(encoding="utf-8")
-		editor_extension_config = (EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension").read_text(encoding="utf-8")
+		editor_extension_config = (EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension.template").read_text(encoding="utf-8")
 		self.assertIn('entry_symbol = "gode_runtime_library_init"', extension_config)
 		self.assertIn('entry_symbol = "gode_editor_library_init"', editor_extension_config)
 		self.assertIn("libgode_runtime", extension_config)
@@ -2553,14 +2649,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		missing = []
 		for manifest in (
 			EXAMPLE_ROOT / "addons/gode/binary/gode.gdextension",
-			EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension",
+			EXAMPLE_ROOT / "addons/gode/binary/gode_editor.gdextension.template",
 		):
 			text = manifest.read_text(encoding="utf-8")
 			for match in re.finditer(r'=\s*"(res://[^"]+)"', text):
 				resource_path = match.group(1)
 				if "/binary/" in resource_path and resource_path not in (
 					"res://addons/gode/binary/gode.gdextension",
-					"res://addons/gode/binary/gode_editor.gdextension",
+					"res://addons/gode/binary/gode_editor.gdextension.template",
 				):
 					continue
 				if not res_path_to_file(resource_path).exists():

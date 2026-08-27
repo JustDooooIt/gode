@@ -9,6 +9,8 @@ import stat
 import subprocess
 import sys
 import textwrap
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -30,6 +32,9 @@ TEMPLATE_SENTINELS = {
 	"linux": "linux_release.x86_64",
 	"macos": "macos.zip",
 }
+DOWNLOAD_ATTEMPTS = 5
+DOWNLOAD_TIMEOUT_SECONDS = 60
+RETRYABLE_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
 def godot_string(value):
@@ -75,11 +80,32 @@ def export_templates_root():
 	return home / ".local/share/godot/export_templates"
 
 
+def should_retry_download_error(exc):
+	if isinstance(exc, urllib.error.HTTPError):
+		return exc.code in RETRYABLE_HTTP_STATUS
+	return isinstance(exc, (TimeoutError, urllib.error.URLError, OSError))
+
+
 def download_file(url, destination):
 	print(f"[gode-npm-native-export-smoke] Downloading {url}")
 	destination.parent.mkdir(parents=True, exist_ok=True)
-	with urllib.request.urlopen(url) as response, destination.open("wb") as output:
-		shutil.copyfileobj(response, output)
+	for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+		try:
+			with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response, destination.open("wb") as output:
+				shutil.copyfileobj(response, output)
+			return
+		except Exception as exc:
+			if destination.exists():
+				destination.unlink()
+			if attempt == DOWNLOAD_ATTEMPTS or not should_retry_download_error(exc):
+				raise
+			sleep_seconds = attempt * 2
+			print(
+				f"[gode-npm-native-export-smoke] Download failed on attempt {attempt}/{DOWNLOAD_ATTEMPTS}: {exc}. "
+				f"Retrying in {sleep_seconds} seconds...",
+				file=sys.stderr,
+			)
+			time.sleep(sleep_seconds)
 
 
 def ensure_export_templates(godot, args):

@@ -80,7 +80,25 @@ if [ -z "$python_executable" ]; then
 fi
 
 printf 'Downloading libnode...\n'
-curl --fail --location --show-error "$url" --output "$archive_path"
+download_attempt=1
+max_download_attempts=5
+while true; do
+	if curl --fail --location --show-error --connect-timeout 20 "$url" --output "$archive_path"; then
+		break
+	else
+		download_status=$?
+	fi
+	rm -f "$archive_path"
+	if [ "$download_attempt" -ge "$max_download_attempts" ]; then
+		printf 'Failed to download libnode after %d attempts.\n' "$max_download_attempts" >&2
+		exit "$download_status"
+	fi
+	sleep_seconds=$((download_attempt * 2))
+	printf 'libnode download failed on attempt %d/%d. Retrying in %d seconds...\n' \
+		"$download_attempt" "$max_download_attempts" "$sleep_seconds" >&2
+	sleep "$sleep_seconds"
+	download_attempt=$((download_attempt + 1))
+done
 
 rm -rf "$extract_dir"
 mkdir -p "$extract_dir"
