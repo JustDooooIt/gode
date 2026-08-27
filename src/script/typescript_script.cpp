@@ -1981,51 +1981,33 @@ static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const s
 }
 
 static bool is_class_name_decorator(const std::string &decorator) {
-	// ClassName is declared as a decorator factory: @ClassName("GlobalName").
-	return decorator == "@ClassName" || decorator.rfind("@ClassName(", 0) == 0;
+	// ClassName is declared as a decorator factory: @ClassName().
+	return decorator == "@ClassName" || decorator == "@ClassName()";
 }
 
-static StringName global_class_name_from_decorator(TSNode decorator, const std::string &source) {
-	std::string text = node_text(source, decorator);
-	if (!is_class_name_decorator(text)) {
-		return StringName();
+static bool class_node_has_class_name_decorator(TSNode node, const std::string &source) {
+	if (ts_node_is_null(node)) {
+		return false;
 	}
-
-	for (uint32_t di = 0; di < ts_node_named_child_count(decorator); di++) {
-		TSNode expr = ts_node_named_child(decorator, di);
-		TSNode args = ts_node_child_by_field_name(expr, "arguments", 9);
-		if (ts_node_is_null(args) || ts_node_named_child_count(args) == 0) {
-			continue;
-		}
-		TSNode first_arg = unwrap_metadata_expression(ts_node_named_child(args, 0));
-		if (!ts_node_is_null(first_arg) && strcmp(ts_node_type(first_arg), "string") == 0) {
-			return StringName(strip_quotes(node_text(source, first_arg)).c_str());
-		}
-	}
-	return StringName();
-}
-
-static StringName class_name_annotation_from_class_node(TSNode class_node, const std::string &source) {
-	if (ts_node_is_null(class_node)) {
-		return StringName();
-	}
-	for (uint32_t i = 0; i < ts_node_child_count(class_node); i++) {
-		TSNode child = ts_node_child(class_node, i);
+	for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+		TSNode child = ts_node_child(node, i);
 		if (strcmp(ts_node_type(child), "decorator") != 0) {
 			continue;
 		}
-		StringName name = global_class_name_from_decorator(child, source);
-		if (!name.is_empty()) {
-			return name;
+		if (is_class_name_decorator(node_text(source, child))) {
+			return true;
 		}
 	}
-	return StringName();
+	return false;
 }
 
 static StringName global_class_name_annotation(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source) {
-	StringName name = class_name_annotation_from_class_node(class_node, source);
-	if (!name.is_empty()) {
-		return name;
+	if (ts_node_is_null(class_node)) {
+		return StringName();
+	}
+
+	if (class_node_has_class_name_decorator(class_node, source)) {
+		return class_name_from_class_node(class_node, source);
 	}
 
 	for (uint32_t i = 0; i < child_count; i++) {
@@ -2035,12 +2017,8 @@ static StringName global_class_name_annotation(TSNode root_node, uint32_t child_
 		}
 		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 			TSNode node = ts_node_child(child, j);
-			if (strcmp(ts_node_type(node), "decorator") != 0) {
-				continue;
-			}
-			StringName decorated = global_class_name_from_decorator(node, source);
-			if (!decorated.is_empty()) {
-				return decorated;
+			if (strcmp(ts_node_type(node), "decorator") == 0 && is_class_name_decorator(node_text(source, node))) {
+				return class_name_from_class_node(class_node, source);
 			}
 		}
 	}
