@@ -333,6 +333,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("node_runtime_bridge::prepare_native_addon_host();", probe_source)
 		self.assertNotIn('GetModuleHandleW(L"libnode.dll")', bridge_source)
 		self.assertNotIn("preload_node_dll_stub", header_source + bridge_source + runtime_source)
+		self.assertIn('global.Set("GlobalClass", Napi::Function::New(env, noop_decorator));', bridge_source)
 
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
 		self.assertLessEqual(len(source.splitlines()), 470)
@@ -1120,6 +1121,29 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertNotIn("ResourceLoader::get_singleton()->load", global_class_body)
 		self.assertNotIn("script->_get_global_name()", global_class_body)
 		self.assertNotIn("script->get_base_class_name()", global_class_body)
+
+	def test_typescript_decorator_metadata_is_bound_to_default_class(self):
+		language_source = (ROOT / "src/script/typescript_language.cpp").read_text(encoding="utf-8")
+		script_source = (ROOT / "src/script/typescript_script.cpp").read_text(encoding="utf-8")
+
+		for source in (language_source, script_source):
+			for token in (
+				"decorator_expression_name_matches",
+				'ts_node_child_by_field_name(expression, "function", 8)',
+				"ts_node_named_child_count(arguments) > 0",
+				"decorator_matches_name",
+				"class_node_has_decorator",
+				"export_statement_declares_class",
+				"ts_node_eq",
+				"default_class_has_decorator",
+				"!export_statement_declares_class(child, class_node)",
+				'const char *GLOBAL_CLASS_DECORATORS[] = { "GlobalClass" }',
+				'const char *TOOL_DECORATORS[] = { "Tool", "tool" }',
+			):
+				self.assertIn(token, source)
+			self.assertNotIn("ClassName", source)
+			self.assertNotIn("is_class_name_decorator_text", source)
+			self.assertNotIn("class_node_has_class_name_decorator", source)
 
 	def test_typescript_builtin_template_entries_include_godot_required_fields(self):
 		source = (ROOT / "src/script/typescript_language.cpp").read_text(encoding="utf-8")
@@ -3324,7 +3348,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("  type float = number;", globals_dts)
 		self.assertNotIn("type int = number;\n", globals_dts)
 		self.assertIn("  function Signal(...args: any[]): any;", globals_dts)
-		self.assertIn("  function Tool(...args: any[]): any;", globals_dts)
+		self.assertIn("  function Tool(target: object): void;", globals_dts)
+		self.assertIn("  function Tool(): any;", globals_dts)
+		self.assertIn("  function GlobalClass(target: object): void;", globals_dts)
+		self.assertIn("  function GlobalClass(): any;", globals_dts)
+		self.assertNotIn("ClassName", globals_dts)
 		self.assertNotIn("GodotModule.", globals_dts)
 		self.assertNotIn("const enum", godot_dts)
 		self.assertIn("    export enum VariantType {", godot_dts)

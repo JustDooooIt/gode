@@ -403,6 +403,53 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 			"""
 		)
 
+	def test_global_class_and_tool_decorator_typings_match_class_usage(self):
+		self.run_compiler_fixture(
+			r"""
+			const globalsDts = fs.readFileSync(`${projectRoot}/example/addons/gode/types/globals.d.ts`, "utf8");
+			const tsconfig = {
+				compilerOptions: {
+					target: "ES2022",
+					module: "ESNext",
+					moduleResolution: "Bundler",
+					strict: true,
+					isolatedModules: true,
+					experimentalDecorators: true,
+					types: []
+				},
+				include: ["addons/gode/types/**/*.d.ts", "scripts/**/*.ts"]
+			};
+
+			const baseFiles = [
+				["res://tsconfig.json", JSON.stringify(tsconfig)],
+				["res://addons/gode/types/globals.d.ts", globalsDts],
+				["res://addons/gode/types/godot.d.ts", "declare module 'godot' { export class Node3D {} export type VariantArgument = unknown; }\n"]
+			];
+
+			const ok = runCompiler(new Map([
+				...baseFiles,
+				["res://scripts/ok.ts", "import { Node3D } from 'godot';\n@GlobalClass\nexport default class EnemySpawner extends Node3D {}\n@GlobalClass()\nexport class NamedSpawner extends Node3D {}\n@Tool\nexport class ToolScript extends Node3D {}\n@Tool()\nexport class ToolScriptFactory extends Node3D {}\n"]
+			]));
+			assertOk(ok);
+
+			const methodMisuse = runCompiler(new Map([
+				...baseFiles,
+				["res://scripts/bad_method.ts", "class Bad { @GlobalClass method(): void {} }\n"]
+			]));
+			if (methodMisuse.ok) {
+				throw new Error("@GlobalClass should not type-check on methods");
+			}
+
+			const argsMisuse = runCompiler(new Map([
+				...baseFiles,
+				["res://scripts/bad_args.ts", "import { Node3D } from 'godot';\n@Tool('unsupported')\nexport class BadTool extends Node3D {}\n"]
+			]));
+			if (argsMisuse.ok) {
+				throw new Error("@Tool should not type-check with arguments");
+			}
+			"""
+		)
+
 
 if __name__ == "__main__":
 	unittest.main()

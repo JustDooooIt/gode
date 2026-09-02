@@ -5,6 +5,20 @@ description: Declare Godot-visible metadata on TypeScript classes for Inspector 
 
 Gode reads static metadata from the exported TypeScript class and reports it through Godot's script metadata APIs. This is how TypeScript scripts expose Inspector properties, custom signals, tool behavior, and RPC configuration.
 
+## Global class names
+
+Use `@GlobalClass` on the default exported class when the script should appear as a Godot global class:
+
+```ts
+import { Node3D } from "godot";
+
+@GlobalClass
+export default class EnemySpawner extends Node3D {
+}
+```
+
+The global class name is the TypeScript class name. Keep the decorator on the default export; decorators on helper classes in the same file are ignored.
+
 ## Exported properties
 
 Use `static exports` to expose fields to the Godot Inspector:
