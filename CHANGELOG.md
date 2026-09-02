@@ -1,3 +1,8 @@
+## 2.4.3
+
+- Added `@GlobalClass` for TypeScript scripts, matching Godot C# global class naming.
+- Fixed global/tool decorator metadata handling so helper classes in the same file no longer affect the exported script.
+
 ## 2.4.2
 
 - Fixed non-desktop exports and npm snapshot packaging edge cases.

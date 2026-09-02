@@ -5,6 +5,20 @@ description: 在 TypeScript 类上声明 Godot 可见元数据，用于 Inspecto
 
 Gode 会读取导出 TypeScript 类上的静态元数据，并通过 Godot 脚本元数据 API 暴露给引擎。这是 TypeScript 脚本提供 Inspector 属性、自定义信号、tool 行为和 RPC 配置的方式。
 
+## 全局类名
+
+脚本需要作为 Godot 全局类出现时，在默认导出的类上使用 `@GlobalClass`：
+
+```ts
+import { Node3D } from "godot";
+
+@GlobalClass
+export default class EnemySpawner extends Node3D {
+}
+```
+
+全局类名直接使用 TypeScript 类名。装饰器应放在 default export 上；同文件中辅助类上的装饰器会被忽略。
+
 ## 导出属性
 
 使用 `static exports` 将字段暴露到 Godot Inspector：
