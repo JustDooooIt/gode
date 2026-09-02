@@ -1915,23 +1915,86 @@ static TSNode find_default_class(TSNode root_node, uint32_t child_count, const s
 	return find_class_declaration_by_name(root_node, child_count, source, exported_class_name);
 }
 
-static bool is_tool_decorator(const std::string &decorator) {
-	// Tool is declared as a decorator factory in the TypeScript definitions.
-	return decorator == "@Tool" || decorator == "@tool" || decorator == "@Tool()" || decorator == "@tool()";
+static bool decorator_expression_name_matches(TSNode expression, const std::string &source, const char *const *names, size_t name_count) {
+	if (ts_node_is_null(expression)) {
+		return false;
+	}
+
+	const char *node_type = ts_node_type(expression);
+	if (strcmp(node_type, "identifier") == 0) {
+		std::string name = node_text(source, expression);
+		for (size_t i = 0; i < name_count; i++) {
+			if (name == names[i]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	if (strcmp(node_type, "parenthesized_expression") == 0) {
+		return decorator_expression_name_matches(ts_node_named_child(expression, 0), source, names, name_count);
+	}
+
+	if (strcmp(node_type, "call_expression") == 0) {
+		TSNode arguments = ts_node_child_by_field_name(expression, "arguments", 9);
+		if (!ts_node_is_null(arguments) && ts_node_named_child_count(arguments) > 0) {
+			return false;
+		}
+		TSNode function = ts_node_child_by_field_name(expression, "function", 8);
+		return decorator_expression_name_matches(function, source, names, name_count);
+	}
+
+	return false;
 }
 
-static bool class_has_tool_decorator(TSNode class_node, const std::string &source) {
+static bool decorator_matches_name(TSNode decorator, const std::string &source, const char *const *names, size_t name_count) {
+	return !ts_node_is_null(decorator) &&
+			strcmp(ts_node_type(decorator), "decorator") == 0 &&
+			decorator_expression_name_matches(ts_node_named_child(decorator, 0), source, names, name_count);
+}
+
+static bool class_node_has_decorator(TSNode class_node, const std::string &source, const char *const *names, size_t name_count) {
 	if (ts_node_is_null(class_node)) {
 		return false;
 	}
 	for (uint32_t i = 0; i < ts_node_child_count(class_node); i++) {
-		TSNode child = ts_node_child(class_node, i);
-		if (strcmp(ts_node_type(child), "decorator") != 0) {
+		if (decorator_matches_name(ts_node_child(class_node, i), source, names, name_count)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool export_statement_declares_class(TSNode export_statement, TSNode class_node) {
+	if (ts_node_is_null(export_statement) || ts_node_is_null(class_node)) {
+		return false;
+	}
+	TSNode declaration = ts_node_child_by_field_name(export_statement, "declaration", 11);
+	if (ts_node_eq(declaration, class_node)) {
+		return true;
+	}
+	for (uint32_t i = 0; i < ts_node_child_count(export_statement); i++) {
+		if (ts_node_eq(ts_node_child(export_statement, i), class_node)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool default_class_has_decorator(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source, const char *const *names, size_t name_count) {
+	if (class_node_has_decorator(class_node, source, names, name_count)) {
+		return true;
+	}
+
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(root_node, i);
+		if (strcmp(ts_node_type(child), "export_statement") != 0 || !export_statement_declares_class(child, class_node)) {
 			continue;
 		}
-		std::string decorator = node_text(source, child);
-		if (is_tool_decorator(decorator)) {
-			return true;
+		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+			if (decorator_matches_name(ts_node_child(child, j), source, names, name_count)) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -1939,90 +2002,16 @@ static bool class_has_tool_decorator(TSNode class_node, const std::string &sourc
 
 // Check whether the default export class has an @Tool decorator. Runtime decorators are no-ops, so this is parsed statically with tree-sitter.
 static bool check_tool_decorator(TSNode root_node, uint32_t child_count, const std::string &source) {
-	if (class_has_tool_decorator(find_default_class(root_node, child_count, source), source)) {
-		return true;
-	}
-
-	for (uint32_t i = 0; i < child_count; i++) {
-		TSNode child = ts_node_child(root_node, i);
-		if (strcmp(ts_node_type(child), "export_statement") != 0) {
-			continue;
-		}
-
-		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
-			TSNode en = ts_node_child(child, j);
-			const char *en_type = ts_node_type(en);
-			// The decorator is attached to the export_statement.
-			if (strcmp(en_type, "decorator") == 0) {
-				uint32_t ds = ts_node_start_byte(en);
-				uint32_t de = ts_node_end_byte(en);
-				std::string deco = source.substr(ds, de - ds);
-				if (is_tool_decorator(deco)) {
-					return true;
-				}
-			}
-			// The decorator is attached inside the class_declaration.
-			if (strcmp(en_type, "class_declaration") == 0) {
-				for (uint32_t k = 0; k < ts_node_child_count(en); k++) {
-					TSNode cn = ts_node_child(en, k);
-					if (strcmp(ts_node_type(cn), "decorator") == 0) {
-						uint32_t ds = ts_node_start_byte(cn);
-						uint32_t de = ts_node_end_byte(cn);
-						std::string deco = source.substr(ds, de - ds);
-						if (is_tool_decorator(deco)) {
-							return true;
-						}
-					}
-				}
-			}
-		}
-	}
-	return false;
-}
-
-static bool is_class_name_decorator(const std::string &decorator) {
-	// ClassName is declared as a decorator factory: @ClassName().
-	return decorator == "@ClassName" || decorator == "@ClassName()";
-}
-
-static bool class_node_has_class_name_decorator(TSNode node, const std::string &source) {
-	if (ts_node_is_null(node)) {
-		return false;
-	}
-	for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
-		TSNode child = ts_node_child(node, i);
-		if (strcmp(ts_node_type(child), "decorator") != 0) {
-			continue;
-		}
-		if (is_class_name_decorator(node_text(source, child))) {
-			return true;
-		}
-	}
-	return false;
+	static constexpr const char *TOOL_DECORATORS[] = { "Tool", "tool" };
+	return default_class_has_decorator(root_node, child_count, find_default_class(root_node, child_count, source), source, TOOL_DECORATORS, sizeof(TOOL_DECORATORS) / sizeof(TOOL_DECORATORS[0]));
 }
 
 static StringName global_class_name_annotation(TSNode root_node, uint32_t child_count, TSNode class_node, const std::string &source) {
-	if (ts_node_is_null(class_node)) {
+	static constexpr const char *GLOBAL_CLASS_DECORATORS[] = { "GlobalClass" };
+	if (!default_class_has_decorator(root_node, child_count, class_node, source, GLOBAL_CLASS_DECORATORS, sizeof(GLOBAL_CLASS_DECORATORS) / sizeof(GLOBAL_CLASS_DECORATORS[0]))) {
 		return StringName();
 	}
-
-	if (class_node_has_class_name_decorator(class_node, source)) {
-		return class_name_from_class_node(class_node, source);
-	}
-
-	for (uint32_t i = 0; i < child_count; i++) {
-		TSNode child = ts_node_child(root_node, i);
-		if (strcmp(ts_node_type(child), "export_statement") != 0) {
-			continue;
-		}
-		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
-			TSNode node = ts_node_child(child, j);
-			if (strcmp(ts_node_type(node), "decorator") == 0 && is_class_name_decorator(node_text(source, node))) {
-				return class_name_from_class_node(class_node, source);
-			}
-		}
-	}
-	return StringName();
+	return class_name_from_class_node(class_node, source);
 }
 
 static void parse_class_metadata(TSNode class_node, const std::string &source, StringName &class_name, StringName &base_class_name) {

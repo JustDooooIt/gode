@@ -501,6 +501,7 @@ void install_global_decorators(Napi::Env env) {
 	global.Set("Export", Napi::Function::New(env, noop_decorator));
 	global.Set("Signal", Napi::Function::New(env, noop_decorator));
 	global.Set("Tool", Napi::Function::New(env, noop_decorator));
+	global.Set("GlobalClass", Napi::Function::New(env, noop_decorator));
 }
 
 } // namespace gode::node_runtime_bridge
