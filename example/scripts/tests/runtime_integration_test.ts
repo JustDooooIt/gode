@@ -38,6 +38,9 @@ const RUNTIME_ARRAY_RESOURCE_SCRIPT_PATH = "res://scripts/tests/runtime_array_re
 interface RuntimeExportInterfaceArrayElement {
 	label: string;
 	amount: number;
+	enabled: boolean;
+	tags: string[];
+	metadata: Record<string, number>;
 }
 
 function assert(condition: boolean, message: string): void {

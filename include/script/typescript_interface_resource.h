@@ -23,6 +23,7 @@ class TypeScriptInterfaceResource : public godot::Resource {
 	godot::Vector<godot::PropertyInfo> fields;
 	godot::HashMap<godot::StringName, godot::StringName> nested_interfaces;
 	godot::HashMap<godot::StringName, godot::StringName> nested_interface_arrays;
+	godot::HashMap<godot::StringName, godot::Variant> default_values;
 	godot::HashMap<godot::StringName, godot::Variant> values;
 
 	void apply_schema();

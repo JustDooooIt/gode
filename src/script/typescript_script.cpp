@@ -2106,35 +2106,6 @@ static void expand_interface_fields(
 	visited.erase(iface_name);
 }
 
-static void expand_interfaces_fields(
-		const StringName &iface_name,
-		const std::string &prefix,
-		int depth,
-		HashSet<StringName> &visited,
-		const HashMap<StringName, Vector<PropertyInfo>> &interfaces,
-		HashMap<StringName, PropertyInfo> &properties,
-		Vector<PropertyInfo> &property_list) {
-	if (visited.has(iface_name)) {
-		return;
-	}
-	visited.insert(iface_name);
-
-	for (const PropertyInfo &field : interfaces[iface_name]) {
-		std::string field_prefix = prefix + String(field.name).utf8().get_data();
-		StringName nested_iface(field.class_name);
-		if (!nested_iface.is_empty() && interfaces.has(nested_iface)) {
-			expand_interfaces_fields(nested_iface, field_prefix + "::", depth + 1, visited, interfaces, properties, property_list);
-			continue;
-		}
-		PropertyInfo expanded = field;
-		expanded.name = StringName(field_prefix.c_str());
-		properties[expanded.name] = expanded;
-		property_list.push_back(expanded);
-	}
-
-	visited.erase(iface_name);
-}
-
 static void parse_signal_params(TSNode func_type_node, const std::string &source, MethodInfo &mi) {
 	// func_type_node is the function_type node: (params) => void.
 	if (strcmp(ts_node_type(func_type_node), "function_type") != 0) {

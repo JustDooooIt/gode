@@ -39,6 +39,53 @@ static std::string interface_array_element(const StringName &class_name) {
 	return {};
 }
 
+static Variant default_value_for_type(Variant::Type type) {
+	switch (type) {
+		case Variant::BOOL: return false;
+		case Variant::INT: return int64_t(0);
+		case Variant::FLOAT: return 0.0;
+		case Variant::STRING: return String();
+		case Variant::VECTOR2: return Vector2();
+		case Variant::VECTOR2I: return Vector2i();
+		case Variant::RECT2: return Rect2();
+		case Variant::RECT2I: return Rect2i();
+		case Variant::VECTOR3: return Vector3();
+		case Variant::VECTOR3I: return Vector3i();
+		case Variant::TRANSFORM2D: return Transform2D();
+		case Variant::VECTOR4: return Vector4();
+		case Variant::VECTOR4I: return Vector4i();
+		case Variant::PLANE: return Plane();
+		case Variant::QUATERNION: return Quaternion();
+		case Variant::AABB: return AABB();
+		case Variant::BASIS: return Basis();
+		case Variant::TRANSFORM3D: return Transform3D();
+		case Variant::PROJECTION: return Projection();
+		case Variant::COLOR: return Color();
+		case Variant::STRING_NAME: return StringName();
+		case Variant::NODE_PATH: return NodePath();
+		case Variant::RID: return RID();
+		case Variant::CALLABLE: return Callable();
+		case Variant::SIGNAL: return Signal();
+		case Variant::DICTIONARY: return Dictionary();
+		case Variant::ARRAY: return Array();
+		case Variant::PACKED_BYTE_ARRAY: return PackedByteArray();
+		case Variant::PACKED_INT32_ARRAY: return PackedInt32Array();
+		case Variant::PACKED_INT64_ARRAY: return PackedInt64Array();
+		case Variant::PACKED_FLOAT32_ARRAY: return PackedFloat32Array();
+		case Variant::PACKED_FLOAT64_ARRAY: return PackedFloat64Array();
+		case Variant::PACKED_STRING_ARRAY: return PackedStringArray();
+		case Variant::PACKED_VECTOR2_ARRAY: return PackedVector2Array();
+		case Variant::PACKED_VECTOR3_ARRAY: return PackedVector3Array();
+		case Variant::PACKED_COLOR_ARRAY: return PackedColorArray();
+		case Variant::PACKED_VECTOR4_ARRAY: return PackedVector4Array();
+		case Variant::NIL:
+		case Variant::OBJECT:
+		case Variant::VARIANT_MAX:
+			return Variant();
+	}
+	return Variant();
+}
+
 } // namespace
 
 HashMap<StringName, TypeScriptInterfaceResource::Schema> TypeScriptInterfaceResource::schemas;
@@ -69,6 +116,7 @@ void TypeScriptInterfaceResource::apply_schema() {
 	fields.clear();
 	nested_interfaces.clear();
 	nested_interface_arrays.clear();
+	default_values.clear();
 
 	const Schema *schema = schemas.getptr(schema_id);
 	if (!schema || !schema->interfaces.has(schema->interface_name)) {
@@ -99,6 +147,7 @@ void TypeScriptInterfaceResource::apply_schema() {
 			field.class_name = StringName();
 		}
 		fields.push_back(field);
+		default_values[field.name] = default_value_for_type(field.type);
 	}
 }
 
@@ -155,11 +204,9 @@ bool TypeScriptInterfaceResource::_get(const StringName &p_name, Variant &r_valu
 		r_value = values[p_name];
 		return true;
 	}
-	for (const PropertyInfo &field : fields) {
-		if (field.name == p_name) {
-			r_value = Variant();
-			return true;
-		}
+	if (default_values.has(p_name)) {
+		r_value = default_values[p_name];
+		return true;
 	}
 	return false;
 }
