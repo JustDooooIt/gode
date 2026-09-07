@@ -1324,7 +1324,7 @@ static ExportObjectResolution resolve_typescript_object_kind(
 		}
 	}
 
-	else if (!ts_node_is_null(class_node)) {
+	if (!ts_node_is_null(class_node)) {
 		StringName resolved_class_name = class_name_from_class_node(class_node, next_source);
 		if (resolved_class_name.is_empty()) {
 			resolved_class_name = lookup_class_name;
@@ -2736,6 +2736,10 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 			finalize_explicit_object_hint(pi);
 
 			StringName iface_key(type_str.c_str());
+			StringName interface_array_key;
+			if (type_str.size() > 2 && type_str.compare(type_str.size() - 2, 2, "[]") == 0) {
+				interface_array_key = StringName(type_str.substr(0, type_str.size() - 2).c_str());
+			}
 			if (!type_str.empty() && interfaces.has(iface_key)) {
 				std::string prefix = String(field_name).utf8().get_data() + std::string("::");
 				HashSet<StringName> visited;
@@ -2745,25 +2749,22 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 				if (!ts_node_is_null(default_object_node) && strcmp(ts_node_type(default_object_node), "object") == 0) {
 					parse_object_defaults(default_object_node, source, prefix, property_defaults);
 				}
-			} else if (!type_str.empty() && iface_key.contains("[]")) {
-				StringName inner_type = iface_key.substr(0, iface_key.length() - 2);
-				if (interfaces.has(inner_type)) {
-					const StringName schema_id(String(file_path) + "::" + String(inner_type));
-					// The container remains a regular Godot Array. Its typed element is a
-					// Resource whose dynamic property list is populated from the interface.
-					pi.type = Variant::ARRAY;
-					pi.hint = PROPERTY_HINT_ARRAY_TYPE;
-					pi.hint_string = String::num_int64(Variant::OBJECT) + "/" + String::num_int64(PROPERTY_HINT_RESOURCE_TYPE) + ":" + String(TypeScriptInterfaceResource::get_class_static());
-					pi.class_name = StringName();
-					interface_array_schemas[field_name] = schema_id;
-					TypeScriptInterfaceResource::register_schema(schema_id, inner_type, interfaces);
-					properties[field_name] = pi;
-					property_list.push_back(pi);
-					if (!ts_node_is_null(field_value_node)) {
-						Variant default_value;
-						if (parse_default_value(field_value_node, source, pi.type, default_value)) {
-							property_defaults[field_name] = default_value;
-						}
+			} else if (!interface_array_key.is_empty() && interfaces.has(interface_array_key)) {
+				const StringName schema_id(String(file_path) + "::" + String(interface_array_key));
+				// The container remains a regular Godot Array. Its typed element is a
+				// Resource whose dynamic property list is populated from the interface.
+				pi.type = Variant::ARRAY;
+				pi.hint = PROPERTY_HINT_ARRAY_TYPE;
+				pi.hint_string = String::num_int64(Variant::OBJECT) + "/" + String::num_int64(PROPERTY_HINT_RESOURCE_TYPE) + ":" + String(TypeScriptInterfaceResource::get_class_static());
+				pi.class_name = StringName();
+				interface_array_schemas[field_name] = schema_id;
+				TypeScriptInterfaceResource::register_schema(schema_id, interface_array_key, interfaces);
+				properties[field_name] = pi;
+				property_list.push_back(pi);
+				if (!ts_node_is_null(field_value_node)) {
+					Variant default_value;
+					if (parse_default_value(field_value_node, source, pi.type, default_value)) {
+						property_defaults[field_name] = default_value;
 					}
 				}
 			} else {
