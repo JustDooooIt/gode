@@ -1,4 +1,29 @@
-import { GDDictionary, Node, type VariantArgument, Vector3 } from "godot";
+import { GDDictionary, Node, Signal, type VariantArgument, Vector3 } from "godot";
+
+function verifyTypedSignalDeclarations(signal: Signal<(message: string, count: number) => void>): void {
+	signal.connect((message, count) => void `${message}:${count}`);
+	signal.disconnect((message, count) => void `${message}:${count}`);
+	signal.is_connected((message, count) => void `${message}:${count}`);
+	signal.emit("ready", 1);
+	// @ts-expect-error Typed signals reject arguments in the wrong order.
+	signal.emit(1, "ready");
+	// @ts-expect-error Typed signals reject callbacks with incompatible parameters.
+	signal.connect((message: number) => void message);
+}
+
+void verifyTypedSignalDeclarations;
+
+function verifyGeneratedGodotSignalDeclarations(node: Node): void {
+	node.ready.connect(() => undefined);
+	node.ready.emit();
+	node.child_entered_tree.connect(child => void child.get_name());
+	// @ts-expect-error Node.ready has no signal arguments.
+	node.ready.emit("unexpected");
+	// @ts-expect-error child_entered_tree provides a Node, not a string.
+	node.child_entered_tree.connect((child: string) => void child);
+}
+
+void verifyGeneratedGodotSignalDeclarations;
 
 function assert(condition: boolean, message: string): void {
 	if (!condition) {
@@ -30,6 +55,10 @@ function dictionaryValue(container: VariantArgument, key: string): VariantArgume
 }
 
 export default class SignalTest extends Node {
+	static constructor_owner_id: number | bigint = 0;
+
+	typed_completed!: Signal<(message: string, count: number) => void>;
+
 	static signals = {
 		completed: [{ name: "payload", type: "Object" }],
 		test_finished: [
@@ -50,13 +79,28 @@ export default class SignalTest extends Node {
 	threshold = 3 as const;
 	spawn_offset = new Vector3(1, 2, 3) as Vector3;
 
+	constructor() {
+		// Deliberately do not forward Gode's internal owner argument. ScriptInstance
+		// must still bind this wrapper to the Godot object that owns the script.
+		super();
+		SignalTest.constructor_owner_id = this.get_instance_id();
+	}
+
 	run_test() {
 		void this.run();
 	}
 
 	async run() {
 		try {
+			assert(SignalTest.constructor_owner_id === this.get_instance_id(), "explicit super() created a second Godot object");
 			assert(this.has_signal("completed"), "static signal metadata was not registered");
+			assert(this.has_signal("typed_completed"), "Signal<T> field annotation was not registered");
+			let typedSignalPayload = "";
+			this.typed_completed.connect((message, count) => {
+				typedSignalPayload = `${message}:${count}`;
+			});
+			this.typed_completed.emit("ready", 2);
+			assert(typedSignalPayload === "ready:2", "Signal<T> field was not bound to the runtime Godot signal");
 			assert(this.threshold === 3, "exported scalar default was not applied");
 			assert(this.spawn_offset.x === 1 && this.spawn_offset.y === 2 && this.spawn_offset.z === 3, "exported Vector3 default was not applied");
 			const propertyList = this.get_property_list() as Array<{ name: VariantArgument; hint?: VariantArgument; hint_string?: VariantArgument }>;

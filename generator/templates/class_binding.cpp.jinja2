@@ -182,7 +182,16 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 }
 
 	{{ class_name }}Binding::{{ class_name }}Binding(const Napi::CallbackInfo& info) : Napi::ObjectWrap<{{ class_name }}Binding>(info) {
-	    if (info.Length() == 1 && info[0].IsExternal()) {
+	    godot::Object *script_owner = gode::consume_script_instance_owner();
+	    if (script_owner) {
+	        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(script_owner);
+	        if (!instance) {
+	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} script owner is not compatible with {{ js_class_name }}").ThrowAsJavaScriptException();
+	            owns_instance = false;
+	            return;
+	        }
+	        owns_instance = false;
+	    } else if (info.Length() == 1 && info[0].IsExternal()) {
 	        instance = info[0].As<Napi::External<godot::{{ godot_class_name }}>>().Data();
 	        owns_instance = false;
 	    } else if (info.Length() == 1 && info[0].IsObject()) {

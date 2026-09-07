@@ -588,6 +588,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		constructor_load = constructor_body.index("if (!script->ensure_default_class_loaded())")
 		constructor_locker = constructor_body.index("v8::Locker locker(NodeRuntime::isolate);")
 		self.assertLess(constructor_load, constructor_locker)
+		self.assertIn("ScriptInstanceOwnerScope owner_scope(owner);", constructor_body)
+		self.assertNotIn("register_godot_instance(owner, instance);", constructor_body)
+		self.assertIn('bind_script_signals_to_instance(instance, "JS script constructor")', constructor_body)
 
 		reload_body = source_between("void ScriptInstance::reload", "bool ScriptInstance::set")
 		reload_lockers = [match.start() for match in re.finditer(r"v8::Locker locker\(NodeRuntime::isolate\);", reload_body)]
@@ -595,6 +598,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		reload_load = reload_body.index("if (!script->ensure_default_class_loaded())")
 		self.assertLess(reload_lockers[0], reload_load)
 		self.assertLess(reload_load, reload_lockers[1])
+		self.assertIn("ScriptInstanceOwnerScope owner_scope(owner);", reload_body)
+		self.assertNotIn("register_godot_instance(owner, instance);", reload_body)
+		self.assertIn('bind_script_signals_to_instance(instance, "JS script reload constructor")', reload_body)
 
 	def test_script_v8_scopes_do_not_call_compiling_metadata_apis(self):
 		risky_calls = (
@@ -864,6 +870,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("NodeRuntime::is_running()", source)
 		self.assertIn("object_cache[id] = Napi::Weak(js_obj);", source)
 		self.assertNotIn("object_cache[id] = Napi::Persistent(js_obj);", source)
+		self.assertIn("static thread_local godot::Object *script_instance_owner", source)
+		self.assertIn("godot::Object *consume_script_instance_owner()", source)
 		self.assertIn("ref.SuppressDestruct();", source)
 		self.assertNotIn("entry.second.Reset();", source)
 
@@ -1400,7 +1408,15 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('import("./signal_test" + suffix)', dependency_scan_test)
 
 		signal_test = (ROOT / "example/scripts/tests/signal_test.ts").read_text(encoding="utf-8")
-		self.assertIn('import { GDDictionary, Node, type VariantArgument, Vector3 } from "godot";', signal_test)
+		self.assertIn('import { GDDictionary, Node, Signal, type VariantArgument, Vector3 } from "godot";', signal_test)
+		self.assertIn('Signal<(message: string, count: number) => void>', signal_test)
+		self.assertIn('typed_completed!: Signal<(message: string, count: number) => void>;', signal_test)
+		self.assertIn("constructor() {", signal_test)
+		self.assertIn("super();", signal_test)
+		self.assertIn("SignalTest.constructor_owner_id = this.get_instance_id();", signal_test)
+		self.assertIn('SignalTest.constructor_owner_id === this.get_instance_id()', signal_test)
+		self.assertIn('this.typed_completed.connect((message, count) => {', signal_test)
+		self.assertIn('this.typed_completed.emit("ready", 2);', signal_test)
 		self.assertIn("function dictionaryValue(container: VariantArgument, key: string): VariantArgument", signal_test)
 		self.assertIn("static signals = {", signal_test)
 		self.assertIn("} as const;", signal_test)
@@ -2461,6 +2477,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			self.assertIn(token, value_convert)
 
 		for token in (
+			"godot::Object *script_owner = gode::consume_script_instance_owner();",
+			"script owner is not compatible with",
 			"constructor expected a Godot object wrapper",
 			"constructor expected an object compatible with",
 			"constructor expected no arguments",
@@ -3037,7 +3055,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 					mismatches.append(f"{class_name}.{signal_name} missing Godot Signal wrapper")
 				if f"signal_{signal_name}(const Napi::CallbackInfo& info)" not in header:
 					mismatches.append(f"{class_name}.{signal_name} missing header declaration")
-				if re.search(rf"^\s+{re.escape(signal_name)}: Signal;", body, re.MULTILINE) is None:
+				if re.search(rf"^\s+{re.escape(signal_name)}: Signal<\(.*\) => void>;", body, re.MULTILINE) is None:
 					mismatches.append(f"{class_name}.{signal_name} missing dts declaration")
 
 		self.assertEqual([], mismatches)
@@ -3253,7 +3271,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("type_convert(variant: VariantArgument, type: VariantType): VariantArgument;", godot_dts)
 		self.assertNotIn("typeof_gd(", godot_dts)
 		self.assertIn("add(right: Vector2i): Vector2i;", godot_dts)
-		self.assertIn("multiply(right: number | bigint): Vector2i;", godot_dts)
+		self.assertIn("multiply(right: bigint): Vector2i;", godot_dts)
+		self.assertIn("multiply(right: number): Vector2;", godot_dts)
 		self.assertNotIn("'NodePath':   'string'", dts_generator)
 		self.assertIn("if type_str == 'NodePath':", dts_generator)
 		self.assertIn("return 'NodePath | string' if is_input else 'NodePath'", dts_generator)
@@ -3320,6 +3339,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("export class GDDictionary<K extends VariantArgument = VariantArgument, V extends VariantArgument = VariantArgument>", godot_dts)
 		self.assertIn("constructor(from_gd: GDDictionary<K, V> | { [key: string]: V } | Map<K, V>);", godot_dts)
 		self.assertIn("export class GDArray<T extends VariantArgument = VariantArgument>", godot_dts)
+		self.assertIn("export class Signal<T extends (...args: any[]) => void = (...args: VariantArgument[]) => void>", godot_dts)
+		self.assertIn("connect(callable: Callable | T, flags?: number | bigint): number | bigint;", godot_dts)
+		self.assertIn("emit(...args: Parameters<T>): void;", godot_dts)
+		self.assertIn("ready: Signal<() => void>;", godot_dts)
+		self.assertIn("child_entered_tree: Signal<(node: Node) => void>;", godot_dts)
 		self.assertIn("get(index: number | bigint): T;", godot_dts)
 		self.assertIn("count: number | bigint", godot_dts)
 		self.assertNotIn("  const Color: typeof GodotModule.Color;", globals_dts)

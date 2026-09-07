@@ -11,6 +11,7 @@
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/signal.hpp>
 
 using namespace godot;
 
@@ -86,6 +87,46 @@ void ScriptInstance::store_property_value_for_lifetime(const StringName &p_name,
 	}
 }
 
+void ScriptInstance::register_script_signals() {
+	if (!script.is_valid() || owner == nullptr) {
+		return;
+	}
+
+	for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
+		if (owner->has_user_signal(E.key)) {
+			continue;
+		}
+		Array args;
+		for (const PropertyInfo &arg : E.value.arguments) {
+			Dictionary d;
+			d["name"] = String(arg.name);
+			d["type"] = (int)arg.type;
+			args.push_back(d);
+		}
+		owner->add_user_signal(E.key, args);
+	}
+}
+
+bool ScriptInstance::bind_script_signals_to_instance(const Napi::Object &p_instance, const std::string &p_context) {
+	if (!script.is_valid() || owner == nullptr) {
+		return false;
+	}
+
+	Napi::Env env = p_instance.Env();
+	for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
+		const std::string signal_name = String(E.key).utf8().get_data();
+		Napi::Value signal_value = godot_to_napi(env, Variant(Signal(owner, E.key)));
+		if (log_and_clear_pending_js_exception(env, p_context + " signal conversion " + signal_name)) {
+			return false;
+		}
+		p_instance.Set(signal_name, signal_value);
+		if (log_and_clear_pending_js_exception(env, p_context + " signal binding " + signal_name)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_owner, bool p_placeholder) :
 		script(p_script),
 		owner(p_owner),
@@ -97,21 +138,6 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 
 		if (!script->compile()) {
 			return;
-		}
-
-		// Register signals before creating the runtime module instance.
-		for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
-			if (owner->has_user_signal(E.key)) {
-				continue;
-			}
-			Array args;
-			for (const PropertyInfo &arg : E.value.arguments) {
-				Dictionary d;
-				d["name"] = String(arg.name);
-				d["type"] = (int)arg.type;
-				args.push_back(d);
-			}
-			owner->add_user_signal(E.key, args);
 		}
 
 		// This can compile TypeScript; keep it outside the instance V8 scope to avoid lock inversion.
@@ -135,8 +161,14 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 		Napi::Value external_owner = Napi::External<godot::Object>::New(env, owner);
 		Napi::Object instance;
 		try {
-			instance = default_class.New({ external_owner });
+			{
+				ScriptInstanceOwnerScope owner_scope(owner);
+				instance = default_class.New({ external_owner });
+			}
 			if (log_and_clear_pending_js_exception(env, "JS script constructor")) {
+				return;
+			}
+			if (!bind_script_signals_to_instance(instance, "JS script constructor")) {
 				return;
 			}
 		} catch (const Napi::Error &e) {
@@ -149,6 +181,9 @@ ScriptInstance::ScriptInstance(const Ref<TypeScriptScript> &p_script, Object *p_
 			UtilityFunctions::printerr("Unknown exception in JS script constructor");
 			return;
 		}
+
+		// Register signals before creating the runtime module instance.
+		register_script_signals();
 
 		js_instance = Napi::Persistent(instance);
 	}
@@ -201,19 +236,7 @@ void ScriptInstance::reload(bool p_keep_state) {
 	script->compile();
 
 	// Register new signals during reload and skip existing ones to avoid duplicate registration errors.
-	for (const KeyValue<StringName, MethodInfo> &E : script->signals) {
-		if (owner->has_user_signal(E.key)) {
-			continue;
-		}
-		Array args;
-		for (const PropertyInfo &arg : E.value.arguments) {
-			Dictionary d;
-			d["name"] = String(arg.name);
-			d["type"] = (int)arg.type;
-			args.push_back(d);
-		}
-		owner->add_user_signal(E.key, args);
-	}
+	register_script_signals();
 
 	if (!NodeRuntime::is_running()) {
 		NodeRuntime::init_once();
@@ -265,8 +288,14 @@ void ScriptInstance::reload(bool p_keep_state) {
 	Napi::Value external_owner = Napi::External<Object>::New(env, owner);
 	Napi::Object instance;
 	try {
-		instance = default_class.New({ external_owner });
+		{
+			ScriptInstanceOwnerScope owner_scope(owner);
+			instance = default_class.New({ external_owner });
+		}
 		if (log_and_clear_pending_js_exception(env, "JS script reload constructor")) {
+			return;
+		}
+		if (!bind_script_signals_to_instance(instance, "JS script reload constructor")) {
 			return;
 		}
 	} catch (const Napi::Error &e) {
