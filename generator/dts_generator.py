@@ -455,12 +455,23 @@ class DtsGenerator(CodeGenerator):
                 params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
             self._append_unique_line(lines, body_seen, f'{ind2}{static}{name}({params}): {ret};')
 
+        operator_types = {}
+        for operator in cls_data.get('operators', []):
+            op_name = builtin_operator_method_name(operator['name'])
+            right_type = operator.get('right_type')
+            if op_name and right_type:
+                operator_types.setdefault(op_name, set()).add(right_type)
+
         for operator in cls_data.get('operators', []):
             op_name = builtin_operator_method_name(operator['name'])
             if not op_name:
                 continue
             right_type = operator.get('right_type')
-            params = f'right: {self._type_to_ts(right_type, is_input=True)}' if right_type else ''
+            if right_type == 'int' and 'float' in operator_types.get(op_name, set()):
+                right_ts_type = 'bigint'
+            else:
+                right_ts_type = self._type_to_ts(right_type, is_input=True) if right_type else ''
+            params = f'right: {right_ts_type}' if right_type else ''
             ret = self._type_to_ts_with_meta(operator.get('return_type', 'void'), meta=operator.get('return_meta', ''))
             self._append_unique_line(lines, body_seen, f'{ind2}{member_name(op_name)}({params}): {ret};')
 

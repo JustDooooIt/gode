@@ -124,6 +124,7 @@ class GeneratorOutputTests(unittest.TestCase):
 		from generator.builtin_classes_generator import napi_match_expr
 
 		self.assertEqual("(info[0].IsNumber() || info[0].IsBigInt())", napi_match_expr("int", 0))
+		self.assertEqual("info[0].IsBigInt()", napi_match_expr("int", 0, allow_number_for_int=False))
 		self.assertEqual("info[0].IsNumber()", napi_match_expr("float", 0))
 		self.assertEqual(
 			"info[0].IsArray() || (info[0].IsObject() && info[0].As<Napi::Object>().InstanceOf(ArrayBinding::constructor.Value()))",

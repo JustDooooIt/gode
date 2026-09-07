@@ -2749,22 +2749,25 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 				if (!ts_node_is_null(default_object_node) && strcmp(ts_node_type(default_object_node), "object") == 0) {
 					parse_object_defaults(default_object_node, source, prefix, property_defaults);
 				}
-			} else if (!interface_array_key.is_empty() && interfaces.has(interface_array_key)) {
-				const StringName schema_id(String(file_path) + "::" + String(interface_array_key));
-				// The container remains a regular Godot Array. Its typed element is a
-				// Resource whose dynamic property list is populated from the interface.
-				pi.type = Variant::ARRAY;
-				pi.hint = PROPERTY_HINT_ARRAY_TYPE;
-				pi.hint_string = String::num_int64(Variant::OBJECT) + "/" + String::num_int64(PROPERTY_HINT_RESOURCE_TYPE) + ":" + String(TypeScriptInterfaceResource::get_class_static());
-				pi.class_name = StringName();
-				interface_array_schemas[field_name] = schema_id;
-				TypeScriptInterfaceResource::register_schema(schema_id, interface_array_key, interfaces);
-				properties[field_name] = pi;
-				property_list.push_back(pi);
-				if (!ts_node_is_null(field_value_node)) {
-					Variant default_value;
-					if (parse_default_value(field_value_node, source, pi.type, default_value)) {
-						property_defaults[field_name] = default_value;
+			} else if (!type_str.empty() && iface_key.contains("[]") && interfaces.has(iface_key.substr(0, iface_key.length() - 2))) {
+				StringName inner_type = iface_key.substr(0, iface_key.length() - 2);
+				if (interfaces.has(inner_type)) {
+					const StringName schema_id(String(file_path) + "::" + String(inner_type));
+					// The container remains a regular Godot Array. Its typed element is a
+					// Resource whose dynamic property list is populated from the interface.
+					pi.type = Variant::ARRAY;
+					pi.hint = PROPERTY_HINT_ARRAY_TYPE;
+					pi.hint_string = String::num_int64(Variant::OBJECT) + "/" + String::num_int64(PROPERTY_HINT_RESOURCE_TYPE) + ":" + String(TypeScriptInterfaceResource::get_class_static());
+					pi.class_name = StringName();
+					interface_array_schemas[field_name] = schema_id;
+					TypeScriptInterfaceResource::register_schema(schema_id, inner_type, interfaces);
+					properties[field_name] = pi;
+					property_list.push_back(pi);
+					if (!ts_node_is_null(field_value_node)) {
+						Variant default_value;
+						if (parse_default_value(field_value_node, source, pi.type, default_value)) {
+							property_defaults[field_name] = default_value;
+						}
 					}
 				}
 			} else {
