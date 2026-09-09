@@ -274,6 +274,20 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				const recompiledStaticModule = await compileEsm(staticRootSource, staticRootPath);
 				nodeAssert.equal(recompiledStaticModule.recovered, 202);
 
+				const singletonPath = path.join(retryDir, "shared_singleton.mjs");
+				const singletonConsumerPath = path.join(retryDir, "singleton_consumer.mjs");
+				const singletonSource = "export default class SharedSingleton { static INSTANCE; }\n";
+				const singletonConsumerSource = `import SharedSingleton from ${JSON.stringify(singletonPath)};\nexport { SharedSingleton };\n`;
+				fs.writeFileSync(singletonPath, singletonSource, "utf8");
+				const singletonConsumerModule = await compileEsm(singletonConsumerSource, singletonConsumerPath);
+				const canonicalVariantPath = singletonPath.replace(/\\/g, "/");
+				const directlyLoadedSingletonModule = await compileEsm(singletonSource, canonicalVariantPath);
+				const importedSingleton = singletonConsumerModule.SharedSingleton as unknown as { INSTANCE?: unknown };
+				const directlyLoadedSingleton = directlyLoadedSingletonModule.default as unknown as { INSTANCE?: unknown };
+				nodeAssert.equal(importedSingleton, directlyLoadedSingleton);
+				directlyLoadedSingleton.INSTANCE = "shared-instance";
+				nodeAssert.equal(importedSingleton.INSTANCE, "shared-instance");
+
 				const metaPath = path.join(retryDir, "meta_url.mjs");
 				const metaModule = await compileEsm("export const url = import.meta.url;\n", metaPath);
 				nodeAssert.equal(fileURLToPath(String(metaModule.url)), metaPath);
@@ -652,7 +666,12 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			const vector2iFromBigInt = new Vector2i(1n, 2n);
 			nodeAssert.equal(vector2iFromBigInt.x, 1);
 			nodeAssert.equal(vector2iFromBigInt.y, 2);
-			const doubledVector2i = vector2i.multiply(2n);
+			const numberScaledVector2i: Vector2 = vector2i.multiply(2);
+			nodeAssert.ok(numberScaledVector2i instanceof Vector2);
+			nodeAssert.equal(numberScaledVector2i.x, 2);
+			nodeAssert.equal(numberScaledVector2i.y, 4);
+			const doubledVector2i: Vector2i = vector2i.multiply(2n);
+			nodeAssert.ok(doubledVector2i instanceof Vector2i);
 			nodeAssert.equal(doubledVector2i.x, 2);
 			nodeAssert.equal(doubledVector2i.y, 4);
 			nodeAssert.throws(() => vector2i.multiply(9223372036854775808n), RangeError);

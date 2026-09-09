@@ -18,9 +18,11 @@ from .utils.type_mappings import (
     js_class_name as get_js_class_name,
 )
 
-def napi_match_expr(type_name, index):
+def napi_match_expr(type_name, index, allow_number_for_int=True):
     value = f"info[{index}]"
     if type_name == 'int':
+        if not allow_number_for_int:
+            return f"{value}.IsBigInt()"
         return f"({value}.IsNumber() || {value}.IsBigInt())"
     if type_name == 'float':
         return f"{value}.IsNumber()"
@@ -354,6 +356,17 @@ class BuiltinClassGenerator(CodeGenerator):
             # Each item has 'name' and 'overloads' list
             grouped_operators = []
             for name, overloads in operator_groups.items():
+                binary_types = {
+                    overload['arguments'][0]['type']
+                    for overload in overloads
+                    if not overload['is_unary'] and overload['arguments']
+                }
+                if 'int' in binary_types and 'float' in binary_types:
+                    for overload in overloads:
+                        if not overload['is_unary'] and overload['arguments'][0]['type'] == 'int':
+                            overload['arguments'][0]['match_expr'] = napi_match_expr(
+                                'int', 0, allow_number_for_int=False
+                            )
                 grouped_operators.append({
                     'name': name,
                     'overloads': overloads,

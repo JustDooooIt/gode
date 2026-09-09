@@ -66,12 +66,28 @@ namespace gode {
 static std::unordered_map<std::string, ClassInfo> class_registry;
 static std::vector<std::string> class_order;
 static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
+static thread_local godot::Object *script_instance_owner = nullptr;
 
 constexpr const char *GODOT_OBJECT_ID_SYMBOL = "__gode.godot_object_id__";
 constexpr const char *GODOT_OBJECT_PTR_SYMBOL = "__gode.godot_object_ptr__";
 constexpr double JS_MAX_SAFE_INTEGER = 9007199254740991.0;
 constexpr int64_t JS_MAX_SAFE_INTEGER_INT64 = 9007199254740991LL;
 constexpr uint64_t JS_MAX_SAFE_INTEGER_UINT64 = 9007199254740991ULL;
+
+ScriptInstanceOwnerScope::ScriptInstanceOwnerScope(godot::Object *p_owner) :
+		previous_owner(script_instance_owner) {
+	script_instance_owner = p_owner;
+
+}
+ScriptInstanceOwnerScope::~ScriptInstanceOwnerScope() {
+	script_instance_owner = previous_owner;
+}
+
+godot::Object *consume_script_instance_owner() {
+	godot::Object *owner = script_instance_owner;
+	script_instance_owner = nullptr;
+	return owner;
+}
 
 static bool is_safe_js_integer(double number) {
 	return std::isfinite(number) && std::trunc(number) == number && std::fabs(number) <= JS_MAX_SAFE_INTEGER;

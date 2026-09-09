@@ -2736,6 +2736,10 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 			finalize_explicit_object_hint(pi);
 
 			StringName iface_key(type_str.c_str());
+			StringName interface_array_key;
+			if (type_str.size() > 2 && type_str.compare(type_str.size() - 2, 2, "[]") == 0) {
+				interface_array_key = StringName(type_str.substr(0, type_str.size() - 2).c_str());
+			}
 			if (!type_str.empty() && interfaces.has(iface_key)) {
 				std::string prefix = String(field_name).utf8().get_data() + std::string("::");
 				HashSet<StringName> visited;

@@ -9,6 +9,7 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/variant.hpp>
+#include <string>
 #include <vector>
 
 namespace gode {
@@ -34,6 +35,8 @@ class ScriptInstance {
 	mutable std::vector<GDExtensionPropertyInfo> method_return_gde_cache;
 
 private:
+	void register_script_signals();
+	bool bind_script_signals_to_instance(const Napi::Object &p_instance, const std::string &p_context);
 	void notification_bind(Napi::Object instance, int32_t p_what, bool p_reversed);
 	void store_property_value_for_lifetime(const godot::StringName &p_name, const godot::Variant &p_value) const;
 

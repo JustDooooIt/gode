@@ -235,6 +235,8 @@ class DtsGenerator(CodeGenerator):
             return '<T extends VariantArgument = VariantArgument>'
         if ts_name == 'GDDictionary':
             return '<K extends VariantArgument = VariantArgument, V extends VariantArgument = VariantArgument>'
+        if ts_name == 'Signal':
+            return '<T extends (...args: any[]) => void = (...args: VariantArgument[]) => void>'
         return ''
 
     def _array_like_type(self) -> str:
@@ -256,6 +258,12 @@ class DtsGenerator(CodeGenerator):
                 if arg['type'] == 'Dictionary':
                     overrides[arg['name']] = self._dictionary_like_type()
             return overrides
+        if ts_name == 'Signal':
+            return {
+                arg['name']: 'Signal<T>'
+                for arg in arguments
+                if arg['type'] == 'Signal'
+            }
         return {}
 
     def _builtin_method_param_overrides(self, ts_name: str, method_name: str, arguments: list) -> dict:
@@ -283,6 +291,12 @@ class DtsGenerator(CodeGenerator):
                 elif arg['name'] == 'default':
                     overrides[arg['name']] = 'V'
             return overrides
+        if ts_name == 'Signal' and method_name in {'connect', 'disconnect', 'is_connected'}:
+            return {
+                arg['name']: 'Callable | T'
+                for arg in arguments
+                if arg['name'] == 'callable'
+            }
         return {}
 
     def _builtin_method_return_override(self, ts_name: str, method_name: str) -> str:
@@ -452,15 +466,27 @@ class DtsGenerator(CodeGenerator):
             params = self._format_params(args, self._builtin_method_param_overrides(ts_name, method['name'], args))
             static = 'static ' if method.get('is_static') else ''
             if method.get('is_vararg'):
-                params = (params + ', ...args: VariantArgument[]') if params else '...args: VariantArgument[]'
+                vararg = '...args: Parameters<T>' if ts_name == 'Signal' and method['name'] == 'emit' else '...args: VariantArgument[]'
+                params = (params + ', ' + vararg) if params else vararg
             self._append_unique_line(lines, body_seen, f'{ind2}{static}{name}({params}): {ret};')
+
+        operator_types = {}
+        for operator in cls_data.get('operators', []):
+            op_name = builtin_operator_method_name(operator['name'])
+            right_type = operator.get('right_type')
+            if op_name and right_type:
+                operator_types.setdefault(op_name, set()).add(right_type)
 
         for operator in cls_data.get('operators', []):
             op_name = builtin_operator_method_name(operator['name'])
             if not op_name:
                 continue
             right_type = operator.get('right_type')
-            params = f'right: {self._type_to_ts(right_type, is_input=True)}' if right_type else ''
+            if right_type == 'int' and 'float' in operator_types.get(op_name, set()):
+                right_ts_type = 'bigint'
+            else:
+                right_ts_type = self._type_to_ts(right_type, is_input=True) if right_type else ''
+            params = f'right: {right_ts_type}' if right_type else ''
             ret = self._type_to_ts_with_meta(operator.get('return_type', 'void'), meta=operator.get('return_meta', ''))
             self._append_unique_line(lines, body_seen, f'{ind2}{member_name(op_name)}({params}): {ret};')
 
@@ -541,9 +567,14 @@ class DtsGenerator(CodeGenerator):
             if resolved_setter and resolved_setter not in declared_methods:
                 self._append_unique_line(lines, body_seen, f'{body_ind}{sanitize_name(resolved_setter)}(value: {ts_type_input}): void;')
 
-        # Signals (as comments — no runtime type)
+        # Signals carry their extension_api argument list through Signal<T>.
         for sig in cls_data.get('signals', []):
-            self._append_unique_line(lines, body_seen, f'{body_ind}{sig["name"]}: Signal;')
+            params = self._format_params(sig.get('arguments', []))
+            self._append_unique_line(
+                lines,
+                body_seen,
+                f'{body_ind}{sig["name"]}: Signal<({params}) => void>;',
+            )
 
         # Methods
         for method in cls_data.get('methods', []):
