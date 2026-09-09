@@ -1,3 +1,10 @@
+## 2.4.4
+
+- Added Inspector editing for exported `interface[]` properties, including nested fields and defaults.
+- Added `Signal<T>` type checking and runtime binding; restored the global `Signal` declaration.
+- Fixed shared ESM singletons and script owner binding for explicit `super()` calls.
+- Fixed `number`/`bigint` overload selection for builtin operators.
+
 ## 2.4.3
 
 - Added `@GlobalClass` for TypeScript scripts, matching Godot C# global class naming.

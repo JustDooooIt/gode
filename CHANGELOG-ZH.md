@@ -1,3 +1,10 @@
+## 2.4.4
+
+- 新增导出 `interface[]` 属性的 Inspector 编辑，支持嵌套字段和默认值。
+- 新增 `Signal<T>` 类型检查和运行时绑定，恢复全局 `Signal` 声明。
+- 修复 ESM 单例共享及显式 `super()` 的脚本对象绑定。
+- 修复内置运算符的 `number`/`bigint` 重载选择。
+
 ## 2.4.3
 
 - 增加 TypeScript 脚本 `@GlobalClass`，对齐 Godot C# 全局类命名。
