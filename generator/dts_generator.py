@@ -675,7 +675,7 @@ class DtsGenerator(CodeGenerator):
         lines.append('  function Export(hint: number, hint_string?: string): any;')
         lines.append('  function Export(options?: ExportOptions): any;')
         lines.append('')
-        # lines.append('  function Signal(...args: any[]): any;')
+        lines.append('  function Signal(...args: any[]): any;')
         lines.append('  function Tool(target: object): void;')
         lines.append('  function Tool(): any;')
         lines.append('  function GlobalClass(target: object): void;')
