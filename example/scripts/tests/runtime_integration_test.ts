@@ -57,7 +57,15 @@ type GodeLoadEsm = (filepath: string, source: string) => Promise<{ [key: string]
 type GodeCompileEsm = (source: string, filepath: string) => Promise<{ [key: string]: VariantArgument }>;
 type RuntimeEditorStringEnum = "idle" | 'running' | null | "done";
 
-class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
+export abstract class RuntimeSameFileExportBase extends RuntimeBaseModule.RuntimeIntegrationBase {
+	@Export()
+	same_file_inherited_label: string = "same-file-base";
+
+	@Export()
+	same_file_inherited_count: number = 23;
+}
+
+class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 	static signals = {
 		test_finished: [
 			{ name: "success", type: "bool" },
@@ -357,6 +365,7 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 
 			assert(this.property_can_revert("label"), "exported string property cannot revert");
 			assert(this.property_can_revert("inherited_label"), `inherited exported string property cannot revert; properties: ${propertyNames.join(", ")}`);
+			assert(this.property_can_revert("same_file_inherited_label"), `same-file inherited exported string property cannot revert; properties: ${propertyNames.join(", ")}`);
 			assert(this.property_can_revert("spawn_offset"), "exported Vector3 property cannot revert");
 			assert(this.property_can_revert("resource_slot"), "exported Resource property cannot revert");
 			assert(this.property_can_revert("static_resource_default_first"), "static exported Resource property cannot revert");
@@ -370,6 +379,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 			nodeAssert.equal(this.property_get_revert("label"), "runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_label"), "base-runtime");
 			nodeAssert.equal(this.property_get_revert("inherited_count"), 11);
+			nodeAssert.equal(this.property_get_revert("same_file_inherited_label"), "same-file-base");
+			nodeAssert.equal(this.property_get_revert("same_file_inherited_count"), 23);
 			nodeAssert.equal(this.property_get_revert("resource_slot"), null);
 			nodeAssert.equal(this.property_get_revert("static_resource_default_first"), null);
 			nodeAssert.deepEqual(this.property_get_revert("static_number_array"), [3]);
@@ -438,6 +449,8 @@ class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase {
 				"static_range_namespace",
 				"inherited_label",
 				"inherited_count",
+				"same_file_inherited_label",
+				"same_file_inherited_count",
 			];
 			for (const name of expectedExportProperties) {
 				assert(propertyNames.includes(name), `exported property missing from property list: ${name}`);

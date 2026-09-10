@@ -277,6 +277,11 @@ StringName default_exported_class_name_from_statement(TSNode export_statement, c
 	return StringName();
 }
 
+bool is_class_declaration_node(TSNode node) {
+	const char *node_type = ts_node_type(node);
+	return strcmp(node_type, "class_declaration") == 0 || strcmp(node_type, "abstract_class_declaration") == 0;
+}
+
 TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_count, const std::string &source, const StringName &name) {
 	if (name.is_empty()) {
 		return {};
@@ -284,7 +289,7 @@ TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_count, co
 
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
-		if (strcmp(ts_node_type(child), "class_declaration") == 0) {
+		if (is_class_declaration_node(child)) {
 			if (class_name_from_class_node(child, source) == name) {
 				return child;
 			}
@@ -295,7 +300,7 @@ TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_count, co
 		}
 		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 			TSNode exported_child = ts_node_child(child, j);
-			if (strcmp(ts_node_type(exported_child), "class_declaration") == 0 && class_name_from_class_node(exported_child, source) == name) {
+			if (is_class_declaration_node(exported_child) && class_name_from_class_node(exported_child, source) == name) {
 				return exported_child;
 			}
 		}
@@ -455,7 +460,7 @@ TSNode find_default_class(TSNode root_node, uint32_t child_count, const std::str
 				TSNode node = ts_node_child(child, j);
 				if (strcmp(ts_node_type(node), "default") == 0) {
 					is_default = true;
-				} else if (strcmp(ts_node_type(node), "class_declaration") == 0 && is_default) {
+				} else if (is_class_declaration_node(node) && is_default) {
 					return node;
 				}
 			}

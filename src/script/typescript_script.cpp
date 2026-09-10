@@ -279,6 +279,11 @@ static StringName default_exported_class_name_from_statement(TSNode export_state
 	return StringName();
 }
 
+static bool is_class_declaration_node(TSNode node) {
+	const char *node_type = ts_node_type(node);
+	return strcmp(node_type, "class_declaration") == 0 || strcmp(node_type, "abstract_class_declaration") == 0;
+}
+
 static TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_count, const std::string &source, const StringName &name) {
 	if (name.is_empty()) {
 		return {};
@@ -286,7 +291,7 @@ static TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_co
 
 	for (uint32_t i = 0; i < child_count; i++) {
 		TSNode child = ts_node_child(root_node, i);
-		if (strcmp(ts_node_type(child), "class_declaration") == 0) {
+		if (is_class_declaration_node(child)) {
 			if (class_name_from_class_node(child, source) == name) {
 				return child;
 			}
@@ -297,7 +302,7 @@ static TSNode find_class_declaration_by_name(TSNode root_node, uint32_t child_co
 		}
 		for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 			TSNode exported_child = ts_node_child(child, j);
-			if (strcmp(ts_node_type(exported_child), "class_declaration") == 0 && class_name_from_class_node(exported_child, source) == name) {
+			if (is_class_declaration_node(exported_child) && class_name_from_class_node(exported_child, source) == name) {
 				return exported_child;
 			}
 		}
@@ -1641,6 +1646,20 @@ static void finalize_explicit_object_hint(PropertyInfo &property) {
 	}
 }
 
+static bool member_has_export_decorator(TSNode member, const std::string &source) {
+	for (uint32_t i = 0; i < ts_node_child_count(member); i++) {
+		TSNode child = ts_node_child(member, i);
+		if (strcmp(ts_node_type(child), "decorator") != 0) {
+			continue;
+		}
+		const std::string decorator_text = node_text(source, child);
+		if (decorator_text.rfind("@Export", 0) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void collect_parent_properties(
 		const StringName &parent_name,
 		const StringName &parent_qualifier,
@@ -1662,12 +1681,12 @@ static void collect_parent_properties(
 			if (strcmp(ts_node_type(child), "export_statement") == 0) {
 				for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
 					TSNode en = ts_node_child(child, j);
-					if (strcmp(ts_node_type(en), "class_declaration") == 0) {
+					if (is_class_declaration_node(en)) {
 						parent_node = en;
 						break;
 					}
 				}
-			} else if (strcmp(ts_node_type(child), "class_declaration") == 0) {
+			} else if (is_class_declaration_node(child)) {
 				parent_node = child;
 			}
 			if (!ts_node_is_null(parent_node)) {
@@ -1690,13 +1709,7 @@ static void collect_parent_properties(
 							if (strcmp(ts_node_type(field), "public_field_definition") != 0) {
 								continue;
 							}
-							TSNode deco = ts_node_child_by_field_name(field, "decorator", 9);
-							if (ts_node_is_null(deco)) {
-								continue;
-							}
-							uint32_t ds = ts_node_start_byte(deco);
-							uint32_t de = ts_node_end_byte(deco);
-							if (source.substr(ds, de - ds).find("@Export") == std::string::npos) {
+							if (!member_has_export_decorator(field, source)) {
 								continue;
 							}
 							TSNode fname = ts_node_child_by_field_name(field, "name", 4);
@@ -1941,7 +1954,7 @@ static TSNode find_default_class(TSNode root_node, uint32_t child_count, const s
 				TSNode en = ts_node_child(child, j);
 				if (strcmp(ts_node_type(en), "default") == 0) {
 					is_default = true;
-				} else if (strcmp(ts_node_type(en), "class_declaration") == 0 && is_default) {
+				} else if (is_class_declaration_node(en) && is_default) {
 					return en;
 				}
 			}
