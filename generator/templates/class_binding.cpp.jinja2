@@ -25,7 +25,7 @@ Napi::Object {{ class_name }}Binding::create_singleton(Napi::Env env, godot::{{ 
 }
 
 Napi::Object {{ class_name }}Binding_create(Napi::Env env, godot::Object *instance) {
-    godot::{{ godot_class_name }} *typed_instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(instance);
+    godot::{{ godot_class_name }} *typed_instance = dynamic_cast<godot::{{ godot_class_name }} *>(instance);
     if (!typed_instance) {
         return Napi::Object();
     }
@@ -38,11 +38,11 @@ godot::Object *{{ class_name }}Binding_unwrap(const Napi::Object &obj) {
 
 void {{ class_name }}Binding_wrap(const Napi::Object &obj, godot::Object *instance) {
     {{ class_name }}Binding *binding = {{ class_name }}Binding::Unwrap(obj);
-    binding->instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(instance);
+    binding->instance = dynamic_cast<godot::{{ godot_class_name }} *>(instance);
     binding->internal_object_id = binding->instance ? binding->instance->get_instance_id() : 0;
     binding->owns_instance = false;
     binding->referenced_instance = false;
-    godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(binding->instance);
+    godot::RefCounted *ref = dynamic_cast<godot::RefCounted *>(binding->instance);
     if (ref) {
         ref->reference();
         binding->referenced_instance = true;
@@ -184,7 +184,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 	{{ class_name }}Binding::{{ class_name }}Binding(const Napi::CallbackInfo& info) : Napi::ObjectWrap<{{ class_name }}Binding>(info) {
 	    godot::Object *script_owner = gode::consume_script_instance_owner();
 	    if (script_owner) {
-	        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(script_owner);
+	        instance = dynamic_cast<godot::{{ godot_class_name }} *>(script_owner);
 	        if (!instance) {
 	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} script owner is not compatible with {{ js_class_name }}").ThrowAsJavaScriptException();
 	            owns_instance = false;
@@ -202,7 +202,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 	            owns_instance = false;
 	            return;
 	        }
-	        instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(source_object);
+	        instance = dynamic_cast<godot::{{ godot_class_name }} *>(source_object);
 	        if (!instance) {
 	            Napi::TypeError::New(info.Env(), "{{ js_class_name }} constructor expected an object compatible with {{ js_class_name }}").ThrowAsJavaScriptException();
 	            owns_instance = false;
@@ -231,7 +231,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
         internal_object_id = instance->get_instance_id();
         {% if is_ref_counted %}
         if (!owns_instance) {
-            godot::RefCounted *ref = godot::Object::cast_to<godot::RefCounted>(instance);
+            godot::RefCounted *ref = dynamic_cast<godot::RefCounted *>(instance);
             if (ref) {
                 ref->reference();
                 referenced_instance = true;
@@ -247,7 +247,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     if (internal_object_id != 0) {
         godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
         if (obj) {
-            godot::RefCounted* ref = godot::Object::cast_to<godot::RefCounted>(obj);
+            godot::RefCounted* ref = dynamic_cast<godot::RefCounted *>(obj);
             if (ref && (owns_instance || referenced_instance)) {
                 if (ref->unreference()) {
                     godot::memdelete(ref);
@@ -259,7 +259,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
     if (internal_object_id != 0) {
         godot::Object* obj = godot::ObjectDB::get_instance(internal_object_id);
         if (obj) {
-            godot::Node* node = godot::Object::cast_to<godot::Node>(obj);
+            godot::Node* node = dynamic_cast<godot::Node *>(obj);
             if (owns_instance && node && !node->is_inside_tree()) {
             	godot::memdelete(node);
             }
@@ -270,7 +270,7 @@ Napi::Value {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) {
 
 Napi::Value {{ class_name }}Binding::_to_string(const Napi::CallbackInfo& info) {
     Napi::Object js_this = info.This().As<Napi::Object>();
-    godot::{{ godot_class_name }}* instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(gode::unwrap_godot_object(js_this));
+    godot::{{ godot_class_name }}* instance = dynamic_cast<godot::{{ godot_class_name }} *>(gode::unwrap_godot_object(js_this));
     if (!instance) {
         return Napi::String::New(info.Env(), "null");
     }
@@ -280,7 +280,7 @@ Napi::Value {{ class_name }}Binding::_to_string(const Napi::CallbackInfo& info) 
 {% for signal in signals %}
 Napi::Value {{ class_name }}Binding::signal_{{ signal.name }}(const Napi::CallbackInfo& info) {
     Napi::Object js_this = info.This().As<Napi::Object>();
-    godot::{{ godot_class_name }}* instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(gode::unwrap_godot_object(js_this));
+    godot::{{ godot_class_name }}* instance = dynamic_cast<godot::{{ godot_class_name }} *>(gode::unwrap_godot_object(js_this));
     if (!instance) {
         return info.Env().Null();
     }
@@ -293,7 +293,7 @@ Napi::Value {{ class_name }}Binding::signal_{{ signal.name }}(const Napi::Callba
 Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackInfo& info) {
     {% if not method.is_static %}
     Napi::Object js_this = info.This().As<Napi::Object>();
-    godot::{{ godot_class_name }}* instance = godot::Object::cast_to<godot::{{ godot_class_name }}>(gode::unwrap_godot_object(js_this));
+    godot::{{ godot_class_name }}* instance = dynamic_cast<godot::{{ godot_class_name }} *>(gode::unwrap_godot_object(js_this));
     if (!instance) {
          Napi::Error::New(info.Env(), "Object is null or has been deleted in {{ js_class_name }}.{{ method.name }}").ThrowAsJavaScriptException();
          return info.Env().Null();
