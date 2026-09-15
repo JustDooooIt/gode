@@ -3380,7 +3380,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("  type int = number | bigint;", globals_dts)
 		self.assertIn("  type float = number;", globals_dts)
 		self.assertNotIn("type int = number;\n", globals_dts)
-		self.assertNotIn("  function Signal(...args: any[]): any;", globals_dts)
+		self.assertIn("  function Signal(...args: any[]): any;", globals_dts)
 		self.assertIn("  function Tool(target: object): void;", globals_dts)
 		self.assertIn("  function Tool(): any;", globals_dts)
 		self.assertIn("  function GlobalClass(target: object): void;", globals_dts)
