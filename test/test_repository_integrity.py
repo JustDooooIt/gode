@@ -1033,6 +1033,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"default_exported_class_name_from_statement",
 			"default_exported_name_from_clause",
 			"find_class_declaration_by_name",
+			"is_class_declaration_node",
+			'"abstract_class_declaration"',
 			"node_text_is_default",
 			'strcmp(node_type, "member_expression")',
 			'strcmp(node_type, "generic_type")',
@@ -1177,6 +1179,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"default_exported_class_name_from_statement",
 			"default_exported_name_from_clause",
 			"find_class_declaration_by_name",
+			"is_class_declaration_node",
+			'"abstract_class_declaration"',
 			"node_text_is_default",
 			"unwrap_metadata_expression",
 			"qualifier_from_extends_node",
@@ -1239,7 +1243,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			"resolve_imported_symbol(file_path, source, root_node, child_count, alias_name, qualifier_from_type_text(type_str), true)",
 			"base_class_qualifier = qualifier_from_extends_node(base_class_node, source);",
 			"base_script_path = resolve_imported_class_path(get_path(), source, root_node, child_count, base_class_name, base_class_qualifier);",
-			"collect_parent_properties(base_class_name, base_class_qualifier, source, root_node, child_count, get_path(), properties, property_list, property_defaults);",
+			"collect_parent_properties(class_node, source, root_node, child_count, get_path(), properties, property_list, interface_array_schemas, property_defaults, interfaces, visited_classes);",
 			"FileAccess::get_open_error() != OK",
 			"if (!ext_parser)",
 			"if (!ext_tree)",
@@ -1310,7 +1314,11 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		runtime_base = (ROOT / "example/scripts/tests/runtime_base_test.ts").read_text(encoding="utf-8")
 		runtime_export_types = (ROOT / "example/scripts/tests/runtime_export_types.ts").read_text(encoding="utf-8")
 		runtime_external_resource = (ROOT / "example/scripts/tests/runtime_external_resource.ts").read_text(encoding="utf-8")
-		self.assertIn("class RuntimeIntegrationTest extends RuntimeBaseModule.RuntimeIntegrationBase", runtime_test)
+		self.assertIn("export abstract class RuntimeSameFileExportBase extends RuntimeBaseModule.RuntimeIntegrationBase", runtime_test)
+		self.assertIn("class RuntimeIntegrationTest extends RuntimeSameFileExportBase", runtime_test)
+		self.assertIn('same_file_inherited_label: string = "same-file-base";', runtime_test)
+		self.assertIn("same_file_inherited_count: number = 23;", runtime_test)
+		self.assertIn('this.property_can_revert("same_file_inherited_label")', runtime_test)
 		self.assertIn("export default RuntimeIntegrationTest;", runtime_test)
 		self.assertIn("static signals = {", runtime_test)
 		self.assertIn("} as const;", runtime_test)
