@@ -1646,133 +1646,108 @@ static void finalize_explicit_object_hint(PropertyInfo &property) {
 	}
 }
 
-static bool member_has_export_decorator(TSNode member, const std::string &source) {
-	for (uint32_t i = 0; i < ts_node_child_count(member); i++) {
-		TSNode child = ts_node_child(member, i);
-		if (strcmp(ts_node_type(child), "decorator") != 0) {
-			continue;
-		}
-		const std::string decorator_text = node_text(source, child);
-		if (decorator_text.rfind("@Export", 0) == 0) {
-			return true;
-		}
-	}
-	return false;
-}
+static void parse_class_members(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, StringName> &interface_array_schemas, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &static_methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces, bool properties_only = false);
+static void parse_static_exports(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, Variant> &property_defaults);
+static HashSet<StringName> parse_exported_field_defaults(TSNode class_node, const std::string &source, const HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults);
 
 static void collect_parent_properties(
-		const StringName &parent_name,
-		const StringName &parent_qualifier,
+		TSNode class_node,
 		const std::string &source,
 		TSNode root_node,
 		uint32_t child_count,
 		const String &file_path,
 		HashMap<StringName, PropertyInfo> &properties,
 		Vector<PropertyInfo> &property_list,
-		HashMap<StringName, Variant> &property_defaults) {
+		HashMap<StringName, StringName> &interface_array_schemas,
+		HashMap<StringName, Variant> &property_defaults,
+		const HashMap<StringName, Vector<PropertyInfo>> &interfaces,
+		HashSet<StringName> &visited_classes) {
+	TSNode base_node = extends_class_node_from_class(class_node);
+	if (ts_node_is_null(base_node)) {
+		return;
+	}
+	const StringName parent_name = class_name_from_extends_node(base_node, source);
+	const StringName parent_qualifier = qualifier_from_extends_node(base_node, source);
 	if (parent_name.is_empty()) {
 		return;
 	}
 
-	if (parent_qualifier.is_empty()) {
-		for (uint32_t i = 0; i < child_count; i++) {
-			TSNode child = ts_node_child(root_node, i);
-			TSNode parent_node = { 0 };
-			if (strcmp(ts_node_type(child), "export_statement") == 0) {
-				for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
-					TSNode en = ts_node_child(child, j);
-					if (is_class_declaration_node(en)) {
-						parent_node = en;
+	auto inherit_properties = [&](const HashMap<StringName, PropertyInfo> &parent_properties,
+									  const Vector<PropertyInfo> &parent_property_list,
+									  const HashMap<StringName, StringName> &parent_schemas,
+									  const HashMap<StringName, Variant> &parent_defaults) {
+		HashSet<StringName> inherited_properties;
+		for (const KeyValue<StringName, PropertyInfo> &entry : parent_properties) {
+			if (!properties.has(entry.key)) {
+				properties[entry.key] = entry.value;
+				inherited_properties.insert(entry.key);
+			}
+		}
+		// A metadata-only override can retain the parent's interface array schema.
+		for (const KeyValue<StringName, StringName> &entry : parent_schemas) {
+			const PropertyInfo *property = properties.getptr(entry.key);
+			const PropertyInfo *parent_property = parent_properties.getptr(entry.key);
+			if (!interface_array_schemas.has(entry.key) && property && parent_property &&
+					property->type == parent_property->type && property->hint == parent_property->hint &&
+					property->hint_string == parent_property->hint_string && property->class_name == parent_property->class_name) {
+				interface_array_schemas[entry.key] = entry.value;
+			}
+		}
+		for (const PropertyInfo &property : parent_property_list) {
+			bool include = inherited_properties.has(property.name);
+			// Inspector groups describe following fields; they are not property-map entries.
+			if ((property.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP)) != 0) {
+				include = false;
+				for (const StringName &name : inherited_properties) {
+					if (String(name).begins_with(property.hint_string)) {
+						include = true;
 						break;
 					}
 				}
-			} else if (is_class_declaration_node(child)) {
-				parent_node = child;
 			}
-			if (!ts_node_is_null(parent_node)) {
-				TSNode pname = ts_node_child_by_field_name(parent_node, "name", 4);
-				if (!ts_node_is_null(pname)) {
-					uint32_t ps = ts_node_start_byte(pname);
-					uint32_t pe = ts_node_end_byte(pname);
-					if (source.substr(ps, pe - ps) == String(parent_name).utf8().get_data()) {
-						StringName grandparent;
-						StringName grandparent_qualifier;
-						TSNode grandparent_node = extends_class_node_from_class(parent_node);
-						if (!ts_node_is_null(grandparent_node)) {
-							grandparent = class_name_from_extends_node(grandparent_node, source);
-							grandparent_qualifier = qualifier_from_extends_node(grandparent_node, source);
-						}
-						collect_parent_properties(grandparent, grandparent_qualifier, source, root_node, child_count, file_path, properties, property_list, property_defaults);
-						TSNode pbody = ts_node_child_by_field_name(parent_node, "body", 4);
-						for (uint32_t j = 0; j < ts_node_child_count(pbody); j++) {
-							TSNode field = ts_node_child(pbody, j);
-							if (strcmp(ts_node_type(field), "public_field_definition") != 0) {
-								continue;
-							}
-							if (!member_has_export_decorator(field, source)) {
-								continue;
-							}
-							TSNode fname = ts_node_child_by_field_name(field, "name", 4);
-							if (ts_node_is_null(fname)) {
-								continue;
-							}
-							uint32_t ns = ts_node_start_byte(fname);
-							uint32_t ne = ts_node_end_byte(fname);
-							StringName prop_name(source.substr(ns, ne - ns).c_str());
-							if (properties.has(prop_name)) {
-								continue;
-							}
-							PropertyInfo pi;
-							pi.name = prop_name;
-							pi.usage = PROPERTY_USAGE_DEFAULT;
-							TSNode ftype = ts_node_child_by_field_name(field, "type", 4);
-							if (!ts_node_is_null(ftype)) {
-								std::string type_str = type_text_from_annotation(ftype, source);
-								configure_property_type(pi, type_str, file_path, source, root_node, child_count);
-							}
-							properties[prop_name] = pi;
-							property_list.push_back(pi);
-							TSNode fvalue = ts_node_child_by_field_name(field, "value", 5);
-							if (!ts_node_is_null(fvalue)) {
-								Variant default_value;
-								if (parse_default_value(fvalue, source, pi.type, default_value)) {
-									property_defaults[prop_name] = default_value;
-								}
-							}
-						}
-						return;
-					}
-				}
+			if (include) {
+				property_list.push_back(property);
 			}
 		}
+		// Initializers override inherited defaults even without a repeated @Export.
+		const HashSet<StringName> initialized_fields = parse_exported_field_defaults(class_node, source, properties, property_defaults);
+		for (const KeyValue<StringName, Variant> &entry : parent_defaults) {
+			const StringName field_name(String(entry.key).get_slice("::", 0));
+			if (!property_defaults.has(entry.key) && !initialized_fields.has(field_name)) {
+				property_defaults[entry.key] = entry.value;
+			}
+		}
+	};
+
+	TSNode parent_node = parent_qualifier.is_empty() ? find_class_declaration_by_name(root_node, child_count, source, parent_name) : TSNode{};
+	if (!ts_node_is_null(parent_node)) {
+		if (visited_classes.has(parent_name)) {
+			return;
+		}
+		visited_classes.insert(parent_name);
+		HashMap<StringName, PropertyInfo> parent_properties;
+		Vector<PropertyInfo> parent_property_list;
+		HashMap<StringName, StringName> parent_schemas;
+		HashMap<StringName, Variant> parent_defaults;
+		HashMap<StringName, MethodInfo> parent_methods, parent_static_methods, parent_signals;
+		HashMap<StringName, Dictionary> parent_rpc_configs;
+		HashMap<StringName, int> parent_member_lines;
+		// Use the same parser as the default class, including hints and interface schemas.
+		parse_class_members(parent_node, source, file_path, root_node, child_count, parent_properties, parent_property_list, parent_schemas, parent_defaults, parent_methods, parent_static_methods, parent_signals, parent_rpc_configs, parent_member_lines, interfaces, true);
+		parse_static_exports(parent_node, source, file_path, root_node, child_count, parent_properties, parent_property_list, parent_defaults);
+		parse_exported_field_defaults(parent_node, source, parent_properties, parent_defaults);
+		collect_parent_properties(parent_node, source, root_node, child_count, file_path, parent_properties, parent_property_list, parent_schemas, parent_defaults, interfaces, visited_classes);
+		inherit_properties(parent_properties, parent_property_list, parent_schemas, parent_defaults);
+		return;
 	}
 
 	String ts_path = resolve_imported_class_path(file_path, source, root_node, child_count, parent_name, parent_qualifier);
 	if (ts_path.is_empty()) {
 		return;
 	}
-	Ref<Script> parent_script = ResourceLoader::get_singleton()->load(ts_path);
-	if (parent_script.is_valid()) {
-		Ref<TypeScriptScript> parent_ts = parent_script;
-		if (parent_ts.is_valid() && parent_ts->_is_valid()) {
-			HashSet<StringName> inherited_properties;
-			for (const KeyValue<StringName, PropertyInfo> &E : parent_ts->get_exported_properties()) {
-				if (!properties.has(E.key)) {
-					properties[E.key] = E.value;
-					inherited_properties.insert(E.key);
-				}
-			}
-			for (const PropertyInfo &property : parent_ts->get_property_list_ordered()) {
-				if (inherited_properties.has(property.name)) {
-					property_list.push_back(property);
-				}
-			}
-			for (const KeyValue<StringName, Variant> &E : parent_ts->get_property_defaults()) {
-				if (!property_defaults.has(E.key)) {
-					property_defaults[E.key] = E.value;
-				}
-			}
-		}
+	Ref<TypeScriptScript> parent_ts = ResourceLoader::get_singleton()->load(ts_path);
+	if (parent_ts.is_valid() && parent_ts->_is_valid()) {
+		inherit_properties(parent_ts->get_exported_properties(), parent_ts->get_property_list_ordered(), parent_ts->get_interface_array_schemas(), parent_ts->get_property_defaults());
 	}
 }
 
@@ -2597,7 +2572,8 @@ static bool method_node_is_accessor(TSNode method_node, TSNode name_node) {
 	return false;
 }
 
-static void parse_class_members(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, StringName> &interface_array_schemas, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &static_methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces) {
+static void parse_class_members(TSNode class_node, const std::string &source, const String &file_path, TSNode root_node, uint32_t child_count, HashMap<StringName, PropertyInfo> &properties, Vector<PropertyInfo> &property_list, HashMap<StringName, StringName> &interface_array_schemas, HashMap<StringName, Variant> &property_defaults, HashMap<StringName, MethodInfo> &methods, HashMap<StringName, MethodInfo> &static_methods, HashMap<StringName, MethodInfo> &signals, HashMap<StringName, Dictionary> &rpc_configs, HashMap<StringName, int> &member_lines, const HashMap<StringName, Vector<PropertyInfo>> &interfaces, bool properties_only) {
+	static constexpr const char *EXPORT_DECORATORS[] = { "Export" };
 	TSNode body_node = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body_node)) {
 		return;
@@ -2609,7 +2585,7 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 
 		if (strcmp(member_type, "public_field_definition") == 0) {
 			const bool is_static = node_has_static_modifier(member);
-			if (is_static) {
+			if (is_static && !properties_only) {
 				TSNode field_name_node = ts_node_child_by_field_name(member, "name", 4);
 				TSNode field_value_node = ts_node_child_by_field_name(member, "value", 5);
 				if (!ts_node_is_null(field_name_node) && !ts_node_is_null(field_value_node)) {
@@ -2626,10 +2602,12 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 				if (strcmp(ts_node_type(child), "decorator") != 0) {
 					continue;
 				}
-				uint32_t ds = ts_node_start_byte(child);
-				uint32_t de = ts_node_end_byte(child);
-				std::string deco_text = source.substr(ds, de - ds);
-				if (deco_text.find("@Export") != 0) {
+				TSNode expression = ts_node_named_child(child, 0);
+				TSNode function = ts_node_child_by_field_name(expression, "function", 8);
+				if (ts_node_is_null(function)) {
+					function = expression;
+				}
+				if (!decorator_expression_name_matches(function, source, EXPORT_DECORATORS, sizeof(EXPORT_DECORATORS) / sizeof(EXPORT_DECORATORS[0]))) {
 					continue;
 				}
 				has_export_decorator = true;
@@ -2692,6 +2670,9 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 						uint32_t tne = ts_node_end_byte(type_name_node);
 						std::string type_name_str = source.substr(tns, tne - tns);
 						if (type_name_str == "Signal") {
+							if (properties_only) {
+								continue;
+							}
 							TSNode name_node = ts_node_child_by_field_name(member, "name", 4);
 							if (!ts_node_is_null(name_node)) {
 								uint32_t ns = ts_node_start_byte(name_node);
@@ -2798,6 +2779,9 @@ static void parse_class_members(TSNode class_node, const std::string &source, co
 		}
 
 		if (strcmp(member_type, "method_definition") == 0) {
+			if (properties_only) {
+				continue;
+			}
 			TSNode mn = ts_node_child_by_field_name(member, "name", 4);
 			if (ts_node_is_null(mn)) {
 				continue;
@@ -2962,19 +2946,16 @@ static void parse_exports_object(TSNode obj_node, const std::string &source, con
 	}
 }
 
-static void parse_exported_field_defaults(TSNode class_node, const std::string &source, const HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
+static HashSet<StringName> parse_exported_field_defaults(TSNode class_node, const std::string &source, const HashMap<StringName, PropertyInfo> &properties, HashMap<StringName, Variant> &property_defaults) {
+	HashSet<StringName> initialized_fields;
 	TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
 	if (ts_node_is_null(body)) {
-		return;
+		return initialized_fields;
 	}
 
 	for (uint32_t i = 0; i < ts_node_child_count(body); i++) {
 		TSNode member = ts_node_child(body, i);
-		if (strcmp(ts_node_type(member), "public_field_definition") != 0) {
-			continue;
-		}
-
-		if (node_has_static_modifier(member)) {
+		if (strcmp(ts_node_type(member), "public_field_definition") != 0 || node_has_static_modifier(member)) {
 			continue;
 		}
 
@@ -2984,17 +2965,38 @@ static void parse_exported_field_defaults(TSNode class_node, const std::string &
 			continue;
 		}
 
-		StringName property_name(node_text(source, name).c_str());
-		if (!properties.has(property_name) || property_defaults.has(property_name)) {
+		const StringName property_name(node_text(source, name).c_str());
+		initialized_fields.insert(property_name);
+		const PropertyInfo *property = properties.getptr(property_name);
+		if (property) {
+			Variant default_value;
+			if (!property_defaults.has(property_name) && parse_default_value(value, source, property->type, default_value)) {
+				property_defaults[property_name] = default_value;
+			}
 			continue;
 		}
 
-		const PropertyInfo *property = properties.getptr(property_name);
-		Variant default_value;
-		if (property && parse_default_value(value, source, property->type, default_value)) {
-			property_defaults[property_name] = default_value;
+		// Interface properties use flattened names such as settings::label.
+		const std::string prefix = node_text(source, name) + "::";
+		bool has_exported_fields = false;
+		for (const KeyValue<StringName, PropertyInfo> &entry : properties) {
+			if (String(entry.key).begins_with(String(prefix.c_str()))) {
+				has_exported_fields = true;
+				break;
+			}
+		}
+		value = unwrap_metadata_expression(value);
+		if (has_exported_fields && strcmp(ts_node_type(value), "object") == 0) {
+			HashMap<StringName, Variant> field_defaults;
+			parse_object_defaults(value, source, prefix, field_defaults);
+			for (const KeyValue<StringName, Variant> &entry : field_defaults) {
+				if (properties.has(entry.key) && !property_defaults.has(entry.key)) {
+					property_defaults[entry.key] = entry.value;
+				}
+			}
 		}
 	}
+	return initialized_fields;
 }
 
 // static exports = {...} appears in the TypeScript class body as a public_field_definition with a static modifier.
@@ -3127,7 +3129,9 @@ bool TypeScriptScript::compile() const {
 	parse_class_members(class_node, source, get_path(), root_node, child_count, properties, property_list, interface_array_schemas, property_defaults, methods, static_methods, signals, rpc_configs, member_lines, interfaces);
 	parse_static_exports(class_node, source, get_path(), root_node, child_count, properties, property_list, property_defaults);
 	parse_exported_field_defaults(class_node, source, properties, property_defaults);
-	collect_parent_properties(base_class_name, base_class_qualifier, source, root_node, child_count, get_path(), properties, property_list, property_defaults);
+	HashSet<StringName> visited_classes;
+	visited_classes.insert(class_name);
+	collect_parent_properties(class_node, source, root_node, child_count, get_path(), properties, property_list, interface_array_schemas, property_defaults, interfaces, visited_classes);
 
 	ts_tree_delete(tree);
 	ts_parser_delete(parser);

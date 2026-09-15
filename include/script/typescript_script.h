@@ -70,6 +70,7 @@ public:
 	godot::Variant call_static_method(const godot::StringName &p_method, const godot::Variant **p_args, int32_t p_argcount, GDExtensionCallError &r_error) const;
 	const godot::HashMap<godot::StringName, godot::PropertyInfo> &get_exported_properties() const { return properties; }
 	const godot::Vector<godot::PropertyInfo> &get_property_list_ordered() const { return property_list; }
+	const godot::HashMap<godot::StringName, godot::StringName> &get_interface_array_schemas() const { return interface_array_schemas; }
 	const godot::HashMap<godot::StringName, godot::Variant> &get_property_defaults() const { return property_defaults; }
 	godot::StringName get_base_class_name() const {
 		compile();
