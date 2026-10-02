@@ -1,3 +1,9 @@
+## 2.4.5
+
+- 修复继承的导出属性在 Inspector 中的显示和默认值。
+- 数值 PackedArray 支持 TypedArray 输入。
+- 修复资源生命周期问题，Godot 仍持有的资源不会因 JavaScript 垃圾回收而失效。
+
 ## 2.4.4
 
 - 新增导出 `interface[]` 属性的 Inspector 编辑，支持嵌套字段和默认值。

@@ -1,3 +1,9 @@
+## 2.4.5
+
+- Fixed Inspector display and defaults for inherited exported properties.
+- Added TypedArray support for numeric packed arrays.
+- Fixed resource lifetime handling so resources retained by Godot remain valid after JavaScript garbage collection.
+
 ## 2.4.4
 
 - Added Inspector editing for exported `interface[]` properties, including nested fields and defaults.
