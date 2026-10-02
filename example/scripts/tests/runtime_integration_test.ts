@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
 import * as GodotModule from "godot";
-import { Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3, VideoStreamPlayback } from "godot";
+import { AudioStreamWAV, Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3, VideoStreamPlayback } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import type RuntimeExternalResource from "./runtime_external_resource.js";
@@ -763,6 +763,16 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			nodeAssert.equal(packedBytes.size(), 4);
 			nodeAssert.equal(packedTypedBigInts.size(), 3);
 			nodeAssert.equal(packedDoubles.size(), 3);
+			const wav = new AudioStreamWAV();
+			const wavInput = new Uint8Array([99, 10, 20, 88]).subarray(1, 3);
+			wav.data = wavInput;
+			wavInput[0] = 0;
+			nodeAssert.deepEqual([wav.data.get(0), wav.data.get(1)], [10, 20]);
+			nodeAssert.throws(() => {
+				// @ts-expect-error Incorrect property input must leave the stored data intact.
+				wav.data = new Float32Array([1]);
+			}, TypeError);
+			nodeAssert.deepEqual([wav.data.get(0), wav.data.get(1)], [10, 20]);
 			const playback = new VideoStreamPlayback();
 			// Zero frames exercises MethodBind conversion without an audio callback.
 			nodeAssert.equal(playback.mix_audio(0, new Float32Array([99, 1, 2, 88]).subarray(1, 3)), 0);
