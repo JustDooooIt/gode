@@ -87,6 +87,24 @@ export default class Demo extends Node {
 
 ## Advanced Usage
 
+### Bulk Numeric Arrays
+
+Constructors, method arguments and property assignments taking these packed arrays accept the corresponding JavaScript typed input:
+
+| Godot packed array | JavaScript input |
+| --- | --- |
+| `PackedByteArray` | `Uint8Array`, `Uint8ClampedArray` |
+| `PackedInt32Array` | `Int32Array` |
+| `PackedInt64Array` | `BigInt64Array` |
+| `PackedFloat32Array` | `Float32Array` |
+| `PackedFloat64Array` | `Float64Array` |
+
+Gode copies the contiguous data into Godot-owned memory in one operation, honoring the view's offset and length. Changing the source after the call does not change submitted data. Int64 values preserve all 64 bits. Mismatched typed inputs throw `TypeError`; use the matching layout or an ordinary JavaScript array for element conversion.
+
+For frequently updated MultiMesh instances, reuse a `Float32Array` and submit it with `multimesh.set_buffer(data)` instead of creating a `Transform2D` and `Color` wrapper for every instance each frame. Configure the MultiMesh format and instance count first, and use the buffer layout required by Godot. Ordinary JavaScript arrays and Godot packed array wrappers remain supported.
+
+For GDScript/Gode performance comparisons, use the same bulk submission, buffer capacity and redraw policy in both implementations, and measure simulation, render preparation and full frame time separately. GDScript can reuse a `PackedFloat32Array`; Gode can reuse a `Float32Array`.
+
 ### Calling Between TypeScript and GDScript
 
 Here is a complete node setup:
@@ -261,6 +279,8 @@ button.connect("pressed", () => {
 ### Resource Loading and Scene Instantiation
 
 Resources loaded from TypeScript are normal Godot resources and keep their Godot lifetime while wrapped by JavaScript:
+
+A JavaScript wrapper releases only the native reference it successfully acquired. Resources retained by Godot remain valid after the wrapper is garbage collected. For example, after passing a `StyleBoxFlat` to `button.add_theme_stylebox_override()`, no extra `style_refs` array is needed to keep the wrapper alive.
 
 ```ts
 import { Node, ResourceLoader } from "godot";

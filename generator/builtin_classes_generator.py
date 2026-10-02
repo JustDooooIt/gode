@@ -12,6 +12,7 @@ from .utils.string_utils import sanitize_method_name, to_snake_case
 from .utils.type_mappings import (
     GENERATED_BUILTIN_TYPES,
     PACKED_ARRAY_TYPES,
+    PACKED_ARRAY_TYPED_INPUTS,
     constant_cpp_value,
     default_arg_napi_expr,
     get_cpp_type,
@@ -47,8 +48,9 @@ def napi_match_expr(type_name, index, allow_number_for_int=True):
             f"({value}.IsObject() && {value}.As<Napi::Object>().InstanceOf(ArrayBinding::constructor.Value()))"
         )
     if type_name in PACKED_ARRAY_TYPES:
+        typed_input = f"{value}.IsTypedArray() || " if type_name in PACKED_ARRAY_TYPED_INPUTS else ''
         return (
-            f"{value}.IsArray() || "
+            f"{typed_input}{value}.IsArray() || "
             f"({value}.IsObject() && {value}.As<Napi::Object>().InstanceOf({type_name}Binding::constructor.Value()))"
         )
     if type_name.startswith('typedarray::'):
@@ -393,6 +395,7 @@ class BuiltinClassGenerator(CodeGenerator):
                 'constructors': constructors,
                 'has_destructor': builtin_class.get('has_destructor', False),
                 'indexing_return_type': builtin_class.get('indexing_return_type'),
+                'is_numeric_packed_array': class_name in PACKED_ARRAY_TYPED_INPUTS,
                 'is_iterable_array': class_name == 'Array' or (class_name.startswith('Packed') and class_name.endswith('Array')),
                 'is_keyed': builtin_class.get('is_keyed', False),
                 'vararg_methods': vararg_methods,
