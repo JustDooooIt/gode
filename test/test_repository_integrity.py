@@ -3205,21 +3205,51 @@ class RepositoryIntegrityTests(unittest.TestCase):
 	def test_generated_refcounted_wrappers_hold_external_references(self):
 		api = load_extension_api()
 		missing = []
+		refcounted_classes = [cls for cls in api.get("classes", []) if cls.get("is_refcounted")]
+		self.assertTrue(refcounted_classes, "Extension API must contain RefCounted classes")
 
-		for cls in api.get("classes", []):
-			if not cls.get("is_refcounted"):
-				continue
+		for cls in refcounted_classes:
 			class_name = cls["name"]
 			source_path = ROOT / "src/generated/classes" / f"{to_snake_case(class_name)}_binding.gen.cpp"
 			source = source_path.read_text(encoding="utf-8")
-			if "if (!owns_instance) {" not in source:
-				missing.append(f"{class_name}: missing non-owned reference guard")
-			if "ref->reference();" not in source:
-				missing.append(f"{class_name}: missing RefCounted reference")
-			if "referenced_instance = true;" not in source:
-				missing.append(f"{class_name}: missing referenced_instance flag")
+			# Check each lifetime operation in its own function. Ignore comments and
+			# whitespace so formatting changes do not alter the ownership contract.
+			functions = {
+				"constructor": f"{class_name}Binding::{class_name}Binding(",
+				"destructor": f"{class_name}Binding::~{class_name}Binding(",
+				"wrap": f"void {class_name}Binding_wrap(",
+			}
+			bodies = {}
+			for operation, signature in functions.items():
+				match = re.search(
+					rf"{re.escape(signature)}[^\n]*\{{(?P<body>.*?)^\}}",
+					source, re.DOTALL | re.MULTILINE,
+				)
+				if not match:
+					missing.append(f"{class_name}: missing {operation} function")
+					continue
+				body = re.sub(r"//[^\n]*|/\*.*?\*/", "", match.group("body"), flags=re.DOTALL)
+				bodies[operation] = re.sub(r"\s+", "", body)
 
-		self.assertEqual([], missing)
+			constructor = bodies.get("constructor", "")
+			if "if(ref){referenced_instance=owns_instance?ref->init_ref():ref->reference();}" not in constructor:
+				missing.append(f"{class_name}: constructor must record initial or external reference acquisition")
+			destructor = bodies.get("destructor", "")
+			if "if(ref&&referenced_instance){if(ref->unreference()){godot::memdelete(ref);}}" not in destructor:
+				missing.append(f"{class_name}: destructor must release only an acquired reference and delete at zero")
+			if destructor.count("ref->unreference()") != 1:
+				missing.append(f"{class_name}: destructor must unreference exactly once")
+			wrap = bodies.get("wrap", "")
+			if "binding->referenced_instance=false;" not in wrap or "if(ref){binding->referenced_instance=ref->reference();}" not in wrap:
+				missing.append(f"{class_name}: wrap must record whether reference acquisition succeeded")
+			if any("referenced_instance=true;" in body for body in bodies.values()):
+				missing.append(f"{class_name}: reference flag must not be set unconditionally")
+			header_path = ROOT / "include/generated/classes" / f"{to_snake_case(class_name)}_binding.gen.h"
+			header = re.sub(r"\s+", "", header_path.read_text(encoding="utf-8"))
+			if "boolreferenced_instance=false;" not in header:
+				missing.append(f"{class_name}: reference flag must default to false")
+
+		self.assertFalse(missing, f"{len(missing)} RefCounted lifetime violations:\n" + "\n".join(missing[:20]))
 
 	def test_generated_default_args_do_not_emit_raw_godot_string_markers(self):
 		offenders = []

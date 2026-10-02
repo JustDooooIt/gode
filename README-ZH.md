@@ -101,10 +101,6 @@ export default class Demo extends Node {
 
 Gode 一次性将连续数据复制到 Godot 持有的内存中，并遵循视图的偏移和长度。调用后修改源数组不会改变已提交的数据。Int64 值保留完整的 64 位精度。类型不匹配的 TypedArray 会抛出 `TypeError`；需要逐元素转换时，可以使用普通 JavaScript 数组。
 
-频繁更新 MultiMesh 实例时，可以复用 `Float32Array`，通过 `multimesh.set_buffer(data)` 批量提交，减少每帧为每个实例创建 `Transform2D` 和 `Color` 包装对象的开销。提交前应设置 MultiMesh 的数据格式和实例数，并使用 Godot 要求的缓冲区布局。普通 JavaScript 数组和 Godot PackedArray 包装对象仍然可用。
-
-比较 GDScript 与 Gode 的性能时，两版应采用相同的批量提交、缓冲区容量和按需重绘策略，并分别记录模拟、绘制准备和整帧耗时。GDScript 可复用 `PackedFloat32Array`，Gode 可复用 `Float32Array`。
-
 ### TypeScript 与 GDScript 互相调用
 
 下面是一个完整的节点结构示例：
