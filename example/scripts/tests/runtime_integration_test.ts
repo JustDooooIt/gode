@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
 import * as GodotModule from "godot";
-import { Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3 } from "godot";
+import { Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3, VideoStreamPlayback } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import type RuntimeExternalResource from "./runtime_external_resource.js";
@@ -763,6 +763,17 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			nodeAssert.equal(packedBytes.size(), 4);
 			nodeAssert.equal(packedTypedBigInts.size(), 3);
 			nodeAssert.equal(packedDoubles.size(), 3);
+			const playback = new VideoStreamPlayback();
+			// Zero frames exercises MethodBind conversion without an audio callback.
+			nodeAssert.equal(playback.mix_audio(0, new Float32Array([99, 1, 2, 88]).subarray(1, 3)), 0);
+			nodeAssert.equal(playback.mix_audio(0, new Float32Array(0)), 0);
+			nodeAssert.equal(playback.mix_audio(0, new PackedFloat32Array([1, 2])), 0);
+			nodeAssert.equal(playback.mix_audio(0, [1, 2]), 0);
+			// Ordinary array inputs keep the MethodBind path's existing Variant conversion.
+			nodeAssert.equal(playback.mix_audio(0, [NaN]), 0);
+			nodeAssert.equal(playback.mix_audio(0), 0);
+			// @ts-expect-error MethodBind inputs must enforce the same layout as ordinary methods.
+			nodeAssert.throws(() => playback.mix_audio(0, new Float64Array([1])), /PackedFloat32Array requires a Float32Array/);
 			// The headless dummy renderer does not store MultiMesh instance data.
 			if (DisplayServer.get_name() !== "headless") {
 				const mesh = new MultiMesh();
