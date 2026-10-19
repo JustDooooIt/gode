@@ -435,8 +435,6 @@ class DtsGenerator(CodeGenerator):
         body_seen = set()
 
         # Constructors
-        if ts_name in PACKED_ARRAY_TYPED_INPUTS:
-            self._append_unique_line(lines, body_seen, f'{ind2}constructor(from: {PACKED_ARRAY_TYPED_INPUTS[ts_name]});')
         for ctor in cls_data.get('constructors', []):
             args = ctor.get('arguments', [])
             param_overrides = self._builtin_constructor_param_overrides(ts_name, args)

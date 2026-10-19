@@ -68,12 +68,6 @@ Napi::Object {{ class_name }}Binding::init(Napi::Env env, Napi::Object exports) 
     if (info.Length() == 0) {
         return;
     }
-    {% if is_numeric_packed_array %}
-    if (info.Length() == 1 && info[0].IsTypedArray()) {
-        instance = gode::napi_to_godot<godot::{{ class_name }}>(info[0]);
-        return;
-    }
-    {% endif %}
     std::vector<Napi::Value> args = gode::to_args_array(info);
 
     {% for constructor in constructors %}

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import v8 from "node:v8";
 import vm from "node:vm";
 import * as GodotModule from "godot";
-import { Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, type VariantArgument, VariantType, Vector2, Vector2i, Vector3 } from "godot";
+import { AudioStreamWAV, Button, Color, DisplayServer, Engine, GD, GDArray, GDDictionary, GDString, GodotObject, Image, ImageTexture, MultiMesh, Node, PackedByteArray, PackedFloat64Array, PackedInt64Array, PackedFloat32Array, PackedInt32Array, PackedScene, PackedStringArray, PackedVector3Array, PropertyHint, PropertyHint as PropertyHintAlias, QuadMesh, Resource, ResourceLoader, ResourceSaver, StyleBoxFlat, type VariantArgument, VariantType, Vector2, Vector2i, Vector3, VideoStreamPlayback, WeakRef as GodotWeakRef } from "godot";
 import cjsFixture, { makeCommonPayload } from "./commonjs_fixture.cjs";
 import type RuntimeArrayResource from "./runtime_array_resource.js";
 import type RuntimeExternalResource from "./runtime_external_resource.js";
@@ -683,6 +683,36 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			nodeAssert.equal(texture.get_image().get_width(), 2);
 			// @ts-expect-error Intentional invalid call to verify object validation.
 			nodeAssert.throws(() => ImageTexture.create_from_image({}), TypeError);
+
+			const themeButton = new Button();
+			this.add_child(themeButton);
+			const makeStyleReferences = (retain: boolean) => {
+				const style = new StyleBoxFlat();
+				style.bg_color = new Color(0.25, 0.5, 0.75, 1);
+				nodeAssert.equal(style.get_reference_count(), 1);
+				if (retain) {
+					themeButton.add_theme_stylebox_override("normal", style);
+					assert(style.get_reference_count() > 1, "Godot did not acquire its own StyleBox reference");
+				}
+				return { wrapper: new WeakRef(style), native: GD.weakref(style) as GodotWeakRef };
+			};
+			const retainedStyleRefs = makeStyleReferences(true);
+			const unretainedStyleRefs = makeStyleReferences(false);
+			for (let i = 0; i < 20; i++) {
+				await waitForEventLoopTurn();
+				forceGarbageCollection();
+				await waitForEventLoopTurn();
+			}
+			nodeAssert.equal(retainedStyleRefs.wrapper.deref(), undefined, "Godot must not keep the JS wrapper alive");
+			nodeAssert.equal(unretainedStyleRefs.wrapper.deref(), undefined, "Unretained JS wrapper was not collected");
+			nodeAssert.equal(unretainedStyleRefs.native.get_ref(), null, "Unretained native resource was not released");
+			const retainedStyle = retainedStyleRefs.native.get_ref() as StyleBoxFlat;
+			assert(retainedStyle instanceof StyleBoxFlat, "Godot-owned resource was released with its JS wrapper");
+			nodeAssert.equal(retainedStyle.bg_color.g, 0.5);
+			nodeAssert.equal(themeButton.get_theme_stylebox("normal").get_instance_id(), retainedStyle.get_instance_id());
+			themeButton.remove_theme_stylebox_override("normal");
+			themeButton.queue_free();
+
 			// @ts-expect-error Intentional invalid call to verify type validation.
 			nodeAssert.throws(() => Color.from_ok_hsl("0.58", 0.5, 0.79), TypeError);
 			nodeAssert.throws(() => Color.from_ok_hsl(NaN, 0.5, 0.79), TypeError);
@@ -804,6 +834,27 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			nodeAssert.equal(packedBytes.size(), 4);
 			nodeAssert.equal(packedTypedBigInts.size(), 3);
 			nodeAssert.equal(packedDoubles.size(), 3);
+			const wav = new AudioStreamWAV();
+			const wavInput = new Uint8Array([99, 10, 20, 88]).subarray(1, 3);
+			wav.data = wavInput;
+			wavInput[0] = 0;
+			nodeAssert.deepEqual([wav.data.get(0), wav.data.get(1)], [10, 20]);
+			nodeAssert.throws(() => {
+				// @ts-expect-error Incorrect property input must leave the stored data intact.
+				wav.data = new Float32Array([1]);
+			}, TypeError);
+			nodeAssert.deepEqual([wav.data.get(0), wav.data.get(1)], [10, 20]);
+			const playback = new VideoStreamPlayback();
+			// Zero frames exercises MethodBind conversion without an audio callback.
+			nodeAssert.equal(playback.mix_audio(0, new Float32Array([99, 1, 2, 88]).subarray(1, 3)), 0);
+			nodeAssert.equal(playback.mix_audio(0, new Float32Array(0)), 0);
+			nodeAssert.equal(playback.mix_audio(0, new PackedFloat32Array([1, 2])), 0);
+			nodeAssert.equal(playback.mix_audio(0, [1, 2]), 0);
+			// Ordinary array inputs keep the MethodBind path's existing Variant conversion.
+			nodeAssert.equal(playback.mix_audio(0, [NaN]), 0);
+			nodeAssert.equal(playback.mix_audio(0), 0);
+			// @ts-expect-error MethodBind inputs must enforce the same layout as ordinary methods.
+			nodeAssert.throws(() => playback.mix_audio(0, new Float64Array([1])), /PackedFloat32Array requires a Float32Array/);
 			// The headless dummy renderer does not store MultiMesh instance data.
 			if (DisplayServer.get_name() !== "headless") {
 				const mesh = new MultiMesh();

@@ -2589,7 +2589,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("new PackedInt32Array([1, 2, 3])", runtime_test)
 		self.assertIn("load_threaded_get_status", runtime_test)
 		self.assertIn("threadedProgress[0]", runtime_test)
-		self.assertIn("call_class_method_bind(", resource_loader_source)
+		self.assertIn("call_class_method_bind<", resource_loader_source)
 		self.assertIn('"load_threaded_get_status"', resource_loader_source)
 		self.assertNotIn("call_builtin_method(&godot::ResourceLoader::load_threaded_get_status", resource_loader_source)
 		self.assertIn("info[0].IsArray() || (info[0].IsObject() && info[0].As<Napi::Object>().InstanceOf(PackedInt32ArrayBinding::constructor.Value()))", packed_source)
@@ -2645,7 +2645,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			function_body = function_match.group("body")
 			expected_indices = ", ".join(str(index) for index in out_indices)
 			for token in (
-				"call_class_method_bind(",
+				"call_class_method_bind<",
 				f'"{class_name}"',
 				f'"{method_name}"',
 				str(method["hash"]),

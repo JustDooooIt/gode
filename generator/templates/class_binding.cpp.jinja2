@@ -305,14 +305,13 @@ Napi::Value {{ class_name }}Binding::{{ method.name_cpp }}(const Napi::CallbackI
     };
     {% endif %}
     {% if method.has_out_arguments %}
-    return call_class_method_bind(
+    return call_class_method_bind<{{ method.method_bind_argument_types_cpp }}>(
             {{ "nullptr" if method.is_static else "instance" }},
             "{{ godot_class_name }}",
             "{{ method.name }}",
             {{ method.hash }},
             {{ "true" if method.return_type else "false" }},
             info,
-            {{ method.argument_count }},
             {{ "default_args" if method.has_default_args else "std::vector<Napi::Value>{}" }},
             { {{ method.out_argument_indices_cpp }} });
     {% elif method.live_property_name and not method.is_static and not method.is_vararg %}
