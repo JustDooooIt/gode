@@ -835,6 +835,20 @@
 			}
 
 			function visit(node) {
+				// Record the source on the default class, including anonymous classes.
+				// The native Resource constructor uses this to attach the script to
+				// the existing JS object instead of invoking its constructor again.
+				if (tsApi.isClassDeclaration(node) && node.heritageClauses &&
+						node.modifiers && node.modifiers.some(m => m.kind === tsApi.SyntaxKind.DefaultKeyword)) {
+					const marker = factory.createPropertyDeclaration(
+						[factory.createModifier(tsApi.SyntaxKind.StaticKeyword)],
+						factory.createComputedPropertyName(factory.createCallExpression(
+							factory.createPropertyAccessExpression(factory.createIdentifier("Symbol"), "for"),
+							undefined, [factory.createStringLiteral("__gode.script_path__")])),
+						undefined, undefined, factory.createStringLiteral(sourcePath));
+					node = factory.updateClassDeclaration(node, node.modifiers, node.name,
+						node.typeParameters, node.heritageClauses, [...node.members, marker]);
+				}
 				if (tsApi.isImportDeclaration(node) && node.moduleSpecifier) {
 					const moduleSpecifier = rewriteModuleSpecifier(node.moduleSpecifier);
 					if (moduleSpecifier !== node.moduleSpecifier) {

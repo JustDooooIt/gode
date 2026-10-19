@@ -70,6 +70,12 @@ void TypeScriptScript::release_all_runtime_state() {
 	}
 }
 
+void TypeScriptScript::cache_constructed_class(const Napi::Function &p_class) {
+	if (default_class.IsEmpty()) {
+		default_class = Napi::Persistent(p_class);
+	}
+}
+
 void TypeScriptScript::release_runtime_state() {
 	std::vector<ScriptInstance *> active_instances;
 	active_instances.reserve(instances.size());

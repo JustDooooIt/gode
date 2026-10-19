@@ -1,4 +1,6 @@
 #include "runtime/value_convert.h"
+#include "script/typescript_script.h"
+#include <godot_cpp/classes/resource_loader.hpp>
 
 #include <climits>
 #include <cmath>
@@ -109,6 +111,18 @@ static std::unordered_map<std::string, ClassInfo> class_registry;
 static std::vector<std::string> class_order;
 static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
 static thread_local godot::Object *script_instance_owner = nullptr;
+
+static thread_local godot::Object *adopted_owner = nullptr;
+static thread_local Napi::Object *adopted_object = nullptr;
+
+Napi::Object consume_script_instance_object(godot::Object *owner) {
+	if (owner != adopted_owner || !adopted_object) {
+		return Napi::Object();
+	}
+	Napi::Object result = *adopted_object;
+	adopted_object = nullptr;
+	return result;
+}
 
 constexpr const char *GODOT_OBJECT_ID_SYMBOL = "__gode.godot_object_id__";
 constexpr const char *GODOT_OBJECT_PTR_SYMBOL = "__gode.godot_object_ptr__";
@@ -498,6 +512,45 @@ void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_ID_SYMBOL), Napi::BigInt::New(env, id));
 	js_obj.Set(Napi::Symbol::For(env, GODOT_OBJECT_PTR_SYMBOL), Napi::External<godot::Object>::New(env, obj));
 	object_cache[id] = Napi::Weak(js_obj);
+	// Only Resource subclasses with their own source marker are script classes.
+	// Engine-created wrappers already have a script, and must never be rebound.
+	auto *resource = godot::Object::cast_to<godot::Resource>(obj);
+	if (!resource || resource->get_script().get_type() != godot::Variant::NIL) {
+		return;
+	}
+	Napi::Value ctor_value = js_obj.Get("constructor");
+	if (!ctor_value.IsFunction()) {
+		return;
+	}
+	Napi::Object ctor = ctor_value.As<Napi::Object>();
+	Napi::Symbol marker = Napi::Symbol::For(env, "__gode.script_path__");
+	if (!ctor.HasOwnProperty(marker)) {
+		return;
+	}
+	Napi::Value path = ctor.Get(marker);
+	if (!path.IsString()) {
+		return;
+	}
+	godot::Ref<TypeScriptScript> script = godot::ResourceLoader::get_singleton()->load(
+		godot::String::utf8(path.As<Napi::String>().Utf8Value().c_str()));
+	if (script.is_null()) {
+		Napi::Error::New(env, "Unable to load TypeScript Resource script").ThrowAsJavaScriptException();
+		return;
+	}
+	// This module is already evaluated. Cache its actual constructor so a
+	// subsequent ResourceLoader round trip need not re-enter the module loader.
+	script->cache_constructed_class(ctor_value.As<Napi::Function>());
+	struct AdoptionScope {
+		godot::Object *previous_owner = adopted_owner;
+		Napi::Object *previous_object = adopted_object;
+		~AdoptionScope() { adopted_owner = previous_owner; adopted_object = previous_object; }
+	} scope;
+	adopted_owner = obj;
+	adopted_object = &js_obj;
+	resource->set_script(script);
+	if (!script->_instance_has(obj)) {
+		Napi::Error::New(env, "Unable to attach TypeScript Resource script").ThrowAsJavaScriptException();
+	}
 }
 
 void clear_godot_instance_cache() {

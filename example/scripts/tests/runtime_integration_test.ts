@@ -1,3 +1,4 @@
+import RuntimeConstructedResource from "./runtime_constructed_resource.js";
 import nodeAssert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -532,6 +533,46 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			nodeAssert.equal(Number(staticRangeNamespaceProperty.type), VARIANT_TYPE_FLOAT);
 			nodeAssert.equal(Number(staticRangeNamespaceProperty.hint), PROPERTY_HINT_RANGE);
 			nodeAssert.equal(String(staticRangeNamespaceProperty.hint_string), "0,4,1");
+
+			const beforeConstructions = RuntimeConstructedResource.constructions;
+			const directResource = new RuntimeConstructedResource("direct");
+			nodeAssert.equal(RuntimeConstructedResource.constructions, beforeConstructions + 1);
+			assert(directResource.get_script() !== null, "new Resource subclass has no script");
+			nodeAssert.equal(directResource.get("label"), "direct");
+			directResource.set("label", "from Godot");
+			nodeAssert.equal(directResource.label, "from Godot");
+			directResource.label = "saved direct";
+			directResource.position = new Vector2(6.5, 12.5);
+			directResource.children = [new RuntimeConstructedResource("nested child")];
+			const directPath = "user://gode_constructed_resource.tres";
+			nodeAssert.equal(ResourceSaver.save(directResource, directPath), GODOT_OK);
+			const restoredDirect = ResourceLoader.load(directPath, "", ResourceLoader.CACHE_MODE_IGNORE) as RuntimeConstructedResource;
+			assert(restoredDirect !== directResource, "round trip reused original Resource");
+			nodeAssert.equal(restoredDirect.get("label"), "saved direct");
+			const restoredPosition = restoredDirect.get("position") as Vector2;
+			nodeAssert.equal(restoredPosition.x, 6.5);
+			nodeAssert.equal(restoredPosition.y, 12.5);
+			const restoredChildren = restoredDirect.get("children") as RuntimeConstructedResource[];
+			nodeAssert.equal(restoredChildren.length, 1);
+			nodeAssert.equal(restoredChildren[0].get("label"), "nested child");
+
+			const nativeResourceOwner = new GDArray();
+			const adoptedId = (() => {
+				const child = new RuntimeConstructedResource("retained by Godot");
+				nativeResourceOwner.append(child);
+				return child.get_instance_id();
+			})();
+			await waitForEventLoopTurn();
+			forceGarbageCollection();
+			await waitForEventLoopTurn();
+			nodeAssert.equal((nativeResourceOwner.get(0) as Resource).get("label"), "retained by Godot");
+			nativeResourceOwner.clear();
+			await waitForEventLoopTurn();
+			for (let i = 0; i < 3; i++) {
+				forceGarbageCollection();
+				await waitForEventLoopTurn();
+			}
+			nodeAssert.equal(GD.instance_from_id(BigInt.asIntN(64, BigInt(adoptedId))), null, "constructed Resource retained a JS/native reference cycle");
 
 			const exportedResource = new Resource();
 			exportedResource.resource_name = "PersistentRuntimeResource";

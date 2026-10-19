@@ -95,6 +95,30 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 				f"stderr:\n{completed.stderr}"
 			)
 
+	def test_default_class_records_source_for_native_resource_construction(self):
+		self.run_compiler_fixture(
+			r"""
+			const files = new Map([
+				["res://tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022", types: [] } })],
+				["res://scripts/named.ts", "class Base {} export default class Named extends Base { value = 7; }"],
+				["res://scripts/anonymous.ts", "class Base {} export default class extends Base { value = 9; }"]
+			]);
+			const result = runCompiler(files);
+			assertOk(result);
+			for (const output of result.outputs) {
+				const code = output.code.replace("export default class", "return class");
+				const cls = new Function(code)();
+				const marker = Symbol.for("__gode.script_path__");
+				if (!Object.hasOwn(cls, marker) || cls[marker] !== output.source) {
+					throw new Error("Default class has no own source metadata: " + output.source);
+				}
+				if (new cls().value !== (output.source.endsWith("named.ts") ? 7 : 9)) {
+					throw new Error("Source metadata changed instance initialization");
+				}
+			}
+			"""
+		)
+
 	def test_tsconfig_include_exclude_controls_project_roots_and_imported_outputs(self):
 		self.run_compiler_fixture(
 			r"""
