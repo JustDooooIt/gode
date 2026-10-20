@@ -111,6 +111,9 @@ static std::unordered_map<std::string, ClassInfo> class_registry;
 static std::vector<std::string> class_order;
 static std::unordered_map<uint64_t, Napi::ObjectReference> object_cache;
 static thread_local godot::Object *script_instance_owner = nullptr;
+// Consuming the owner at super() must not end its construction guard: Godot
+// installs the ScriptInstance only after the full JS constructor returns.
+static thread_local std::vector<godot::Object *> script_instance_construction_owners;
 
 static thread_local godot::Object *adopted_owner = nullptr;
 static thread_local Napi::Object *adopted_object = nullptr;
@@ -133,9 +136,11 @@ constexpr uint64_t JS_MAX_SAFE_INTEGER_UINT64 = 9007199254740991ULL;
 ScriptInstanceOwnerScope::ScriptInstanceOwnerScope(godot::Object *p_owner) :
 		previous_owner(script_instance_owner) {
 	script_instance_owner = p_owner;
+	script_instance_construction_owners.push_back(p_owner);
 
 }
 ScriptInstanceOwnerScope::~ScriptInstanceOwnerScope() {
+	script_instance_construction_owners.pop_back();
 	script_instance_owner = previous_owner;
 }
 
@@ -517,6 +522,15 @@ void register_godot_instance(godot::Object *obj, Napi::Object js_obj) {
 	auto *resource = godot::Object::cast_to<godot::Resource>(obj);
 	if (!resource || resource->get_script().get_type() != godot::Variant::NIL) {
 		return;
+	}
+	// Object::set_script() has not installed the engine-created instance yet.
+	// Reattaching here would create an inner instance which the outer call
+	// overwrites without freeing. Nested new Resources have a different owner
+	// and must still receive their own script.
+	for (godot::Object *constructing_owner : script_instance_construction_owners) {
+		if (obj == constructing_owner) {
+			return;
+		}
 	}
 	Napi::Value ctor_value = js_obj.Get("constructor");
 	if (!ctor_value.IsFunction()) {

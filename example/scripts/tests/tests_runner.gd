@@ -3,6 +3,7 @@ extends Node
 const TEST_FINISHED_SIGNAL := "test_finished"
 const RUN_TEST_METHOD := "run_test"
 const PASS_MARKER := "[GodeTest] all tests passed"
+const RUNTIME_RESOURCE_SCRIPT_PATH := "res://scripts/tests/runtime_resource_lifetime.ts"
 const RUNTIME_NESTED_RESOURCE_PATH := "res://resources/tests/runtime_nested_outer.tres"
 const RUNTIME_NESTED_INNER_PATH := "res://resources/tests/runtime_nested_inner.tres"
 
@@ -26,6 +27,8 @@ func _ready() -> void:
 func _run_next() -> void:
 	current_index += 1
 	if current_index >= tests.size():
+		if not _verify_resource_script_lifetime():
+			return
 		if not _verify_nested_resource_fixture():
 			return
 		print(PASS_MARKER)
@@ -150,4 +153,28 @@ func _verify_nested_resource_fixture() -> bool:
 	nested_container.set("nested", null)
 	nested_resource.set_script(null)
 	nested_container.set_script(null)
+	return true
+
+
+func _verify_resource_script_lifetime() -> bool:
+	var resource_script = ResourceLoader.load(RUNTIME_RESOURCE_SCRIPT_PATH)
+	var weak_script = weakref(resource_script)
+	var resource := Resource.new()
+	for iteration in range(2):
+		resource.set_script(resource_script)
+		if resource.get_script() != resource_script:
+			_fail("Engine-created Resource did not keep its script")
+			return false
+		var child_resource = resource.get("child")
+		if not child_resource is Resource or child_resource.get_script() == null:
+			_fail("Resource created in a field initializer did not receive its script")
+			return false
+		if child_resource.get("label") != "field child":
+			_fail("Resource field initializer did not preserve its exported state")
+			return false
+		resource.set_script(null)
+	resource_script = null
+	if weak_script.get_ref() != null:
+		_fail("Detached Resource retained an orphan TypeScript script instance")
+		return false
 	return true
