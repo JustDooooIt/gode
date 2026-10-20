@@ -320,12 +320,14 @@ function Get-CachedGenerator {
 }
 
 $repoRoot = Get-RepoRoot
+$addonRoot = if ($env:GODE_LITE -eq "ON") { Join-Path $repoRoot "third/godot-js/addons/godot-js" } else { Join-Path $repoRoot "example/addons/gode" }
 $buildRoot = Join-Path $repoRoot "build"
+if ($env:GODE_LITE -eq "ON") { $buildRoot = Join-Path $buildRoot "godot-js" }
 $ndkDir = Ensure-AndroidNdk -BuildRoot $buildRoot -RequestedNdkDir $NdkDir -SkipDownload:$SkipNdkDownload
 $androidAbi = Get-AndroidAbi -Arch $Architecture
 $configDir = $Configuration.ToLowerInvariant()
 $buildDir = Join-Path $buildRoot "android/$Architecture/$configDir"
-$binDir = Join-Path $repoRoot "example/addons/gode/binary/android/$Architecture"
+$binDir = Join-Path $addonRoot "binary/android/$Architecture"
 $expectedLibrary = Join-Path $binDir "libgode_runtime.so"
 $libnodeLibrary = Join-Path $repoRoot "libnode/android/$Architecture/libnode.a"
 $toolchainFile = Join-Path $ndkDir "build/cmake/android.toolchain.cmake"
@@ -373,6 +375,7 @@ $configureArgs = @(
 	"-DANDROID_STL=c++_shared",
 	"-DPython3_EXECUTABLE=$pythonExecutable",
 	"-DGODE_RUN_CODEGEN=$((-not $SkipCodegen).ToString().ToUpperInvariant())",
+	"-DGODE_LITE=$(if ($env:GODE_LITE) { $env:GODE_LITE } else { 'OFF' })",
 	"-DGODE_TARGET_ARCH=$Architecture",
 	"-DGODOTCPP_TARGET=$godotCppTarget"
 )
@@ -401,6 +404,10 @@ if ($LASTEXITCODE -ne 0) {
 
 if (-not (Test-Path $expectedLibrary)) {
 	throw "Build finished, but expected GDExtension library was not found: $expectedLibrary"
+}
+$editorLibrary = Join-Path $addonRoot "binary/editor/android/$Architecture/libgode_editor.so"
+if (-not (Test-Path $editorLibrary)) {
+	throw "Build finished, but Android editor library was not found: $editorLibrary"
 }
 
 Write-Host "Built GDExtension library:"

@@ -89,9 +89,13 @@ esac
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 build_root="$repo_root/build"
+if [ "${GODE_LITE:-OFF}" = ON ]; then build_root="$build_root/godot-js"; fi
 build_dir="$build_root/android/$architecture/$config_dir"
-bin_dir="$repo_root/example/addons/gode/binary/android/$architecture"
+addon_root="$repo_root/example/addons/gode"
+if [ "${GODE_LITE:-OFF}" = ON ]; then addon_root="$repo_root/third/godot-js/addons/godot-js"; fi
+bin_dir="$addon_root/binary/android/$architecture"
 expected_library="$bin_dir/libgode_runtime.so"
+editor_library="$addon_root/binary/editor/android/$architecture/libgode_editor.so"
 libnode_library="$repo_root/libnode/android/$architecture/libnode.a"
 
 if [ -z "$python_executable" ]; then
@@ -292,15 +296,18 @@ cmake \
 	-DANDROID_STL=c++_shared \
 	-DPython3_EXECUTABLE="$python_executable" \
 	-DGODE_RUN_CODEGEN="$codegen" \
+	-DGODE_LITE="${GODE_LITE:-OFF}" \
 	-DGODE_TARGET_ARCH="$architecture" \
 	-DGODOTCPP_TARGET="$godotcpp_target"
 
 printf 'Building gode (%s, android/%s)...\n' "$configuration" "$architecture"
 cmake --build "$build_dir" --target gode --config "$configuration" --parallel "$jobs"
 
-if [ ! -f "$expected_library" ]; then
-	printf 'Build finished, but expected GDExtension library was not found: %s\n' "$expected_library" >&2
-	exit 1
-fi
+for library in "$expected_library" "$editor_library"; do
+	if [ ! -f "$library" ]; then
+		printf 'Build finished, but expected GDExtension library was not found: %s\n' "$library" >&2
+		exit 1
+	fi
+done
 
 printf 'Built GDExtension library:\n  %s\n' "$expected_library"

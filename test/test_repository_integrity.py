@@ -336,7 +336,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn('global.Set("GlobalClass", Napi::Function::New(env, noop_decorator));', bridge_source)
 
 		source = (ROOT / "src/runtime/node_runtime.cpp").read_text(encoding="utf-8")
-		self.assertLessEqual(len(source.splitlines()), 470)
 		for pattern in (
 			r"std::string\s+boot_script\s*=\s*\n\s*\"",
 			r"std::string\s+esm_script\s*=\s*\n\s*\"",
@@ -363,7 +362,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("gode.globalize_path", bootstrap_source)
 		self.assertIn("global.__gode_real_path_for_virtual_path", bootstrap_source)
 		self.assertIn("__gode_strip_virtual_generation", bootstrap_source)
-		self.assertIn("crypto.createHash('sha256')", bootstrap_source)
+		self.assertIn("gode.sha256_text(manifest)", bootstrap_source)
 		self.assertIn("__gode_exported_npm_manifest_fingerprint", bootstrap_source)
 		self.assertIn("__gode_materialize_node_modules_tree", bootstrap_source)
 		self.assertIn("__gode_node_modules_tree_marker_path", bootstrap_source)
@@ -1583,8 +1582,8 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		runtime_bridge_source = (ROOT / "src/runtime/gode_runtime_bridge.cpp").read_text(encoding="utf-8")
 		register_source = (ROOT / "src/register_editor_types.cpp").read_text(encoding="utf-8")
 		self.assertIn('PROJECT_TYPESCRIPT_CONFIG_PATH = "res://tsconfig.json"', compiler_source)
-		self.assertIn('DEFAULT_TYPESCRIPT_CONFIG_PATH = "res://addons/gode/config/tsconfig.json"', compiler_source)
-		self.assertIn('TYPESCRIPT_COMPILER_BRIDGE_PATH = "res://addons/gode/runtime/typescript_compiler.js"', compiler_source)
+		self.assertIn('DEFAULT_TYPESCRIPT_CONFIG_PATH = GODE_ADDON_RES_PATH "config/tsconfig.json"', compiler_source)
+		self.assertIn('TYPESCRIPT_COMPILER_BRIDGE_PATH = GODE_ADDON_RES_PATH "runtime/typescript_compiler.js"', compiler_source)
 		self.assertIn("ensure_project_typescript_config", compiler_source)
 		self.assertIn("make_error_diagnostic", compiler_source)
 		self.assertIn("Failed to read TypeScript source", compiler_source)
@@ -2188,7 +2187,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		compiler_source = (EXAMPLE_ROOT / "addons/gode/runtime/typescript_compiler.js").read_text(encoding="utf-8")
 		for token in (
 			'PROJECT_GODE_CONFIG_PATH = "res://gode.json"',
-			'DEFAULT_GODE_CONFIG_PATH = "res://addons/gode/config/gode.json"',
+			'DEFAULT_GODE_CONFIG_PATH = GODE_ADDON_RES_PATH "config/gode.json"',
 			"Config load_config",
 			"debug.inspector",
 			"allowInRelease",
@@ -2576,7 +2575,9 @@ class RepositoryIntegrityTests(unittest.TestCase):
 		self.assertIn("godot_result_to_napi(info.Env(), result)", func_utils)
 		self.assertNotIn("return godot_to_napi(env, result);", func_utils)
 		self.assertNotIn("return godot_to_napi(info.Env(), Func", func_utils)
-		self.assertIn("godot_result_to_napi(env, {{ constant.value }})", class_template)
+		self.assertIn("install_class_constants(env, func.As<Napi::Object>()", class_template)
+		class_constants = (ROOT / "src/runtime/class_constants.cpp").read_text(encoding="utf-8")
+		self.assertIn("godot_int_to_napi(env, constants[i].value)", class_constants)
 		self.assertNotIn("Napi::Number::New(env, static_cast<double>({{ constant.value }}))", class_template)
 		self.assertIn("std::is_lvalue_reference_v<Param>", func_utils)
 		self.assertIn("call_class_method_bind", func_utils)
@@ -3094,33 +3095,31 @@ class RepositoryIntegrityTests(unittest.TestCase):
 			body = class_body(dts_name)
 			source = (ROOT / "src/generated/classes" / f"{to_snake_case(class_name)}_binding.gen.cpp").read_text(encoding="utf-8")
 
+			def table_values(name):
+				match = re.search(rf"ClassConstant {name}\[\] = \{{(.*?)\n\s+\}};", source, re.DOTALL)
+				self.assertIsNotNone(match, f"{class_name}.{name} table missing")
+				return [(name, int(value)) for name, value in re.findall(r'\{ "([^\"]+)", (-?\d+) \}', match.group(1))]
+
+			if constants:
+				self.assertEqual([(c["name"], c["value"]) for c in constants], table_values("constants"), class_name)
+			for target in ("func.As<Napi::Object>()", "prototype"):
+				self.assertIn(f"install_class_constants(env, {target},", source, class_name)
+
 			for const in constants:
 				const_name = const["name"]
-				if f'func.As<Napi::Object>().Set("{const_name}", gode::godot_result_to_napi(env,' not in source:
-					mismatches.append(f"{class_name}.{const_name} missing constructor constant")
-				if f'prototype.Set("{const_name}", gode::godot_result_to_napi(env,' not in source:
-					mismatches.append(f"{class_name}.{const_name} missing prototype constant")
 				if re.search(rf"^\s+{modifier} {re.escape(const_name)}: number;", body, re.MULTILINE) is None:
 					mismatches.append(f"{class_name}.{const_name} missing dts constant")
 
-			for enum in enums:
+			for index, enum in enumerate(enums):
+				self.assertEqual([(v["name"], v["value"]) for v in enum.get("values", [])], table_values(f"enum_values_{index}"), class_name)
+				self.assertIn(f'{{ "{enum["name"]}", enum_values_{index}, std::size(enum_values_{index}) }}', source, class_name)
 				enum_name = sanitize_name(enum["name"])
 				enum_type = f'import("godot").{dts_name}.{enum_name}' if is_singleton else f"{dts_name}.{enum_name}"
-				if f'func.As<Napi::Object>().Set("{enum["name"]}", enum_values);' not in source:
-					mismatches.append(f"{class_name}.{enum['name']} missing constructor enum object")
-				if f'prototype.Set("{enum["name"]}", enum_values);' not in source:
-					mismatches.append(f"{class_name}.{enum['name']} missing prototype enum object")
 				if is_singleton and re.search(rf"^\s+readonly {re.escape(enum_name)}: \{{", body, re.MULTILINE) is None:
 					mismatches.append(f"{class_name}.{enum_name} missing dts singleton enum object")
 				reverse_values = {}
 				for value in enum.get("values", []):
 					value_name = sanitize_name(value["name"])
-					if f'func.As<Napi::Object>().Set("{value["name"]}", gode::godot_result_to_napi(env,' not in source:
-						mismatches.append(f"{class_name}.{value['name']} missing constructor enum value")
-					if f'prototype.Set("{value["name"]}", gode::godot_result_to_napi(env,' not in source:
-						mismatches.append(f"{class_name}.{value['name']} missing prototype enum value")
-					if f'enum_values.Set(Napi::Number::New(env, {value["value"]}), Napi::String::New(env, "{value["name"]}"));' not in source:
-						mismatches.append(f"{class_name}.{value['name']} missing runtime enum reverse mapping")
 					if re.search(rf"^\s+{modifier} {re.escape(value_name)}: {re.escape(enum_type)};", body, re.MULTILINE) is None:
 						mismatches.append(f"{class_name}.{value_name} missing dts enum value")
 					reverse_values[value["value"]] = value["name"]

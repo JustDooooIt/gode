@@ -1,3 +1,4 @@
+#include "runtime/addon_paths.h"
 #include "runtime/node_bootstrap_scripts.h"
 
 namespace gode::node_bootstrap_scripts {
@@ -6,12 +7,20 @@ std::string commonjs_bootstrap_script() {
 	return "const Module = require('module');"
 		   "const path = require('path');"
 		   "const fs = require('fs');"
-		   "const crypto = require('crypto');"
 		   "const gode = process._linkedBinding('godot');"
+#ifdef GODE_LITE
+		   "process.dlopen = () => { throw new Error('godot-js supports pure JavaScript packages; native addons are unavailable'); };"
+		   "const godeUnsupportedBuiltins = new Set(['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'crypto', 'tls', 'https', 'sqlite']);"
+		   "const godeOriginalLoad = Module._load;"
+		   "Module._load = function(id, ...args) {"
+		   "  if (godeUnsupportedBuiltins.has(String(id).replace(/^node:/, ''))) throw new Error(id + ' is unavailable in godot-js');"
+		   "  return godeOriginalLoad.call(this, id, ...args);"
+		   "};"
+#endif
 		   "const isGodotPath = p => typeof p === 'string' && (p.startsWith('res://') || p.startsWith('user://'));"
 		   "const isGodeInternalCommonJSPath = p => typeof p === 'string' && ("
-		   "  p === 'res://addons/gode/runtime/typescript_compiler.js' ||"
-		   "  p === 'res://addons/gode/tsc/lib/typescript.js'"
+		   "  p === '" GODE_ADDON_RES_PATH "runtime/typescript_compiler.js' ||"
+		   "  p === '" GODE_ADDON_RES_PATH "tsc/lib/typescript.js'"
 		   ");"
 		   "const isRes = p => typeof p === 'string' && p.startsWith('res://');"
 		   "const isUser = p => typeof p === 'string' && p.startsWith('user://');"
@@ -151,6 +160,7 @@ std::string commonjs_bootstrap_script() {
 		   "  console.error('[Gode] Injection error:', e);"
 		   "}"
 		   ""
+#ifndef GODE_LITE
 		   "globalThis.__gode_open_inspector = function(port, host, wait, autoIncrementPort, maxPortRetries) {"
 		   "  const inspector = require('inspector');"
 		   "  const startPort = Number.isInteger(port) && port >= 0 && port <= 65535 ? port : 9229;"
@@ -198,6 +208,7 @@ std::string commonjs_bootstrap_script() {
 		   "  }"
 		   "};"
 		   ""
+#endif
 		   "const originalReadFileSync = fs.readFileSync;"
 		   "const originalWriteFileSync = fs.writeFileSync;"
 		   "const originalMkdirSync = fs.mkdirSync;"
@@ -295,7 +306,7 @@ std::string commonjs_bootstrap_script() {
 		   "const __gode_exported_npm_manifest_fingerprint = () => {"
 		   "  if (__gode_cached_exported_npm_manifest_fingerprint !== undefined) return __gode_cached_exported_npm_manifest_fingerprint;"
 		   "  const manifest = __gode_exported_npm_manifest();"
-		   "  __gode_cached_exported_npm_manifest_fingerprint = manifest ? crypto.createHash('sha256').update(manifest, 'utf8').digest('hex') : '';"
+		   "  __gode_cached_exported_npm_manifest_fingerprint = manifest ? gode.sha256_text(manifest) : '';"
 		   "  return __gode_cached_exported_npm_manifest_fingerprint;"
 		   "};"
 		   "let __gode_cached_node_modules_snapshot;"
@@ -635,9 +646,11 @@ std::string commonjs_bootstrap_script() {
 		   "  };"
 		   "}"
 		   ";"
+#if GODE_EDITOR_BINDINGS
 		   "(function() {"
+		   "  if (!gode.OS || !gode.OS.has_feature('editor')) return;"
 		   "  try {"
-		   "    const compilerPath = 'res://addons/gode/runtime/typescript_compiler.js';"
+		   "    const compilerPath = '" GODE_ADDON_RES_PATH "runtime/typescript_compiler.js';"
 		   "    const compilerSource = fs.readFileSync(compilerPath, 'utf8');"
 		   "    const compiled = globalThis.__gode_compile(compilerSource, compilerPath);"
 		   "    if (compiled instanceof Error) throw compiled;"
@@ -645,6 +658,7 @@ std::string commonjs_bootstrap_script() {
 		   "    globalThis.__gode_typescript_compiler_boot_error = e && (e.stack || e.message) || String(e);"
 		   "  }"
 		   "})()"
+#endif
 		   // Patch child_process.fork for native addon probes. Embedded Node reports the
 		   // Godot executable as process.execPath, so fork() must use Gode's bundled
 		   // Node-compatible helper instead of trying to execute the Godot host.
@@ -752,6 +766,7 @@ std::string esm_bootstrap_script() {
 		   "  if (typeof p !== 'string') return p;"
 		   "  p = _gode_strip_module_generation(p);"
 		   "  if (p.startsWith('file://')) { try { p = require('url').fileURLToPath(p); } catch (_) {} }"
+		   "  if (p.startsWith('.gode/build/typescript/')) p = 'res://' + p;"
 		   "  if (_gode_is_virtual_path(p)) return p.replace(/\\\\/g, '/');"
 		   "  if (path.isAbsolute(p)) return path.normalize(p).replace(/\\\\/g, '/');"
 		   "  return p.replace(/\\\\/g, '/');"
