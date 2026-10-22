@@ -77,6 +77,16 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 				}
 			}
 
+			const godotSignalTypes = `declare module 'godot' {
+				export class GodotObject {}
+				export class Resource extends GodotObject {}
+				export interface Signal<T> { emit: T; }
+			}`;
+			const godotResourceUrl = "data:text/javascript;base64," + Buffer.from("export class Resource {}").toString("base64");
+			function withGodotResourceMock(code) {
+				return code.replace(/from (["'])godot\1/g, "from " + JSON.stringify(godotResourceUrl));
+			}
+
 			__TEST_BODY__
 			"""
 		).replace("__TEST_BODY__", textwrap.dedent(test_body))
@@ -217,6 +227,175 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 				for (const instance of [Child.singleton, Child.blockInstance, new Child()]) {
 					if (instance.constructionPath !== childOutput.source) {
 						throw new Error("Subclass construction used the parent script path");
+					}
+				}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
+			"""
+		)
+
+	def test_native_signal_declarations_preserve_binding_without_changing_other_fields(self):
+		self.run_compiler_fixture(
+			r"""
+			const results = [];
+			for (const target of ["ES2022", "ES2015"]) {
+				for (const useDefineForClassFields of [true, false]) {
+					const path = `res://scripts/signal_${target}_${useDefineForClassFields}.ts`;
+					const files = new Map([
+						["res://tsconfig.json", JSON.stringify({ compilerOptions: { target, useDefineForClassFields, types: [] } })],
+						["res://addons/gode/types/godot.d.ts", godotSignalTypes],
+						[path, `
+							import { Resource, type Signal } from 'godot';
+							export const bound: Signal<() => void> = { emit() {} };
+							export const explicit: Signal<() => void> = { emit() {} };
+							export const decorated: string[] = [];
+							function observe(_target: any, name: string) { decorated.push(name); }
+							class Base extends Resource {
+								constructor() {
+									super();
+									Object.assign(this, { completed: bound, optional: bound, declared: bound, ordinary: 42, initialized: bound });
+								}
+							}
+							class Script extends Base {
+								@observe completed!: Signal<() => void>;
+								optional?: Signal<() => void>;
+								declare declared: Signal<() => void>;
+								initialized: Signal<() => void> = explicit;
+								ordinary!: number;
+								value = 7;
+								static completed: Signal<() => void>;
+								static initialized: Signal<() => void> = explicit;
+								seenInConstructor: Signal<() => void>;
+								constructor() { super(); this.seenInConstructor = this.completed; }
+							}
+							export { Script as default };
+							export class Helper extends Base { completed!: Signal<() => void>; }
+						`]
+					]);
+					const result = runCompiler(files);
+					assertOk(result);
+					results.push({ output: result.outputs[0], target, useDefineForClassFields });
+				}
+			}
+			(async () => {
+				for (const { output, target, useDefineForClassFields } of results) {
+					const module = await import("data:text/javascript;base64," + Buffer.from(withGodotResourceMock(output.code)).toString("base64"));
+					const cls = module.default;
+					const instance = new cls();
+					if ([instance.completed, instance.optional, instance.declared, instance.seenInConstructor].some(signal => signal !== module.bound)) {
+						throw new Error("A Signal declaration replaced the native binding: " + output.source);
+					}
+					if (instance.initialized !== module.explicit || cls.initialized !== module.explicit || instance.value !== 7) {
+						throw new Error("Signal handling changed explicit field initializers");
+					}
+					if (instance.ordinary !== (useDefineForClassFields ? undefined : 42) ||
+							new module.Helper().completed !== (useDefineForClassFields ? undefined : module.bound) ||
+							Object.hasOwn(cls, "completed") !== (target === "ES2022" && useDefineForClassFields)) {
+						throw new Error("Signal handling changed ordinary, helper, or static field semantics");
+					}
+					if (JSON.stringify(module.decorated) !== JSON.stringify(["completed"])) {
+						throw new Error("Signal declaration lost its decorator");
+					}
+				}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
+			"""
+		)
+
+	def test_ordinary_signal_fields_keep_typescript_initialization_semantics(self):
+		self.run_compiler_fixture(
+			r"""
+			const forms = new Map([
+				["local_signal", `
+					interface Signal<T> { emit: T; }
+					class Base { constructor() { Object.assign(this, { completed: bound }); } }
+				`],
+				["native_type_only", `
+					import type { Signal } from 'godot';
+					class Base { constructor() { Object.assign(this, { completed: bound }); } }
+				`],
+				["native_implements_only", `
+					import type { GodotObject, Signal } from 'godot';
+					class Base implements GodotObject { constructor() { Object.assign(this, { completed: bound }); } }
+				`],
+				["native_merged_interface", `
+					import type { Resource, Signal } from 'godot';
+					interface Pretend extends Resource {}
+					class Pretend { constructor() { Object.assign(this, { completed: bound }); } }
+					class Base extends Pretend {}
+				`],
+				["native_merged_interface_with_base", `
+					import type { Resource, Signal } from 'godot';
+					interface Pretend extends Resource {}
+					class OrdinaryBase { constructor() { Object.assign(this, { completed: bound }); } }
+					class Pretend extends OrdinaryBase {}
+					class Base extends Pretend {}
+				`],
+				["native_class_names", `
+					interface Signal<T> { emit: T; }
+					class GodotObject { constructor() { Object.assign(this, { completed: bound }); } }
+					class Resource extends GodotObject {}
+					class Base extends Resource {}
+				`]
+			]);
+			const results = [];
+			for (const target of ["ES2022", "ES2015"]) {
+				for (const useDefineForClassFields of [true, false]) {
+					const files = new Map([
+						["res://tsconfig.json", JSON.stringify({ compilerOptions: { target, useDefineForClassFields, types: [] } })],
+						["res://addons/gode/types/godot.d.ts", godotSignalTypes],
+						...Array.from(forms, ([name, base]) => [`res://scripts/${name}_${target}_${useDefineForClassFields}.ts`, `
+							${base}
+							export const bound: Signal<() => void> = { emit() {} };
+							export default class Ordinary extends Base { completed!: Signal<() => void>; }
+						`])
+					]);
+					const result = runCompiler(files);
+					assertOk(result);
+					for (const output of result.outputs) results.push({ output, useDefineForClassFields });
+				}
+			}
+			(async () => {
+				for (const { output, useDefineForClassFields } of results) {
+					const module = await import("data:text/javascript;base64," + Buffer.from(output.code).toString("base64"));
+					const expected = useDefineForClassFields ? undefined : module.bound;
+					if (new module.default().completed !== expected) {
+						throw new Error("Godot signal handling changed an ordinary class field: " + output.source);
+					}
+				}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
+			"""
+		)
+
+	def test_native_signal_declarations_follow_resolved_godot_inheritance(self):
+		self.run_compiler_fixture(
+			r"""
+			const forms = [
+				["alias", "import { Resource as NativeResource, type Signal } from 'godot';", "NativeResource"],
+				["namespace", "import * as godot from 'godot'; import type { Signal } from 'godot';", "godot.Resource"],
+				["script_base", "import NativeResource from './base'; import type { Signal } from 'godot';", "NativeResource"],
+				["generic_script_base", "import { GenericBase } from './base'; import type { Signal } from 'godot';", "GenericBase<number>"],
+				["anonymous", "import { Resource, type Signal } from 'godot';", "Resource"]
+			];
+			const files = new Map([
+				["res://tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022", useDefineForClassFields: true, types: [] } })],
+				["res://addons/gode/types/godot.d.ts", godotSignalTypes],
+				["res://scripts/base.ts", "import { Resource } from 'godot'; export default class ScriptBase extends Resource {} export class GenericBase<T> extends Resource { value?: T; }"],
+				...Array.from(forms, ([name, imports, base]) => [`res://scripts/${name}.ts`, `
+					${imports}
+					export const bound: Signal<() => void> = { emit() {} };
+					class Base extends ${base} { constructor() { super(); Object.assign(this, { completed: bound }); } }
+					export default class ${name === "anonymous" ? "" : "Script"} extends Base { completed!: Signal<() => void>; }
+				`])
+			]);
+			const result = runCompiler(files);
+			assertOk(result);
+			const baseOutput = result.outputs.find(output => output.source.endsWith("/base.ts"));
+			const baseUrl = "data:text/javascript;base64," + Buffer.from(withGodotResourceMock(baseOutput.code)).toString("base64");
+			(async () => {
+				for (const output of result.outputs.filter(output => !output.source.endsWith("/base.ts"))) {
+					const code = withGodotResourceMock(output.code).replace(/from (["'])\.\/base\.js\1/g, "from " + JSON.stringify(baseUrl));
+					const module = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
+					if (new module.default().completed !== module.bound) {
+						throw new Error("Resolved Godot ancestry lost its signal binding: " + output.source);
 					}
 				}
 			})().catch(error => { console.error(error); process.exitCode = 1; });

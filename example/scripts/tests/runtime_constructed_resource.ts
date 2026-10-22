@@ -1,7 +1,9 @@
-import { Resource, Vector2 } from "godot";
+import { Resource, Signal, Vector2 } from "godot";
 
 export default class RuntimeConstructedResource extends Resource {
 	static constructions: number = 0;
+	typed_completed!: Signal<(label: string) => void>;
+	signal_ready_in_constructor: boolean = false;
 
 	@Export()
 	label: string = "default";
@@ -16,5 +18,6 @@ export default class RuntimeConstructedResource extends Resource {
 		super();
 		RuntimeConstructedResource.constructions++;
 		this.label = label;
+		this.signal_ready_in_constructor = typeof this.typed_completed?.emit === "function";
 	}
 }

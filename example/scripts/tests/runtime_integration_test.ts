@@ -552,6 +552,11 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			const directResource = new RuntimeConstructedResource("direct");
 			nodeAssert.equal(RuntimeConstructedResource.constructions, beforeConstructions + 1);
 			assert(directResource.get_script() !== null, "new Resource subclass has no script");
+			nodeAssert.equal(directResource.signal_ready_in_constructor, true, "typed signal was overwritten before the constructor body");
+			let directSignalLabel = "";
+			directResource.typed_completed.connect(label => { directSignalLabel = label; });
+			directResource.typed_completed.emit("direct signal");
+			nodeAssert.equal(directSignalLabel, "direct signal");
 			nodeAssert.equal(directResource.get("label"), "direct");
 			directResource.set("label", "from Godot");
 			nodeAssert.equal(directResource.label, "from Godot");
@@ -569,6 +574,10 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			const restoredChildren = restoredDirect.get("children") as RuntimeConstructedResource[];
 			nodeAssert.equal(restoredChildren.length, 1);
 			nodeAssert.equal(restoredChildren[0].get("label"), "nested child");
+			let restoredSignalLabel = "";
+			restoredDirect.typed_completed.connect(label => { restoredSignalLabel = label; });
+			restoredDirect.typed_completed.emit("restored signal");
+			nodeAssert.equal(restoredSignalLabel, "restored signal");
 
 			const constructedExports = [
 				{ resource: new RuntimeAssignmentResource(), source: "runtime_assignment_resource.ts", label: "assignment export" },
