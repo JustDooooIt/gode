@@ -860,7 +860,7 @@
 
 			function visit(node) {
 				// Record the source on the actual default class, including local exports
-				// and anonymous classes.
+				// and anonymous classes, before any user static initializer can construct it.
 				// The native Resource constructor uses this to attach the script to
 				// the existing JS object instead of invoking its constructor again.
 				if (node === defaultClass && node.heritageClauses &&
@@ -872,7 +872,7 @@
 							undefined, [factory.createStringLiteral("__gode.script_path__")])),
 						undefined, undefined, factory.createStringLiteral(sourcePath));
 					node = factory.updateClassDeclaration(node, node.modifiers, node.name,
-						node.typeParameters, node.heritageClauses, [...node.members, marker]);
+						node.typeParameters, node.heritageClauses, [marker, ...node.members]);
 				}
 				if (tsApi.isImportDeclaration(node) && node.moduleSpecifier) {
 					const moduleSpecifier = rewriteModuleSpecifier(node.moduleSpecifier);

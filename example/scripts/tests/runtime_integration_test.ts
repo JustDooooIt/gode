@@ -1,6 +1,7 @@
 import RuntimeConstructedResource from "./runtime_constructed_resource.js";
 import RuntimeAssignmentResource from "./runtime_assignment_resource.js";
 import RuntimeExportClauseResource from "./runtime_export_clause_resource.js";
+import RuntimeStaticResource from "./runtime_static_resource.js";
 import nodeAssert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -572,6 +573,8 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			const constructedExports = [
 				{ resource: new RuntimeAssignmentResource(), source: "runtime_assignment_resource.ts", label: "assignment export" },
 				{ resource: new RuntimeExportClauseResource(), source: "runtime_export_clause_resource.ts", label: "export clause" },
+				{ resource: RuntimeStaticResource.singleton, source: "runtime_static_resource.ts", label: "assignment export" },
+				{ resource: RuntimeStaticResource.from_block, source: "runtime_static_resource.ts", label: "assignment export" },
 			];
 			for (const [index, fixture] of constructedExports.entries()) {
 				const script = fixture.resource.get_script() as Resource;
@@ -584,6 +587,10 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 				const restored = ResourceLoader.load(fixturePath, "", ResourceLoader.CACHE_MODE_IGNORE) as Resource;
 				nodeAssert.equal(restored.get("label"), `saved export ${index}`);
 				nodeAssert.equal((restored.get_script() as Resource).resource_path, script.resource_path);
+				if (fixture.resource instanceof RuntimeStaticResource) {
+					nodeAssert.equal(fixture.resource.get("static_label"), "static initialization");
+					nodeAssert.equal(restored.get("static_label"), "static initialization");
+				}
 			}
 
 			const nativeResourceOwner = new GDArray();

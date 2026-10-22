@@ -136,6 +136,93 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 			"""
 		)
 
+	def test_default_class_source_is_available_during_static_initialization(self):
+		self.run_compiler_fixture(
+			r"""
+			const forms = new Map([
+				["named", "export default class Named extends Base { static singleton = new Named();"],
+				["anonymous", "export default class extends Base { static singleton: Base = new this();"],
+				["assignment", "class Named extends Base { static singleton = new Named();"],
+				["specifier", "class Named extends Base { static singleton = new Named();"]
+			]);
+			const files = new Map([
+				["res://tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022", types: [] } })],
+				...Array.from(forms, ([name, declaration]) => [`res://scripts/${name}.ts`, `
+					class Base {
+						constructionPath: string | undefined;
+						constructor() {
+							const ctor = new.target as any;
+							const marker = Symbol.for("__gode.script_path__");
+							this.constructionPath = Object.prototype.hasOwnProperty.call(ctor, marker) ? ctor[marker] : undefined;
+						}
+					}
+					${declaration}
+						static blockInstance: Base;
+						static { this.blockInstance = new this(); }
+						value = 7;
+					}
+					${name === "assignment" ? "export default Named;" : name === "specifier" ? "export { Named as default };" : ""}
+				`])
+			]);
+			const result = runCompiler(files);
+			assertOk(result);
+			(async () => {
+				for (const output of result.outputs) {
+					const { default: cls } = await import("data:text/javascript;base64," + Buffer.from(output.code).toString("base64"));
+					for (const instance of [cls.singleton, cls.blockInstance, new cls()]) {
+						if (instance.constructionPath !== output.source || instance.value !== 7) {
+							throw new Error("Construction ran before source metadata or changed field initialization: " + output.source);
+						}
+					}
+				}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
+			"""
+		)
+
+	def test_default_subclass_installs_own_source_before_static_construction(self):
+		self.run_compiler_fixture(
+			r"""
+			const files = new Map([
+				["res://tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022", types: [] } })],
+				["res://scripts/base.ts", `
+					class NativeResource {
+						constructionPath: string;
+						constructor() { this.constructionPath = (new.target as any)[Symbol.for("__gode.script_path__")]; }
+					}
+					export default class Parent extends NativeResource {}
+				`],
+				["res://scripts/child.ts", `
+					import Parent from './base';
+					class Child extends Parent {
+						static singleton = new Child();
+						static blockInstance: Child;
+						static { this.blockInstance = new this(); }
+					}
+					export { Child as default };
+				`]
+			]);
+			const result = runCompiler(files);
+			assertOk(result);
+			const baseOutput = result.outputs.find(output => output.source.endsWith("base.ts"));
+			const childOutput = result.outputs.find(output => output.source.endsWith("child.ts"));
+			const baseUrl = "data:text/javascript;base64," + Buffer.from(baseOutput.code).toString("base64");
+			const childCode = childOutput.code.replace('"./base.js"', JSON.stringify(baseUrl)).replace("'./base.js'", JSON.stringify(baseUrl));
+			(async () => {
+				const { default: Parent } = await import(baseUrl);
+				const { default: Child } = await import("data:text/javascript;base64," + Buffer.from(childCode).toString("base64"));
+				const marker = Symbol.for("__gode.script_path__");
+				if (!Object.hasOwn(Child, marker) || Child[marker] !== childOutput.source || Parent[marker] !== baseOutput.source) {
+					throw new Error("Subclass source metadata was inherited or overwrote its parent");
+				}
+				for (const instance of [Child.singleton, Child.blockInstance, new Child()]) {
+					if (instance.constructionPath !== childOutput.source) {
+						throw new Error("Subclass construction used the parent script path");
+					}
+				}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
+			"""
+		)
+
 	def test_tsconfig_include_exclude_controls_project_roots_and_imported_outputs(self):
 		self.run_compiler_fixture(
 			r"""
