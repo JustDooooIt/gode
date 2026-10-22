@@ -1,3 +1,10 @@
+## 2.4.7
+
+- Fixed script binding and exported-property persistence for directly constructed TypeScript Resources, including local default exports and static initialization.
+- Fixed Resource reference handling to prevent leaks while preserving JavaScript state for resources retained by Godot.
+- Fixed `Signal<T>` bindings on directly constructed Resources without changing ordinary TypeScript field initialization.
+- Fixed script reload crashes when constructors create or detach other instances.
+
 ## 2.4.6
 
 - Updated the embedded Node.js to `24.21.0`.
