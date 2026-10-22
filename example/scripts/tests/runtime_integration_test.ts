@@ -1,4 +1,6 @@
 import RuntimeConstructedResource from "./runtime_constructed_resource.js";
+import RuntimeAssignmentResource from "./runtime_assignment_resource.js";
+import RuntimeExportClauseResource from "./runtime_export_clause_resource.js";
 import nodeAssert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -566,6 +568,23 @@ class RuntimeIntegrationTest extends RuntimeSameFileExportBase {
 			const restoredChildren = restoredDirect.get("children") as RuntimeConstructedResource[];
 			nodeAssert.equal(restoredChildren.length, 1);
 			nodeAssert.equal(restoredChildren[0].get("label"), "nested child");
+
+			const constructedExports = [
+				{ resource: new RuntimeAssignmentResource(), source: "runtime_assignment_resource.ts", label: "assignment export" },
+				{ resource: new RuntimeExportClauseResource(), source: "runtime_export_clause_resource.ts", label: "export clause" },
+			];
+			for (const [index, fixture] of constructedExports.entries()) {
+				const script = fixture.resource.get_script() as Resource;
+				assert(script !== null, `constructed ${fixture.source} has no script`);
+				nodeAssert.equal(script.resource_path, `res://scripts/tests/${fixture.source}`);
+				nodeAssert.equal(fixture.resource.get("label"), fixture.label);
+				fixture.resource.label = `saved export ${index}`;
+				const fixturePath = `user://gode_constructed_export_${index}.tres`;
+				nodeAssert.equal(ResourceSaver.save(fixture.resource, fixturePath), GODOT_OK);
+				const restored = ResourceLoader.load(fixturePath, "", ResourceLoader.CACHE_MODE_IGNORE) as Resource;
+				nodeAssert.equal(restored.get("label"), `saved export ${index}`);
+				nodeAssert.equal((restored.get_script() as Resource).resource_path, script.resource_path);
+			}
 
 			const nativeResourceOwner = new GDArray();
 			const adoptedId = (() => {

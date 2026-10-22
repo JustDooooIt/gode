@@ -820,11 +820,35 @@
 		return replacement === specifierText ? "" : replacement;
 	}
 
+	function findDefaultClass(tsApi, sourceFile) {
+		let exportedName;
+		for (const statement of sourceFile.statements) {
+			if (tsApi.isClassDeclaration(statement) && statement.modifiers &&
+					statement.modifiers.some(modifier => modifier.kind === tsApi.SyntaxKind.DefaultKeyword)) {
+				return statement;
+			}
+			if (tsApi.isExportAssignment(statement) && !statement.isExportEquals &&
+					tsApi.isIdentifier(statement.expression)) {
+				exportedName = statement.expression.text;
+			} else if (tsApi.isExportDeclaration(statement) && !statement.moduleSpecifier &&
+					!statement.isTypeOnly && statement.exportClause && tsApi.isNamedExports(statement.exportClause)) {
+				for (const specifier of statement.exportClause.elements) {
+					if (!specifier.isTypeOnly && specifier.name.text === "default") {
+						exportedName = (specifier.propertyName || specifier.name).text;
+					}
+				}
+			}
+		}
+		return sourceFile.statements.find(statement => tsApi.isClassDeclaration(statement) &&
+			statement.name && statement.name.text === exportedName);
+	}
+
 	function createProjectModuleSpecifierTransformer(tsApi, sourcePath, context, config) {
 		const baseHost = createBaseHost(context, tsApi);
 
 		return (transformContext) => {
 			const factory = transformContext.factory || tsApi.factory;
+			let defaultClass;
 
 			function rewriteModuleSpecifier(specifierNode) {
 				if (!isStringLiteralNode(tsApi, specifierNode)) {
@@ -835,11 +859,12 @@
 			}
 
 			function visit(node) {
-				// Record the source on the default class, including anonymous classes.
+				// Record the source on the actual default class, including local exports
+				// and anonymous classes.
 				// The native Resource constructor uses this to attach the script to
 				// the existing JS object instead of invoking its constructor again.
-				if (tsApi.isClassDeclaration(node) && node.heritageClauses &&
-						node.modifiers && node.modifiers.some(m => m.kind === tsApi.SyntaxKind.DefaultKeyword)) {
+				if (node === defaultClass && node.heritageClauses &&
+						node.heritageClauses.some(clause => clause.token === tsApi.SyntaxKind.ExtendsKeyword)) {
 					const marker = factory.createPropertyDeclaration(
 						[factory.createModifier(tsApi.SyntaxKind.StaticKeyword)],
 						factory.createComputedPropertyName(factory.createCallExpression(
@@ -886,7 +911,10 @@
 				return tsApi.visitEachChild(node, visit, transformContext);
 			}
 
-			return (sourceFile) => tsApi.visitNode(sourceFile, visit);
+			return (sourceFile) => {
+				defaultClass = findDefaultClass(tsApi, sourceFile);
+				return tsApi.visitNode(sourceFile, visit);
+			};
 		};
 	}
 

@@ -98,24 +98,41 @@ class TypeScriptCompilerScriptTests(unittest.TestCase):
 	def test_default_class_records_source_for_native_resource_construction(self):
 		self.run_compiler_fixture(
 			r"""
+			const forms = new Map([
+				["named", "export default class Named extends Base { value = 7; }"],
+				["anonymous", "export default class extends Base { value = 7; }"],
+				["assignment", "class Named extends Base { value = 7; } export default Named;"],
+				["exported_assignment", "export class Named extends Base { value = 7; } export default Named;"],
+				["specifier", "class Named extends Base { value = 7; } export { Named as default };"],
+				["forward_specifier", "export { Named as default }; export class Named extends Base { value = 7; }"]
+			]);
 			const files = new Map([
 				["res://tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2022", types: [] } })],
-				["res://scripts/named.ts", "class Base {} export default class Named extends Base { value = 7; }"],
-				["res://scripts/anonymous.ts", "class Base {} export default class extends Base { value = 9; }"]
+				...Array.from(forms, ([name, declaration]) => [`res://scripts/${name}.ts`, `
+					class Base {}
+					${declaration}
+					export class Helper extends Base {}
+					export function shadowClass() { class Named extends Base {} return Named; }
+				`])
 			]);
 			const result = runCompiler(files);
 			assertOk(result);
-			for (const output of result.outputs) {
-				const code = output.code.replace("export default class", "return class");
-				const cls = new Function(code)();
-				const marker = Symbol.for("__gode.script_path__");
-				if (!Object.hasOwn(cls, marker) || cls[marker] !== output.source) {
-					throw new Error("Default class has no own source metadata: " + output.source);
+			(async () => {
+				for (const output of result.outputs) {
+					const module = await import("data:text/javascript;base64," + Buffer.from(output.code).toString("base64"));
+					const cls = module.default;
+					const marker = Symbol.for("__gode.script_path__");
+					if (!Object.hasOwn(cls, marker) || cls[marker] !== output.source) {
+						throw new Error("Default class has no own source metadata: " + output.source);
+					}
+					if (new cls().value !== 7) {
+						throw new Error("Source metadata changed instance initialization");
+					}
+					if (Object.hasOwn(module.Helper, marker) || Object.hasOwn(module.shadowClass(), marker)) {
+						throw new Error("Source metadata was added to a different class: " + output.source);
+					}
 				}
-				if (new cls().value !== (output.source.endsWith("named.ts") ? 7 : 9)) {
-					throw new Error("Source metadata changed instance initialization");
-				}
-			}
+			})().catch(error => { console.error(error); process.exitCode = 1; });
 			"""
 		)
 
